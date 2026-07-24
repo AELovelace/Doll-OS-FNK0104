@@ -1,0 +1,255 @@
+//   global.h
+//   shared state used across DS -- the telnet-interface port of DOLL-OS.
+//
+//   Telnet is the sole *input* path (this is what the user asked to replace
+//   DOLL-OS's physical keyboard with), but this board's TFT panel is driven as a
+//   mirror of the telnet session -- "a second screen for the cardputer" -- so it
+//   still needs DOLL-OS's pixel-wrapped terminal history/ANSI-filter machinery.
+//   That machinery lives here for the same reason DOLL-OS kept it in global.h:
+//   it's used by hoisted function prototypes and by subclasses declared in files
+//   further down the concatenated sketch.
+#pragma once
+
+#include <WiFi.h>
+#include <TFT_eSPI.h>
+
+//   Display panel geometry, keyed off the same FNK0104* board-variant macro
+//   config.h already defines for SD_MMC/battery pins. Native panel resolution is
+//   portrait; the display runs rotated to landscape (see Display.ino), hence
+//   width/height are swapped from the driver's native W x H here.
+#ifdef FNK0104N_3P5_320x480_ST77922
+    const int DISPLAY_WIDTH = 480;
+    const int DISPLAY_HEIGHT = 320;
+#elif defined(FNK0104S_4P0_320x480_ST7796)
+    const int DISPLAY_WIDTH = 480;
+    const int DISPLAY_HEIGHT = 320;
+#else
+    const int DISPLAY_WIDTH = 320;
+    const int DISPLAY_HEIGHT = 240;
+#endif
+
+//   Telnet server + the one connected client. DS permits a single interactive
+//   session at a time, same as the original scaffold -- DOLL-OS's whole keyboard/
+//   command model assumes one local user too, so this isn't a new constraint.
+WiFiServer telnetServer(TELNET_PORT);
+WiFiClient telnetClient;
+
+//command logic
+String currentCommand = "";      //shell's live input buffer, filled by the line editor in TelnetServer.ino
+int commandCursorPos = 0;        //index within the buffer currently being edited (shared -- only one buffer is ever active at a time)
+const int COMMAND_MAX_LEN = 256; //cap on any single line-edited buffer (shell command, motoko message, ssh password, ...)
+String activeInputPrompt = "> "; //label for whichever buffer readLineEditedInput() is currently editing -- set by
+                                  //each call site right after calling it (TelnetServer.ino/Motoko.ino/Ssh.ino) so
+                                  //Display.ino's mirrored command bar shows the right prompt/content/masking
+bool activeInputMasked = false;  //true while the active buffer is a password prompt (ssh) -- display shows '*' too
+String activeInputText = "";     //current content of whichever buffer is active, mirrored for the display
+
+//result of one readLineEditedInput() call (TelnetServer.ino) -- declared here rather than
+//there because it's a custom type used as a hoisted function's return type, and callers in
+//other files (Motoko.ino, Ssh.ino) need it visible regardless of .ino concatenation order
+enum LineInputResult { LINE_NO_INPUT, LINE_EDITING, LINE_SUBMITTED };
+
+//per-input-source line-edit state (escape/CSI parsing + CRLF pairing). DOLL-OS had a
+//single physical keyboard, so this was implicit module state in one place. DS now has
+//two sources feeding the same line editor -- the telnet client (TelnetServer.ino) and
+//the BLE-keyboard UART bridge (KeyboardSerial.ino) -- so each keeps its own copy: a
+//half-finished escape sequence arriving on one source can't corrupt the other's parse.
+enum UserEscState { UESC_NONE, UESC_GOT_ESC, UESC_GOT_CSI };
+struct LineEditState {
+    UserEscState escState = UESC_NONE;
+    String escParams = "";
+    bool lastByteWasCR = false;
+};
+
+//explicit prototype for readLineEditedInput (TelnetServer.ino), needed because
+//Motoko.ino and Ssh.ino call it but sort alphabetically before TelnetServer.ino in
+//the concatenated build
+LineInputResult readLineEditedInput(String& text);
+
+//keyboard-bridge counterparts of the two telnet input readers, needed by callers that sort
+//before KeyboardSerial.ino in the concatenated build (RemoteSession.ino, Ssh.ino). See
+//KeyboardSerial.ino: readKeyboardLineEditedInput() mirrors readLineEditedInput() for the
+//line-edited prompts; keyboardReadRawByte() feeds the RemoteSession raw passthrough.
+LineInputResult readKeyboardLineEditedInput(String& text);
+int keyboardReadRawByte();
+
+//shared per-byte line editor both input sources push into (TelnetServer.ino). Applies
+//one input byte to `text`, using `st` for escape/CR context; echoCrlfToTelnet controls
+//whether an accepted Enter echoes CRLF to the telnet client (telnet: yes so the remote
+//terminal advances a line; keyboard bridge: no, there's nothing to echo to).
+LineInputResult processLineEditByte(String& text, uint8_t ch, LineEditState& st, bool echoCrlfToTelnet);
+
+//command history (sent commands, recalled with the Up/Down arrow keys like a real shell)
+const int COMMAND_HISTORY_MAX = 30;
+String commandHistory[COMMAND_HISTORY_MAX];
+int commandHistoryCount = 0;
+int commandHistoryHead = 0;
+int commandHistoryIndex = -1;
+String commandHistoryDraft = "";
+
+//storage
+bool sdCardMounted = false;
+String cwd = "/";
+const String SD_MOUNT = "/sd";
+
+//result of routing an absolute unified-namespace path onto the physical filesystem that owns it
+struct RoutedPath {
+    fs::FS* fs;
+    String realPath;
+    bool isSd;
+};
+
+//heap instrumentation (see SysInfo.ino)
+const int HEAP_CHECKPOINT_MAX = 16;
+struct HeapCheckpoint {
+    const char* tag;
+    uint32_t freeHeap;
+    uint32_t largestBlock;
+    uint32_t minFreeHeap;
+};
+HeapCheckpoint heapCheckpoints[HEAP_CHECKPOINT_MAX];
+int heapCheckpointCount = 0;
+int heapCheckpointHead = 0;
+
+//   ANSI SGR foreground color codes -- DOLL-OS mapped these onto 16-bit sprite
+//   colors per history row; here they're the real escape codes a telnet client's
+//   own terminal emulator renders directly. See Output.ino for outLine().
+const int C_RESET   = 0;
+const int C_WHITE   = 37;
+const int C_BLACK   = 30;
+const int C_RED     = 31;
+const int C_GREEN   = 32;
+const int C_YELLOW  = 33;
+const int C_BLUE    = 34;
+const int C_MAGENTA = 35;
+const int C_CYAN    = 36;
+const int C_PINK    = 95;   //bright magenta stands in for DOLL-OS's PINK accent color
+
+extern String sshInputBuffer;
+extern String motokoChannel;
+extern String motokoInputBuffer;
+extern WiFiClient remoteTelnetClient;   //outbound socket for the "telnet" client command (TelnetClient.ino) --
+                                         //named distinctly from telnetClient (our server's connected user) above
+extern bool apActive;                   //true once the fallback AP (WiFiManager.ino) has been started
+
+//   Display mirror (Display.ino). The TFT panel isn't a second *input* device --
+//   telnet remains the only way to control DS -- it just shows the same session a
+//   connected telnet client sees, the way the user asked: "as if it was a second
+//   screen for the cardputer." That means reviving DOLL-OS's pixel-wrapped
+//   history/ANSI-filter machinery, just retargeted from an M5GFX sprite to a
+//   TFT_eSPI one.
+//
+//   The N-variant panel (ST77922, QSPI) pushes its whole frame in one call through
+//   a different object than the other two panels' plain TFT_eSPI, so tft/tft_qspi/
+//   tft_st77922 are all declared conditionally -- but every panel draws onto the
+//   same single full-screen frameSprite, so Display.ino's drawing code itself
+//   doesn't need to branch per panel, only the final "push this frame" step does.
+#ifdef FNK0104N_3P5_320x480_ST77922
+    #include "ST77922.h"
+    TFT_eSPI tft_qspi = TFT_eSPI();
+    TFT_eSprite frameSprite = TFT_eSprite(&tft_qspi);
+    ST77922 tft_st77922 = ST77922();
+#else
+    TFT_eSPI tft = TFT_eSPI();
+    TFT_eSprite frameSprite = TFT_eSprite(&tft);
+#endif
+
+const int DISPLAY_STATUS_BAR_HEIGHT = 16;
+const int DISPLAY_COMMAND_BAR_HEIGHT = 20;
+const int DISPLAY_PADDING = 4;
+bool usbModeDisplayActive = false;   //true while "usb" mode is active -- swaps the mirrored history area for a warning banner (UsbMsc.ino)
+
+//drawDisplayFrame() (Display.ino) skips its redraw + SPI push entirely unless this
+//is set -- every history/command-bar mutation marks it via markDisplayDirty() so a
+//full-frame push only happens when something actually changed, instead of on every
+//loop() tick regardless of activity
+bool displayDirty = true;   //starts true so the first frame after boot always draws
+const unsigned long DISPLAY_STATUS_REFRESH_MS = 1000;   //separate timer so the MEM/BAT
+                                                          //readout in the status bar still
+                                                          //ticks over while otherwise idle
+unsigned long displayLastStatusRefresh = 0;
+
+const int DISPLAY_HISTORY_MAX_LINES = 200;
+const int DISPLAY_HISTORY_ROW_MAX_CHARS = 128;
+struct DisplayHistoryRow {
+    char text[DISPLAY_HISTORY_ROW_MAX_CHARS];
+    uint16_t color = TFT_WHITE;
+};
+//allocated at boot (initDisplay, via psramOrInternalCalloc) rather than as a static
+//array so it lands in PSRAM when available -- ~26KB (200 rows x 130B), the largest
+//movable app buffer, kept out of internal SRAM where WiFi/TLS need the room
+DisplayHistoryRow* displayHistoryRows = nullptr;
+int displayHistoryCount = 0;
+int displayHistoryHead = 0;
+
+//ANSI/UTF-8 filtering for raw remote byte streams mirrored onto the display (ssh
+//shell, outbound telnet client) -- telnet itself gets true unfiltered passthrough
+//(see Ssh.ino/TelnetClient.ino), this is display-only, same reasoning DOLL-OS's
+//ansi.ino documents: the panel can't render real ANSI, so SGR color is
+//interpreted into a per-row pixel color and everything else is dropped.
+enum AnsiParseState { ANSI_TEXT, ANSI_ESC, ANSI_CSI, ANSI_OSC, ANSI_OSC_ESC };
+struct AnsiFilterState {
+    AnsiParseState state = ANSI_TEXT;
+    String csiParams = "";
+    int utf8Remaining = 0;
+};
+
+//per-stream state for the display's incremental line-building API (Display.ino's
+//displayStreamPutChar/Newline/...) -- one instance per independent byte stream so
+//interleaved streams (ssh stdout vs stderr) don't corrupt each other's in-progress row
+struct DisplayStreamState {
+    String pendingRow = "";
+    size_t cursorCol = 0;
+    //how many earlier panel rows the current logical line has wrapped onto (0 = this is the
+    //line's first/only panel row). Lets displayStreamBackspace merge back up through a
+    //panel-side wrap instead of stalling at column 0 while the remote keeps deleting. Reset
+    //whenever a new logical line starts (newline/reset/another stream taking the open row).
+    int wrapDepth = 0;
+    //set the instant a width-wrap happens; consumed when the next panel row is actually
+    //materialized, so that row is counted as a wrap-continuation rather than a fresh line
+    //(the wrap and the first char of the new row are two separate displayStreamPutChar calls).
+    bool wrapPending = false;
+};
+
+extern AnsiFilterState sshStdoutAnsi;
+extern AnsiFilterState sshStderrAnsi;
+extern AnsiFilterState remoteTelnetAnsi;
+extern DisplayStreamState sshStdoutDisplayStream;
+extern DisplayStreamState sshStderrDisplayStream;
+extern DisplayStreamState remoteTelnetDisplayStream;
+
+//which DisplayStreamState currently "owns" the last row in displayHistoryRows --
+//nullptr = no stream owns an open row right now
+DisplayStreamState* displayOpenRowOwner = nullptr;
+
+//   Shared modal loop for character-oriented remote sessions (ssh shell, outbound
+//   telnet client). Port of DOLL-OS's RemoteSession: same shape, but both ends of
+//   "local" are now telnetClient (the connected user) instead of a keyboard + sprite
+//   -- pumpIncoming() writes remote bytes straight to telnetClient (a real terminal
+//   renders ANSI/color natively, so unlike DOLL-OS this needs no escape-sequence
+//   reinterpretation), and the local-input side reads raw bytes back off telnetClient
+//   via readRawUserBytes() (TelnetServer.ino) instead of a keyboard poll.
+//
+//   Declared here rather than alongside its subclasses for the same reason as in
+//   DOLL-OS: the Arduino IDE hoists every .ino's function prototypes above all
+//   #includes, so a base class used by a subclass further down the sketch must
+//   already be visible.
+class RemoteSession {
+public:
+    virtual ~RemoteSession() {}
+
+    //runs until the remote closes, the user's own telnet client disconnects, or the
+    //user sends the local escape chord (Ctrl+T -- see readRawUserBytes in TelnetServer.ino)
+    void run();
+
+protected:
+    virtual void pumpIncoming() = 0;                   //drain the remote transport, write bytes straight to telnetClient
+    virtual bool isClosed() = 0;                        //has the remote end gone away
+    virtual void sendBytes(const String& bytes) = 0;    //forward raw bytes from the user to the remote
+    virtual void onClosed() {}                           //called once, the first time isClosed() is observed true
+
+    //byte(s) sent to the remote when the user's client sends backspace/delete (0x08 or 0x7F).
+    //Differs by transport -- a real pty (ssh) wants DEL (0x7F); classic telnet/BBS line
+    //editors want ASCII backspace (0x08). Override per subclass.
+    virtual String backspaceBytes() { return "\x7f"; }
+};

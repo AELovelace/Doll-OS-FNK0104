@@ -1,0 +1,15 @@
+default_profile: esp32s3
+profiles:
+  esp32s3:
+    fqbn: esp32:esp32:esp32s3:FlashSize=16M,PartitionScheme=custom,PSRAM=opi,USBMode=default
+    platforms:
+      - platform: esp32:esp32 (3.3.10)
+    libraries:
+      - dir: libraries/TFT_eSPI
+      # ESP32Ping and esp32ARP aren't in the Arduino Library Registry (hand-installed
+      # from GitHub), so they can't be pinned by name/version like the two below --
+      # reference the shared global install directly instead
+      - dir: "C:\\Users\\Edith\\OneDrive - eternalhotels.com\\Documents\\Arduino\\libraries\\ESP32Ping"
+      - dir: "C:\\Users\\Edith\\OneDrive - eternalhotels.com\\Documents\\Arduino\\libraries\\esp32ARP"
+      - PubSubClient (2.8)
+      - LibSSH-ESP32 (5.8.0)
