@@ -23,7 +23,10 @@
 HardwareSerial KeyboardSerial(1);
 
 static const int KEYBOARD_SERIAL_RX_PIN = 16;   //<- DS-Slave TX (GPIO17)
-static const int KEYBOARD_SERIAL_TX_PIN = 15;   //-> DS-Slave RX (GPIO18)
+//GPIO15 (-> DS-Slave RX / GPIO18) is the outbound command channel, but it is NOT driven
+//by this UART: KeyboardSerial is started RX-only and SlaveLink.ino bit-bangs GPIO15 in
+//software instead (see SlaveLink.ino for why). Passing TX=-1 below leaves GPIO15 free for it.
+static const int KEYBOARD_SERIAL_TX_PIN = -1;   //RX-only; outbound is bit-banged on GPIO15 (SlaveLink.ino)
 static const uint32_t KEYBOARD_SERIAL_BAUD = 115200;
 
 //own line-edit parse state (see LineEditState in global.h) so a mid-escape keystroke
@@ -32,8 +35,8 @@ static LineEditState keyboardLineState;
 
 void initKeyboardSerial() {
     KeyboardSerial.begin(KEYBOARD_SERIAL_BAUD, SERIAL_8N1, KEYBOARD_SERIAL_RX_PIN, KEYBOARD_SERIAL_TX_PIN);
-    Serial.printf("[boot] keyboard UART RX=%d TX=%d baud=%lu\n",
-                  KEYBOARD_SERIAL_RX_PIN, KEYBOARD_SERIAL_TX_PIN, (unsigned long)KEYBOARD_SERIAL_BAUD);
+    Serial.printf("[boot] keyboard UART RX=%d TX=bitbang(GPIO15) baud=%lu\n",
+                  KEYBOARD_SERIAL_RX_PIN, (unsigned long)KEYBOARD_SERIAL_BAUD);
 }
 
 //drains whatever DS-Slave has sent this tick, feeding each byte through the same line

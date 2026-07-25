@@ -478,7 +478,12 @@ void drawDisplayHistory() {
     }
 
     frameSprite.setTextDatum(TL_DATUM);
-    const int visibleLines = max(1, height / lineHeight);
+    //rows are drawn starting DISPLAY_PADDING below `top`, so the space actually available
+    //for text is height - DISPLAY_PADDING. Dividing the full height counted one row too
+    //many for the region: on the 240px panel that put the bottom row flush at y=219, right
+    //against the command bar's divider line at y=220 -- it read as the last line clipping
+    //into the command bar. Subtracting the top pad drops that overhanging row.
+    const int visibleLines = max(1, (height - DISPLAY_PADDING) / lineHeight);
     const int lastLine = displayHistoryCount - 1;   //always pinned to newest -- no local scroll input on this panel
     const int firstLine = max(0, lastLine - visibleLines + 1);
 

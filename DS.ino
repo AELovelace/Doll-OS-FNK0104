@@ -75,6 +75,10 @@ void setup() {
     Serial.flush();
     initKeyboardSerial();
 
+    //bit-banged outbound command channel to DS-Slave on GPIO15 (SlaveLink.ino) -- must
+    //come after initKeyboardSerial(), which now leaves GPIO15 unclaimed for the bitbang
+    slaveLinkBegin();
+
     telnetServer.begin();
     telnetServer.setNoDelay(true);
 
