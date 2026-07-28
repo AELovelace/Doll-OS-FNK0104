@@ -18,6 +18,17 @@ bool connectToInternet() {
         password = STA_DEFAULT_PASSWORD;
     }
 
+    //Turn OFF the ESP32 core's built-in auto-reconnect (defaults to ON). Left on, a
+    //failed join -- e.g. the config.h default SSID isn't present -- makes the driver
+    //spin on association *forever* in the background, and that permanently-busy radio
+    //blocks everything else: esp_wifi_scan_start() and esp_wifi_set_config() both fail
+    //immediately while the STA is mid-connect, so "wifi scan" fails instantly and
+    //"wifi connect" hits "cannot set config". DS drives its own reconnection instead
+    //(maintainInternetConnection, a bounded 10s tick), which keeps the radio idle
+    //between attempts so scans/manual connects can get in. Only needs setting once,
+    //but it's cheap and idempotent here.
+    WiFi.setAutoReconnect(false);
+
     Serial.printf("Connecting to router: %s\n", ssid.c_str());
     WiFi.begin(ssid.c_str(), password.c_str());
 
@@ -51,13 +62,15 @@ void maintainInternetConnection() {
     }
     previousReconnectAttempt = millis();
 
-    String ssid, password;
-    if (!loadWifiCredentials(ssid, password)) {
-        ssid = STA_DEFAULT_SSID;
-        password = STA_DEFAULT_PASSWORD;
-    }
-    WiFi.disconnect();
-    WiFi.begin(ssid.c_str(), password.c_str());
+    //Re-associate using the config the last begin() already installed -- do NOT call
+    //WiFi.begin() again here. begin() re-runs esp_wifi_set_config(), which the driver
+    //rejects with "sta is connecting, cannot set config" whenever a prior attempt is
+    //still in flight -- and a join that hasn't succeeded leaves us in exactly that
+    //state, so the old disconnect()+begin() pair just logged that error on every
+    //10s tick and never made progress. reconnect() re-issues the association without
+    //touching set_config, so it's always accepted. (To point at a *different*
+    //network, use connectWifiNetwork(), which does a clean stop before begin().)
+    WiFi.reconnect();
 }
 
 int wifiIsConnected() {
@@ -68,6 +81,17 @@ void scanWifiNetworks() {
     WiFi.scanDelete();
     outLine("Scanning for Wifi Networks");
     telnetClient.flush();   //push this line out before the blocking scan begins
+
+    //A scan can't start while the STA is mid-association: esp_wifi_scan_start() bails
+    //out and scanNetworks() fails *immediately* (WIFI_SCAN_FAILED) instead of taking
+    //its usual ~2s. If we're not actually connected, abort any pending association so
+    //the radio is free to scan. (A live connection scans fine -- leave it alone.) The
+    //scan below is synchronous, so maintainInternetConnection() can't re-associate
+    //underneath us until it returns.
+    if (WiFi.status() != WL_CONNECTED) {
+        WiFi.disconnect();
+        delay(100);
+    }
 
     int networkCount = WiFi.scanNetworks();
     if (networkCount < 0) {
@@ -123,6 +147,14 @@ void connectWifiNetwork(const String& ssid, const String& password) {
     outLine("Connecting to: " + ssid);
     telnetClient.flush();
 
+    //Abort any association still in flight before begin(): a stuck/failed join leaves
+    //the STA "connecting", and esp_wifi_set_config() (inside begin()) is rejected in
+    //that state ("cannot set config"), so a user-issued network change would silently
+    //fail. disconnect() (radio stays started) clears the pending attempt; the short
+    //settle lets the async stop land before set_config runs. With driver auto-reconnect
+    //off (connectToInternet), nothing re-associates underneath us between the two calls.
+    WiFi.disconnect();
+    delay(200);
     WiFi.begin(ssid.c_str(), password.c_str());
 
     const unsigned long timeoutMs = 15000;

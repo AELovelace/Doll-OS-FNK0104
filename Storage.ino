@@ -32,8 +32,19 @@ static void setTaskWdtTimeout(uint32_t timeoutMs) {
 
 //mounts LittleFS (formatting it on first boot if needed) and the SD card, called once from setup()
 void initStorage() {
-    if (!LittleFS.begin(true)) {   //true = format LittleFS if mount fails (e.g. first boot)
-        outLine("LittleFS: mount failed", C_RED);
+    //begin(true) asks esp_littlefs to auto-format when the mount fails, which covers a
+    //blank first-boot partition. But a partition left half-written -- the "Corrupted
+    //dir pair at {0x0, 0x1}" state -- isn't reliably recovered by that path, and DS
+    //then boots with settings storage dead (no saved wifi.cfg -> falls back to the
+    //config.h default SSID and can never reconnect). So on failure, force an explicit
+    //format + clean remount; settings reset to defaults but storage lives again.
+    if (!LittleFS.begin(true)) {
+        Serial.println("LittleFS: mount failed; forcing format...");
+        if (LittleFS.format() && LittleFS.begin(false)) {
+            outLine("LittleFS: was corrupt -- reformatted (settings reset)", C_YELLOW);
+        } else {
+            outLine("LittleFS: mount failed -- settings won't persist", C_RED);
+        }
     }
 
     //with no card inserted, the SD_MMC driver's internal retry loop (sdmmc_init_ocr) can run

@@ -15,3 +15,7 @@ profiles:
       - dir: ../libraries/esp32ARP
       - PubSubClient (2.8)
       - LibSSH-ESP32 (5.8.0)
+      # FtpServer.ino -- SD-card-over-network. NOTE: its storage backend is selected
+      # in the library's own config header (FtpServerKey.h -> STORAGE_SD_MMC), which
+      # is a hand edit that isn't captured by this version pin. See FtpServer.ino.
+      - SimpleFTPServer (3.0.2)

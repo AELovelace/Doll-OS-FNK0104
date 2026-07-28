@@ -104,6 +104,7 @@ void loop() {
     acceptTelnetClient();
     readTelnetClient();
     readKeyboardSerial();   //keystrokes from the DS-Slave BLE-keyboard bridge (KeyboardSerial.ino)
+    ftpService();           //drives the FTP server one non-blocking step when active (FtpServer.ino)
     radioService();         //prints whatever the radio task/callbacks stashed (Radio.ino)
     maintainInternetConnection();
     drawDisplayFrame();   //mirrors whatever changed this tick -- history, status bar, live input line

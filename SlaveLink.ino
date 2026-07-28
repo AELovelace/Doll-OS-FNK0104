@@ -115,6 +115,7 @@ static void slaveLinkUsage() {
     outLine("  slave forget              clear saved keyboards + bonds");
     outLine("  slave led <0-31>          set the keyboard LED mask");
     outLine("  slave num|caps|scroll 0|1 toggle one lock LED");
+    outLine("  slave game 0|1            gamepad mode (button events vs keystrokes)");
     outLine("  slave out <hex bytes>     send a raw HID output report");
     outLine("  slave help                ask the slave to print its help");
     outLine("  slave raw <text...>       forward a line verbatim");
@@ -163,6 +164,12 @@ void handleSlaveCommand(const String parts[], int partCount) {
         String verb = parts[1];
         verb.toUpperCase();
         line = verb + " " + parts[2];
+    } else if (sub == "game") {
+        if (partCount < 3) {
+            outLine("usage: slave game 0|1", C_RED);
+            return;
+        }
+        line = "GAME " + parts[2];
     } else if (sub == "out") {
         if (partCount < 3) {
             outLine("usage: slave out <hex bytes>", C_RED);

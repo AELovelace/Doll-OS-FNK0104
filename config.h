@@ -49,6 +49,14 @@ const char* STA_DEFAULT_PASSWORD = "WD10ears!";
 //   Telnet
 const uint16_t TELNET_PORT = 23;
 
+//   FTP (FtpServer.ino) -- exposes the SD card over the network as an alternative to
+//   USB MSC, which this board can't do (its single USB-C port is a serial bridge, not
+//   native USB). Plaintext, LAN-only -- same posture as telnet above. Command port is
+//   the library default 21 (passive data on 50009). Credentials must be < 16 chars
+//   (FTP_CRED_SIZE). Connect from Explorer/FileZilla/WinSCP: ftp://<station-ip>/
+const char* FTP_USER = "ds";
+const char* FTP_PASS = "ds";
+
 //   Motoko MQTT defaults
 const char* MOTOKO_DEFAULT_BROKER = "192.168.44.4";
 const int MOTOKO_DEFAULT_PORT = 1883;

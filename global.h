@@ -12,6 +12,15 @@
 
 #include <WiFi.h>
 #include <TFT_eSPI.h>
+//   Pulled in here (not just in Radio.ino) so the ESP32-audioI2S `Audio` class is
+//   declared before the Arduino sketch builder's auto-generated function
+//   prototypes. radioAudioInfo(Audio::msg_t) (Radio.ino) gets a synthetic
+//   prototype hoisted to the top of the concatenated sketch, above Radio.ino's
+//   own `#include "Audio.h"`; without Audio visible that early the prototype
+//   fails to parse ("'Audio' has not been declared"). global.h is included first
+//   from DS.ino, so declaring it here fixes the ordering -- the same reason every
+//   other cross-file type lives in this file.
+#include "Audio.h"
 
 //   Display panel geometry, keyed off the same FNK0104* board-variant macro
 //   config.h already defines for SD_MMC/battery pins. Native panel resolution is
