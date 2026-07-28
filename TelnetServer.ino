@@ -163,7 +163,14 @@ static void cancelLine(String& text) {
 
 //pending CSI final byte, decoded against whichever buffer is currently being edited
 static void handleCsiSequence(String& text, const String& params, char finalByte) {
-    if (finalByte == 'A') {
+    //Ctrl+Up/Ctrl+Down (most terminals: ESC[1;5A / ESC[1;5B) nudge radio volume, and
+    //Shift+Up/Down (ESC[1;2A / ESC[1;2B) scroll the mirrored terminal history -- both
+    //checked first so they take priority over the plain-arrow case below
+    if (params == "1;5" && (finalByte == 'A' || finalByte == 'B')) {
+        radioAdjustVolume(finalByte == 'A' ? 1 : -1);
+    } else if (params == "1;2" && (finalByte == 'A' || finalByte == 'B')) {
+        displayScrollBy(finalByte == 'A' ? 1 : -1);
+    } else if (finalByte == 'A') {
         historyRecall(text, -1);
     } else if (finalByte == 'B') {
         historyRecall(text, 1);

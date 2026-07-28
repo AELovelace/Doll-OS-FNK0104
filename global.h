@@ -125,12 +125,22 @@ const int C_MAGENTA = 35;
 const int C_CYAN    = 36;
 const int C_PINK    = 95;   //bright magenta stands in for DOLL-OS's PINK accent color
 
+//   Radio (Radio.ino) -- background ICY/MP3 stream player on the board's onboard
+//   ES8311 codec, ported from the standalone sgcrelay firmware. Runs in its own
+//   FreeRTOS task so playback survives modal sessions (ssh, outbound telnet) and
+//   display pushes. The enum lives here rather than Radio.ino for the same
+//   hoisted-prototype reason as LineInputResult above.
+enum RadioState { RADIO_OFF, RADIO_CONNECTING, RADIO_PLAYING, RADIO_PAUSED, RADIO_STOPPED, RADIO_ERROR };
+
+//one-slot command mailbox kinds, shell -> radio task (also here for hoisting: the
+//poster/consumer function signatures use it)
+enum RadioCommandKind { RADIO_CMD_NONE, RADIO_CMD_PLAY, RADIO_CMD_PAUSE, RADIO_CMD_STOP, RADIO_CMD_VOLUME };
+
 extern String sshInputBuffer;
 extern String motokoChannel;
 extern String motokoInputBuffer;
 extern WiFiClient remoteTelnetClient;   //outbound socket for the "telnet" client command (TelnetClient.ino) --
                                          //named distinctly from telnetClient (our server's connected user) above
-extern bool apActive;                   //true once the fallback AP (WiFiManager.ino) has been started
 
 //   Display mirror (Display.ino). The TFT panel isn't a second *input* device --
 //   telnet remains the only way to control DS -- it just shows the same session a
@@ -181,6 +191,12 @@ struct DisplayHistoryRow {
 DisplayHistoryRow* displayHistoryRows = nullptr;
 int displayHistoryCount = 0;
 int displayHistoryHead = 0;
+
+//how many lines back from the live tail drawDisplayHistory() (Display.ino) is currently
+//showing -- 0 means pinned to the newest line (the panel's original behavior). Nudged by
+//Shift+Up/Down at the shell prompt (TelnetServer.ino's handleCsiSequence) and during raw
+//ssh/telnet sessions (RemoteSession.ino), via displayScrollBy().
+int displayScrollOffset = 0;
 
 //ANSI/UTF-8 filtering for raw remote byte streams mirrored onto the display (ssh
 //shell, outbound telnet client) -- telnet itself gets true unfiltered passthrough
@@ -252,4 +268,10 @@ protected:
     //Differs by transport -- a real pty (ssh) wants DEL (0x7F); classic telnet/BBS line
     //editors want ASCII backspace (0x08). Override per subclass.
     virtual String backspaceBytes() { return "\x7f"; }
+
+private:
+    //Ctrl+K handler (RemoteSession.ino) -- runs one shell command via commandProcessor()
+    //without ending the session. Not virtual: identical for every subclass, unlike
+    //pumpIncoming/isClosed/sendBytes which are transport-specific.
+    void runInlineCommandPrompt();
 };

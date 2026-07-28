@@ -193,12 +193,12 @@ void runSshBlocking(void* sessionPtr, const String& user) {
         }
 
         ssh_set_blocking(session, 0);   //non-blocking so the telnet session never stalls on a channel read
-        outLine("ssh: connected (Ctrl+T to quit)", C_GREEN);
+        outLine("ssh: connected (Ctrl+T quit, Ctrl+K cmd, Ctrl+up/down vol)", C_GREEN);
         break;
     }
 
     //no local buffer during the raw shell phase -- static hint for the display's mirrored command bar
-    setActiveInput("ssh $ ", "Ctrl+T to quit", false);
+    setActiveInput("ssh $ ", "Ctrl+T quit, Ctrl+K cmd", false);
 
     SshShellSession shellSession(channel);
     shellSession.run();
@@ -243,6 +243,16 @@ void sshConnectAndRun(const String& user, const String& host, unsigned int port)
     ssh_options_set(session, SSH_OPTIONS_PORT, &port);
     ssh_options_set(session, SSH_OPTIONS_USER, user.c_str());
     ssh_options_set(session, SSH_OPTIONS_TIMEOUT, &timeout);
+
+    //LibSSH-ESP32 drops the old SHA-1 "ssh-rsa" host-key/signature algorithm from its
+    //default list (kex.c's DEFAULT_HOSTKEYS/DEFAULT_PUBLIC_KEY_ALGORITHMS only offer
+    //ed25519, ecdsa, and rsa-sha2-256/512), matching modern OpenSSH's SHA-1 deprecation.
+    //Older devices (routers, switches, embedded gear, ancient OpenSSH) that only speak
+    //ssh-rsa then fail to connect with "no matching host key algorithm". "+ssh-rsa"
+    //appends it back onto the default list rather than replacing it, so this only adds
+    //compatibility -- it doesn't drop any of the already-preferred modern algorithms.
+    ssh_options_set(session, SSH_OPTIONS_HOSTKEYS, "+ssh-rsa");
+    ssh_options_set(session, SSH_OPTIONS_PUBLICKEY_ACCEPTED_TYPES, "+ssh-rsa");
 
     outLine("Connecting to " + host + ":" + String(port) + " as " + user, C_PINK);
     telnetClient.flush();

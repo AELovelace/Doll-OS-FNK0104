@@ -5,11 +5,13 @@ profiles:
     platforms:
       - platform: esp32:esp32 (3.3.10)
     libraries:
+      # dir: entries need arduino-cli >= 1.1.0 (Arduino IDE >= 2.3.4); older
+      # versions fail to parse them and refuse to open the whole sketch.
       - dir: libraries/TFT_eSPI
       # ESP32Ping and esp32ARP aren't in the Arduino Library Registry (hand-installed
       # from GitHub), so they can't be pinned by name/version like the two below --
-      # reference the shared global install directly instead
-      - dir: "C:\\Users\\Edith\\OneDrive - eternalhotels.com\\Documents\\Arduino\\libraries\\ESP32Ping"
-      - dir: "C:\\Users\\Edith\\OneDrive - eternalhotels.com\\Documents\\Arduino\\libraries\\esp32ARP"
+      # reference the shared sketchbook install directly instead
+      - dir: ../libraries/ESP32Ping
+      - dir: ../libraries/esp32ARP
       - PubSubClient (2.8)
       - LibSSH-ESP32 (5.8.0)

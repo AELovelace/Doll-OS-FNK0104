@@ -133,9 +133,12 @@ void recordHeapCheckpoint(const char* tag) {
 
     HeapCheckpoint& checkpoint = heapCheckpoints[slot];
     checkpoint.tag = tag;
-    checkpoint.freeHeap = heap_caps_get_free_size(MALLOC_CAP_8BIT);
-    checkpoint.largestBlock = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
-    checkpoint.minFreeHeap = heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT);
+    //MALLOC_CAP_INTERNAL, not 8BIT: with PSRAM in the heap, 8BIT includes it, and ~8MB of
+    //PSRAM headroom swamps the number that actually matters -- the scarce internal pool
+    //WiFi/TLS/DMA must allocate from
+    checkpoint.freeHeap = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+    checkpoint.largestBlock = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL);
+    checkpoint.minFreeHeap = heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL);
 }
 
 void reserveHotStrings() {
@@ -168,12 +171,14 @@ void showFree() {
 }
 
 void showFreeDetailed() {
+    //headline numbers are INTERNAL only (same reasoning as recordHeapCheckpoint) --
+    //the per-pool breakdown below still shows PSRAM via the caps summaries
     multi_heap_info_t info;
-    heap_caps_get_info(&info, MALLOC_CAP_8BIT);
+    heap_caps_get_info(&info, MALLOC_CAP_INTERNAL);
 
-    size_t freeHeap = heap_caps_get_free_size(MALLOC_CAP_8BIT);
-    size_t largest = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
-    size_t minFree = heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT);
+    size_t freeHeap = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+    size_t largest = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL);
+    size_t minFree = heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL);
     int fragPct = freeHeap == 0 ? 0 : 100 - (int)((largest * 100) / freeHeap);
 
     outLine("FREE: " + String(freeHeap));
@@ -185,6 +190,8 @@ void showFreeDetailed() {
     outLine("ALLOC BLOCKS: " + String(info.allocated_blocks));
 
     outLine("HEAP CAPS:", C_CYAN);
+    showHeapCapsSummary("INTERNAL", MALLOC_CAP_INTERNAL);
+    showHeapCapsSummary("DMA", MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
     showHeapCapsSummary("8BIT", MALLOC_CAP_8BIT);
     showHeapCapsSummary("32BIT", MALLOC_CAP_32BIT);
 

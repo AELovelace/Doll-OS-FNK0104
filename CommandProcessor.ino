@@ -93,8 +93,8 @@ struct CommandEntry {
 
 void helpCommandHandler(const String parts[], int partCount) {
     outLine("Commands: battery, calc, cat, cd, clear, dice, free, help, ip, ls,");
-    outLine("          motoko, ping, pwd, reboot, slave, ssh, status, telnet,");
-    outLine("          uptime, usb, wifi");
+    outLine("          motoko, ping, pwd, radio, reboot, slave, ssh, status,");
+    outLine("          telnet, uptime, usb, wifi");
 }
 
 void handleRebootCommand(const String parts[], int partCount) {
@@ -122,13 +122,6 @@ void handleStatusCommand(const String parts[], int partCount) {
     outLine("");
     outLine("Wi-Fi status", C_CYAN);
     outLine("-----------");
-    if (apActive) {
-        outLine("Access point: " + String(AP_SSID) + " (fallback, active)");
-        outLine("AP IP: " + WiFi.softAPIP().toString());
-        outLine("AP clients: " + String(WiFi.softAPgetStationNum()));
-    } else {
-        outLine("Access point: off");
-    }
     if (wifiIsConnected() == 1) {
         outLine("Router: connected");
         outLine("Router SSID: " + WiFi.SSID());
@@ -154,6 +147,7 @@ static const CommandEntry commandTable[] = {
     { "motoko", handleMotokoCommand },
     { "ping",   handlePingCommand },
     { "pwd",    handlePwdCommand },
+    { "radio",  handleRadioCommand },
     { "reboot", handleRebootCommand },
     { "slave",  handleSlaveCommand },
     { "ssh",    handleSshCommand },
@@ -167,6 +161,7 @@ static const int commandTableSize = sizeof(commandTable) / sizeof(commandTable[0
 
 //takes the finished command line, runs it, and clears the buffer for the next entry
 void commandProcessor(String& command) {
+    displayScrollOffset = 0;   //submitting anything snaps the mirrored panel back to the live tail
     if (command.length() == 0) {
         return;
     }

@@ -39,13 +39,10 @@ const float BATTERY_VOLTAGE_EMPTY = 3.3f;
 const float BATTERY_VOLTAGE_FULL  = 4.2f;
 
 //   Wi-Fi
-//   AP side: this device's own network, always on so it's reachable even with
-//   no saved router credentials. STA side: the home/router network it joins for
-//   internet access. STA credentials can also be set later at runtime with
-//   "wifi connect <ssid> <password>" + "wifi save" -- these are only the
-//   first-boot defaults.
-const char* AP_SSID = "ESPTerm";
-const char* AP_PASSWORD = "esp32router";
+//   STA credentials: the home/router network joined for internet access (STA-only;
+//   the old fallback softAP is gone -- it halved streaming throughput). These can
+//   also be set later at runtime with "wifi connect <ssid> <password>" +
+//   "wifi save" -- these are only the first-boot defaults.
 const char* STA_DEFAULT_SSID = "DollNet";
 const char* STA_DEFAULT_PASSWORD = "WD10ears!";
 
@@ -56,3 +53,10 @@ const uint16_t TELNET_PORT = 23;
 const char* MOTOKO_DEFAULT_BROKER = "192.168.44.4";
 const int MOTOKO_DEFAULT_PORT = 1883;
 const char* MOTOKO_CLIENT_ID = "MOTOKO-DS";
+
+//   Radio defaults (Radio.ino) -- background stream player on the onboard ES8311
+//   codec. Default station is the SGCRelay Pi's ICY/MP3 relay; any URL can be
+//   given per-play with "radio play <url>". Volume is ESP32-audioI2S's software
+//   scale, 0..21.
+const char* RADIO_DEFAULT_URL = "http://192.168.1.252:8000/stream.mp3";
+const int RADIO_DEFAULT_VOLUME = 12;

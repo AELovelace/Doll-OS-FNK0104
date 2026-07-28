@@ -1,37 +1,13 @@
 //   WiFiManager.ino
-//   Wi-Fi connectivity: merges DS's original always-on AP + router-join scaffold
-//   with DOLL-OS's wifi.ino command subsystem (scan/connect/save/status). The AP
-//   stays on unconditionally so the device is always reachable over telnet even
-//   with no saved/working router credentials -- DOLL-OS didn't need this since the
-//   M5Cardputer's screen/keyboard don't depend on the network at all, but here the
-//   network *is* the interface, so losing STA connectivity can't mean losing the UI.
+//   Wi-Fi connectivity: DOLL-OS's wifi.ino command subsystem (scan/connect/save/
+//   status) driving a plain STA connection. DS originally also ran an always-on
+//   softAP here as a fallback telnet path, but AP+STA on the S3's single radio
+//   cost too much streaming throughput (Radio.ino audio starved once its buffer
+//   drained) and the AP went unused -- the panel + BLE keyboard already cover
+//   the no-network case, so STA is now the only mode.
 #include <LittleFS.h>
 
 const char* WIFI_CREDS_PATH = "/wifi.cfg";
-bool apActive = false;
-
-void startAccessPoint() {
-    IPAddress apAddress(192, 168, 4, 1);
-    IPAddress apGateway(192, 168, 4, 1);
-    IPAddress apSubnet(255, 255, 255, 0);
-
-    if (!WiFi.softAPConfig(apAddress, apGateway, apSubnet)) {
-        Serial.println("Failed to configure access-point address.");
-    }
-
-    bool started = WiFi.softAP(AP_SSID, AP_PASSWORD, 0, false, 4);
-    if (!started) {
-        Serial.println("Failed to start the access point.");
-        while (true) {
-            delay(1000);
-        }
-    }
-
-    Serial.println("Access point started.");
-    Serial.printf("  SSID: %s\n", AP_SSID);
-    Serial.printf("  IP:   %s\n", WiFi.softAPIP().toString().c_str());
-    apActive = true;
-}
 
 //tries saved credentials first, falling back to the config.h defaults
 //returns true if the router connection succeeded

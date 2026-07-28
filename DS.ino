@@ -13,14 +13,6 @@
 void setup() {
     Serial.begin(115200);
 
-    //GPIO2 driven low as a convenience ground pin next to the keyboard UART header --
-    //temporary, so a nearby jumper to DS-Slave has a ground to land on. It's only a
-    //signal reference (the real return path is the shared USB ground); an output-low pin
-    //can sink very little current, so don't hang any real load off it. Safe on ESP32-S3:
-    //GPIO2 isn't a strapping pin here (0/3/45/46 are) and is otherwise unused.
-    pinMode(2, OUTPUT);
-    digitalWrite(2, LOW);
-
     unsigned long serialStart = millis();
     while (!Serial && millis() - serialStart < 3000) {
         delay(10);
@@ -52,12 +44,13 @@ void setup() {
     reserveHotStrings();
     recordHeapCheckpoint("after reserve");
 
-    //AP + Station mode: AP side is this device's own always-on network, STA side
-    //joins the configured router for internet access (see WiFiManager.ino)
-    Serial.println("[boot] WiFi AP+STA...");
+    //STA only. DS used to run an always-on softAP alongside STA as a fallback
+    //telnet path, but AP+STA on the S3's single radio cost too much streaming
+    //throughput (Radio.ino audio starved once its buffer drained) and the AP
+    //went unused -- the panel + BLE keyboard already cover the no-network case.
+    Serial.println("[boot] WiFi STA...");
     Serial.flush();
-    WiFi.mode(WIFI_AP_STA);
-    startAccessPoint();
+    WiFi.mode(WIFI_STA);
     connectToInternet();
     recordHeapCheckpoint("after wifi");
     Serial.println("[boot] WiFi OK");
@@ -75,8 +68,8 @@ void setup() {
     Serial.flush();
     initKeyboardSerial();
 
-    //bit-banged outbound command channel to DS-Slave on GPIO15 (SlaveLink.ino) -- must
-    //come after initKeyboardSerial(), which now leaves GPIO15 unclaimed for the bitbang
+    //bit-banged outbound command channel to DS-Slave on GPIO2 (SlaveLink.ino) -- must
+    //come after initKeyboardSerial(), which now leaves GPIO2 unclaimed for the bitbang
     slaveLinkBegin();
 
     telnetServer.begin();
@@ -84,8 +77,11 @@ void setup() {
 
     Serial.println();
     Serial.println("Telnet server started.");
-    Serial.printf("  AP SSID: %s\n", AP_SSID);
-    Serial.printf("  AP IP:   %s\n", WiFi.softAPIP().toString().c_str());
+    if (wifiIsConnected() == 1) {
+        Serial.printf("  Station IP: %s\n", WiFi.localIP().toString().c_str());
+    } else {
+        Serial.println("  (WiFi not connected yet -- telnet reachable once STA joins)");
+    }
     Serial.println("Connect with: telnet <ip> 23");
 
     //start the interactive shell right now instead of waiting for a telnet client to
@@ -93,8 +89,12 @@ void setup() {
     //own, so present the welcome banner and prompt immediately. A telnet client that
     //dials in later re-runs this same sequence for its own screen (acceptTelnetClient()).
     beginShellSession();
-    outLine("DS ready. AP: " + String(AP_SSID) + " (" + WiFi.softAPIP().toString() + ")");
-    outLine("Connect with: telnet " + WiFi.softAPIP().toString() + " 23");
+    if (wifiIsConnected() == 1) {
+        outLine("DS ready. Station IP: " + WiFi.localIP().toString());
+        outLine("Connect with: telnet " + WiFi.localIP().toString() + " 23");
+    } else {
+        outLine("DS ready. WiFi not connected -- run 'wifi connect' for telnet access.");
+    }
     outLine("");
     printPrompt();
     drawDisplayFrame();
@@ -104,6 +104,7 @@ void loop() {
     acceptTelnetClient();
     readTelnetClient();
     readKeyboardSerial();   //keystrokes from the DS-Slave BLE-keyboard bridge (KeyboardSerial.ino)
+    radioService();         //prints whatever the radio task/callbacks stashed (Radio.ino)
     maintainInternetConnection();
     drawDisplayFrame();   //mirrors whatever changed this tick -- history, status bar, live input line
     delay(1);

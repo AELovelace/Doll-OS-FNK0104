@@ -7,9 +7,10 @@
 //   (drawString/textWidth/setTextColor/setTextDatum/fillSprite) are close enough
 //   that the porting is mostly a rename, not a redesign.
 //
-//   Unlike DOLL-OS, there's no local scroll-back chord (no physical keyboard to
-//   send one), so the panel always shows the tail of history -- it just follows
-//   along live, the way a mirrored terminal should.
+//   The panel follows the tail of history live by default, same as DOLL-OS, but
+//   Shift+Up/Down (recognized in TelnetServer.ino's handleCsiSequence and
+//   RemoteSession.ino's raw-session byte classifier) walks displayScrollOffset
+//   back through it via displayScrollBy() below.
 
 //   Boot / init
 
@@ -189,6 +190,18 @@ void clearDisplayHistory() {
     displayHistoryCount = 0;
     displayHistoryHead = 0;
     displayOpenRowOwner = nullptr;
+    displayScrollOffset = 0;
+    markDisplayDirty();
+}
+
+//nudges the scroll-back position by `delta` lines (positive = further back/older, negative
+//= toward the live tail); the upper bound depends on how many lines are actually visible,
+//so it's clamped in drawDisplayHistory() instead of here -- this just keeps it non-negative.
+void displayScrollBy(int delta) {
+    displayScrollOffset += delta;
+    if (displayScrollOffset < 0) {
+        displayScrollOffset = 0;
+    }
     markDisplayDirty();
 }
 
@@ -484,7 +497,16 @@ void drawDisplayHistory() {
     //against the command bar's divider line at y=220 -- it read as the last line clipping
     //into the command bar. Subtracting the top pad drops that overhanging row.
     const int visibleLines = max(1, (height - DISPLAY_PADDING) / lineHeight);
-    const int lastLine = displayHistoryCount - 1;   //always pinned to newest -- no local scroll input on this panel
+
+    //Shift+Up/Down (handleCsiSequence, TelnetServer.ino/RemoteSession.ino) walks this back
+    //via displayScrollBy(); clamped here rather than there because the max meaningful offset
+    //depends on how many lines actually fit on screen right now
+    const int maxScrollOffset = max(0, displayHistoryCount - visibleLines);
+    if (displayScrollOffset > maxScrollOffset) {
+        displayScrollOffset = maxScrollOffset;
+    }
+
+    const int lastLine = displayHistoryCount - 1 - displayScrollOffset;
     const int firstLine = max(0, lastLine - visibleLines + 1);
 
     int y = top + DISPLAY_PADDING;
@@ -494,6 +516,15 @@ void drawDisplayHistory() {
         y += lineHeight;
     }
     frameSprite.setTextColor(TFT_WHITE, TFT_BLACK);
+
+    if (displayScrollOffset > 0) {
+        //cheap "you're not looking at the live tail" hint, top-right of the terminal area
+        frameSprite.setTextDatum(TR_DATUM);
+        frameSprite.setTextColor(TFT_YELLOW, TFT_BLACK);
+        frameSprite.drawString("SCROLL", DISPLAY_WIDTH - DISPLAY_PADDING, top + DISPLAY_PADDING);
+        frameSprite.setTextDatum(TL_DATUM);
+        frameSprite.setTextColor(TFT_WHITE, TFT_BLACK);
+    }
 }
 
 void drawDisplayCommandBar() {

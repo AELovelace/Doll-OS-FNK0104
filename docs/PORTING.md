@@ -32,8 +32,7 @@ calls changed (`addWrappedHistoryLine(...)` -> `outLine(...)`):
 
 - `CommandProcessor.ino`: tokenizing, command history ring buffer, dispatch table
 - `Storage.ino`: unified LittleFS + SD path namespace, `ls`/`cd`/`pwd`/`cat`
-- `WiFiManager.ino`: scan/connect/save credentials (merged with DS's original
-  always-on AP scaffold -- see below)
+- `WiFiManager.ino`: scan/connect/save credentials (STA-only -- see below)
 - `IPTools.ino`, `Ping.ino`: IP info, ping sweep, ARP scan
 - `Calc.ino` + `tinyexpr.c/h`: unchanged math engine
 - `Dice.ino`: unchanged
@@ -147,9 +146,37 @@ this port was built and tested against.
   itself unavailable at runtime instead of blocking compilation.
 - **Networking model**: DOLL-OS only needed Wi-Fi STA mode -- losing it just
   meant losing internet access, not the UI (the screen/keyboard don't depend on
-  the network). Here the network *is* the interface, so DS keeps an always-on
-  SoftAP (from the original DS scaffold) alongside STA, so the device stays
-  reachable over telnet even with no working router credentials.
+  the network). DS at first kept an always-on SoftAP alongside STA so telnet
+  stayed reachable without router credentials, but AP+STA on the S3's single
+  radio cost too much streaming throughput (Radio.ino audio starved once its
+  buffer drained), and the panel + BLE keyboard cover the no-network case
+  anyway -- so DS went back to STA-only.
+
+### Radio (new, not from DOLL-OS)
+
+`Radio.ino` is a port of the standalone sgcrelay firmware (`../sgcrelay/`) into DS
+as a background task: `radio play [url]` streams ICY/MP3 (default: the SGCRelay
+Pi's relay, `config.h`) through the board's onboard ES8311 codec + speaker, with
+`pause`/`stop`/`vol 0..21`/`status` subcommands. The codec driver
+(`es8311.cpp/.h/es8311_reg.h`) came over verbatim -- already `Wire`-based, so no
+legacy-I2C-driver conflict. sgcrelay's LovyanGFX touch UI, Wi-Fi handling, and
+LED/button controls were dropped (Display.ino owns the panel, WiFiManager.ino
+owns STA, the shell replaces the physical controls).
+
+Playback runs on a dedicated long-lived FreeRTOS task (same pattern as `ssh`'s)
+rather than `loop()`, so audio survives modal ssh/telnet sessions and display
+pushes. The shell posts to a one-slot mailbox; ESP32-audioI2S's weak callbacks
+fire in the task and only stash announcements, which `radioService()` (called
+each `loop()` tick) prints -- the main loop stays the single writer of the telnet
+socket and display history.
+
+**This forced a pin move**: the codec/touch I2C bus is PCB-routed to SCL=15/
+SDA=16, which the DS-Slave link had been squatting on (it only worked because
+nothing talked I2C). The link moved to GPIO21 (keyboard RX) and GPIO2 (bit-bang
+TX); GPIO2's old convenience-ground role in setup() is gone, so that jumper must
+land on a real GND pin. I2S (4-8) and amp-enable (GPIO1) pins are the AB
+variant's; the N/S variants' differ (see Freenove's `Sketch_07.1_Music`) and
+aren't wired up.
 
 ## Known constraints worth flagging
 

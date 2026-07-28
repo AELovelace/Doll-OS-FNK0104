@@ -211,14 +211,14 @@ void handleTelnetCommand(const String parts[], int partCount) {
                                             //without this, Nagle's algorithm + the remote's delayed
                                             //ACK stall every keystroke by up to ~200ms
 
-    outLine("telnet: connected (Ctrl+T to quit)", C_GREEN);
+    outLine("telnet: connected (Ctrl+T quit, Ctrl+K cmd, Ctrl+up/down vol)", C_GREEN);
     remoteTelnetState = RT_NORMAL;
     displayStreamReset(remoteTelnetDisplayStream);
     remoteTelnetAnsi = AnsiFilterState();
     remoteTelnetDisplayColor = TFT_WHITE;
 
     //no local buffer during the raw session -- static hint for the display's mirrored command bar
-    setActiveInput("telnet> ", "Ctrl+T to quit", false);
+    setActiveInput("telnet> ", "Ctrl+T quit, Ctrl+K cmd", false);
 
     TelnetClientSession session;
     session.run();
