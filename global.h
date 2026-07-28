@@ -179,6 +179,12 @@ const unsigned long DISPLAY_STATUS_REFRESH_MS = 1000;   //separate timer so the 
                                                           //ticks over while otherwise idle
 unsigned long displayLastStatusRefresh = 0;
 
+//command-bar caret blink. Like DISPLAY_STATUS_REFRESH_MS above, this is a second reason
+//drawDisplayFrame() may redraw an otherwise-clean frame: each time the blink phase flips
+//the frame is pushed again so the '|' caret in the mirrored command bar visibly blinks.
+const unsigned long DISPLAY_CURSOR_BLINK_MS = 500;   //half-period: on 500ms, off 500ms
+bool displayLastCursorPhase = false;                 //phase drawn last frame, to detect a flip
+
 const int DISPLAY_HISTORY_MAX_LINES = 200;
 const int DISPLAY_HISTORY_ROW_MAX_CHARS = 128;
 struct DisplayHistoryRow {

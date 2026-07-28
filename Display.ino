@@ -470,8 +470,8 @@ void drawDisplayStatusBar() {
     frameSprite.drawString("DS", DISPLAY_PADDING, 2);
 
     char statusText[64];
-    snprintf(statusText, sizeof(statusText), "MEM:%luKB BAT:%d%%",
-        (unsigned long)(ESP.getFreeHeap() / 1000), readBatteryPercent());
+    snprintf(statusText, sizeof(statusText), "MEM:%luKB VOL:%02d BAT:%d%%",
+        (unsigned long)(ESP.getFreeHeap() / 1000), radioGetVolume(), readBatteryPercent());
     frameSprite.setTextDatum(TR_DATUM);
     frameSprite.setTextColor(TFT_WHITE, TFT_BLACK);
     frameSprite.drawString(statusText, DISPLAY_WIDTH - DISPLAY_PADDING, 2);
@@ -548,12 +548,27 @@ void drawDisplayCommandBar() {
         shown = masked;
     }
 
-    //this panel mirrors, it doesn't locally edit -- no cursor to keep visible, so a
-    //too-long line just drops its head (shows the tail, where typing is happening)
+    //a too-long line drops its head (shows the tail, where typing is happening). Track how
+    //many leading chars we dropped so the caret below can be mapped from its buffer index
+    //(commandCursorPos, into the full activeInputText) onto what's actually visible here.
+    size_t droppedFromHead = 0;
     while (shown.length() > 0 && frameSprite.textWidth(shown) > maxWidth) {
         shown = shown.substring(1);
+        droppedFromHead++;
     }
     frameSprite.drawString(shown, textX, y + DISPLAY_PADDING);
+
+    //blinking caret at the edit position. commandCursorPos indexes the full buffer; subtract
+    //the dropped head to land in `shown`, then clamp so a cursor scrolled off the left edge
+    //parks at the start of the visible window rather than drawing off-panel.
+    if (((millis() / DISPLAY_CURSOR_BLINK_MS) & 1UL) == 0) {
+        int caretInShown = commandCursorPos - (int)droppedFromHead;
+        if (caretInShown < 0) caretInShown = 0;
+        if (caretInShown > (int)shown.length()) caretInShown = shown.length();
+        int caretX = textX + (int)frameSprite.textWidth(shown.substring(0, caretInShown));
+        if (caretX > textX + maxWidth) caretX = textX + maxWidth;
+        frameSprite.drawFastVLine(caretX, y + DISPLAY_PADDING, frameSprite.fontHeight(), TFT_WHITE);
+    }
 }
 
 //covers the terminal area with a warning banner -- used while USB MSC mode is active
@@ -571,11 +586,14 @@ void drawDisplayUsbWarning() {
 void drawDisplayFrame() {
     unsigned long now = millis();
     bool statusRefreshDue = (now - displayLastStatusRefresh) >= DISPLAY_STATUS_REFRESH_MS;
-    if (!displayDirty && !statusRefreshDue) {
+    bool cursorPhase = ((now / DISPLAY_CURSOR_BLINK_MS) & 1UL) == 0;
+    bool cursorBlinkDue = (cursorPhase != displayLastCursorPhase);
+    if (!displayDirty && !statusRefreshDue && !cursorBlinkDue) {
         return;   //nothing changed since the last push -- skip the full-frame redraw + SPI blit
     }
     displayDirty = false;
     displayLastStatusRefresh = now;
+    displayLastCursorPhase = cursorPhase;
 
     drawDisplayStatusBar();
     if (usbModeDisplayActive) {

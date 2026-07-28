@@ -181,6 +181,12 @@ static bool radioEnsureCodec() {
         radioAnnounce("radio: audio engine could not attach I2S", C_RED);
         return false;
     }
+    //v3.4.x delivers titles/station/eof/info through this one callback (radioAudioInfo).
+    //It's a static member, so registering once is enough -- do it before any connect.
+    Audio::audio_info_callback = radioAudioInfo;
+    //cap the blocking connect so an unreachable host can't hold this task (core 1, prio
+    //above loopTask) past the ~5s task-watchdog window and reset the board.
+    radioAudio->setConnectionTimeout(3000, 4000);
     radioAudio->setVolume(radioVolume);
 
     radioCodecReady = true;
@@ -274,38 +280,47 @@ static void radioTaskEntry(void* pvParameters) {
 }
 
 //---------------------------------------------------------------------------
-//ESP32-audioI2S weak-symbol callbacks. These run inside the radio task (audio.loop()'s
-//caller), hence radioAnnounce()/shared-buffer writes only -- never outLine().
-
-void audio_info(const char* info) {
-    Serial.printf("[radio] %s\n", info);
-}
-
-void audio_showstreamtitle(const char* title) {
-    portENTER_CRITICAL(&radioMux);
-    strncpy(radioTitle, title, sizeof(radioTitle) - 1);
-    radioTitle[sizeof(radioTitle) - 1] = '\0';
-    portEXIT_CRITICAL(&radioMux);
-    String line = "radio: now playing: " + String(title);
-    radioAnnounce(line.c_str(), C_CYAN);
-}
-
-void audio_showstation(const char* name) {
-    //placeholder until the first ICY StreamTitle arrives -- same as sgcrelay
-    portENTER_CRITICAL(&radioMux);
-    if (radioTitle[0] == '\0') {
-        strncpy(radioTitle, name, sizeof(radioTitle) - 1);
-        radioTitle[sizeof(radioTitle) - 1] = '\0';
+//ESP32-audioI2S status callback. As of v3.4.x the library funnels every event
+//(the old weak audio_info/audio_showstreamtitle/audio_showstation/audio_eof_stream
+//free functions are gone) through one std::function<void(msg_t)>, registered in
+//radioEnsureCodec. It fires inside the radio task (audio.loop()'s caller), so the
+//same rule as before holds: radioAnnounce()/shared-buffer writes and Serial only --
+//never outLine(). m.msg points at a library scratch buffer valid only for this call,
+//so anything kept is copied out synchronously here.
+void radioAudioInfo(Audio::msg_t m) {
+    const char* text = (m.msg != nullptr) ? m.msg : "";
+    switch (m.e) {
+        case Audio::evt_streamtitle: {
+            portENTER_CRITICAL(&radioMux);
+            strncpy(radioTitle, text, sizeof(radioTitle) - 1);
+            radioTitle[sizeof(radioTitle) - 1] = '\0';
+            portEXIT_CRITICAL(&radioMux);
+            String line = "radio: now playing: " + String(text);
+            radioAnnounce(line.c_str(), C_CYAN);
+            break;
+        }
+        case Audio::evt_name: {
+            //station name -- placeholder until the first ICY StreamTitle arrives
+            portENTER_CRITICAL(&radioMux);
+            if (radioTitle[0] == '\0') {
+                strncpy(radioTitle, text, sizeof(radioTitle) - 1);
+                radioTitle[sizeof(radioTitle) - 1] = '\0';
+            }
+            portEXIT_CRITICAL(&radioMux);
+            Serial.printf("[radio] station: %s\n", text);
+            break;
+        }
+        case Audio::evt_eof:
+            Serial.printf("[radio] stream ended: %s\n", text);
+            radioSetState(RADIO_ERROR);
+            //no announce -- the task's reconnect logic retries on its own; only the
+            //user-visible state (radio status) reflects the hiccup
+            break;
+        default:
+            //evt_info / evt_log / bitrate / icy-url etc. -- serial trace, as audio_info did
+            Serial.printf("[radio] %s\n", text);
+            break;
     }
-    portEXIT_CRITICAL(&radioMux);
-    Serial.printf("[radio] station: %s\n", name);
-}
-
-void audio_eof_stream(const char* reason) {
-    Serial.printf("[radio] stream ended: %s\n", reason);
-    radioSetState(RADIO_ERROR);
-    //no announce here -- the task's reconnect logic retries on its own; only the
-    //user-visible state (radio status) reflects the hiccup
 }
 
 //---------------------------------------------------------------------------
@@ -393,9 +408,20 @@ static void radioPrintStatus() {
     outLine("");
 }
 
+//current volume, snapshotted under the mux -- the status bar (Display.ino's
+//drawDisplayStatusBar) reads this each refresh instead of us printing a line on change.
+int radioGetVolume() {
+    int volume;
+    portENTER_CRITICAL(&radioMux);
+    volume = radioVolume;
+    portEXIT_CRITICAL(&radioMux);
+    return volume;
+}
+
 //relative volume nudge for the Ctrl+Up/Down chords (TelnetServer.ino's handleCsiSequence,
 //RemoteSession.ino's raw-session escape handling) -- clamps instead of validating a typed
-//number, otherwise identical to the "radio vol <n>" branch below.
+//number, otherwise identical to the "radio vol <n>" branch below. The new level shows in
+//the status bar (VOL:xx), so there's no line printed here.
 void radioAdjustVolume(int delta) {
     int volume;
     portENTER_CRITICAL(&radioMux);
@@ -410,7 +436,6 @@ void radioAdjustVolume(int delta) {
     if (radioTaskHandle != NULL) {
         radioPostCommand(RADIO_CMD_VOLUME, NULL, volume);
     }
-    outLine("radio: volume " + String(volume) + "/" + String(RADIO_VOLUME_MAX));
 }
 
 //Expected forms: radio | radio status | radio play [url] | radio pause | radio stop | radio vol <0-21>
@@ -481,7 +506,6 @@ void handleRadioCommand(const String parts[], int partCount) {
         if (radioTaskHandle != NULL) {
             radioPostCommand(RADIO_CMD_VOLUME, NULL, volume);
         }
-        outLine("radio: volume " + String(volume) + "/" + String(RADIO_VOLUME_MAX));
         return;
     }
 
