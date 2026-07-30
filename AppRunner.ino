@@ -7,26 +7,14 @@
 #include <FS.h>
 #include <SD_MMC.h>
 #include <esp_heap_caps.h>
+#include <esp_system.h>
 
 const int DAPP_MAX_LINES = 160;
 const int DAPP_MAX_LABELS = 32;
 const int DAPP_MAX_VARS = 16;
-const int DAPP_MAX_STEPS = 1200;
-
-struct DappLine {
-    String text;
-};
-
-struct DappLabel {
-    String name;
-    int lineIndex;
-};
-
-struct DappVar {
-    String name;
-    long value;
-    bool used;
-};
+const int DAPP_MAX_STRING_VARS = 8;
+const int DAPP_MAX_STRING_LEN = 512;
+const int DAPP_MAX_STEPS = 4000;
 
 static bool endsWithIgnoreCase(String value, const String& suffix) {
     value.toLowerCase();
@@ -229,6 +217,36 @@ static int appEnsureVar(DappVar vars[], const String& name) {
     return -1;
 }
 
+static int appFindStringVar(DappStringVar vars[], const String& name) {
+    for (int i = 0; i < DAPP_MAX_STRING_VARS; i++) {
+        if (vars[i].used && vars[i].name == name) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+static int appEnsureStringVar(DappStringVar vars[], const String& name) {
+    int existing = appFindStringVar(vars, name);
+    if (existing >= 0) {
+        return existing;
+    }
+    for (int i = 0; i < DAPP_MAX_STRING_VARS; i++) {
+        if (!vars[i].used) {
+            vars[i].used = true;
+            vars[i].name = name;
+            vars[i].value = "";
+            vars[i].value.reserve(80);
+            return i;
+        }
+    }
+    return -1;
+}
+
+static void appSetStringValue(DappStringVar vars[], int slot, const String& value) {
+    vars[slot].value = value.substring(0, DAPP_MAX_STRING_LEN);
+}
+
 static bool appIsInteger(const String& token) {
     if (token.length() == 0) {
         return false;
@@ -279,10 +297,14 @@ static long appValueOf(String token, DappVar vars[]) {
     return appBuiltinValue(token);
 }
 
-static String appStringValueOf(String token, DappVar vars[]) {
+static String appStringValueOf(String token, DappVar vars[], DappStringVar stringVars[]) {
     token.trim();
     if (token.startsWith("$")) {
         token.remove(0, 1);
+    }
+    int stringSlot = appFindStringVar(stringVars, token);
+    if (stringSlot >= 0) {
+        return stringVars[stringSlot].value;
     }
     int slot = appFindVar(vars, token);
     if (slot >= 0) {
@@ -301,7 +323,7 @@ static String appStringValueOf(String token, DappVar vars[]) {
     return "";
 }
 
-static String appExpandText(String text, DappVar vars[]) {
+static String appExpandText(String text, DappVar vars[], DappStringVar stringVars[]) {
     text = stripMatchingQuotes(text);
     String out = "";
     for (int i = 0; i < text.length(); i++) {
@@ -321,10 +343,24 @@ static String appExpandText(String text, DappVar vars[]) {
         }
 
         String name = text.substring(start, end);
-        out += appStringValueOf(name, vars);
+        out += appStringValueOf(name, vars, stringVars);
         i = end - 1;
     }
     return out;
+}
+
+static String appStringOperand(String token, DappVar vars[], DappStringVar stringVars[]) {
+    token.trim();
+    bool explicitVariable = token.startsWith("$");
+    bool quoted = token.length() >= 2 &&
+        ((token[0] == '"' && token[token.length() - 1] == '"') ||
+         (token[0] == '\'' && token[token.length() - 1] == '\''));
+
+    if (explicitVariable || (!quoted && appFindStringVar(stringVars, token) >= 0) || (!quoted && appFindVar(vars, token) >= 0)) {
+        return appStringValueOf(token, vars, stringVars);
+    }
+
+    return appExpandText(token, vars, stringVars);
 }
 
 static void appDelay(unsigned long waitMs) {
@@ -338,6 +374,37 @@ static void appDelay(unsigned long waitMs) {
     }
 }
 
+static String appReadInput(const String& prompt) {
+    String input = "";
+    commandCursorPos = 0;
+
+    if (telnetClient && telnetClient.connected()) {
+        telnetClient.print(prompt);
+    }
+
+    while (true) {
+        LineInputResult r = readLineEditedInput(input);
+        if (r == LINE_NO_INPUT) {
+            r = readKeyboardLineEditedInput(input);
+        }
+        setActiveInput(prompt, input, false);
+        ftpService();
+        radioService();
+        maintainInternetConnection();
+        drawDisplayFrame();
+
+        if (r == LINE_SUBMITTED) {
+            String submitted = input;
+            submitted.trim();
+            commandCursorPos = 0;
+            outLine(prompt + submitted, C_CYAN);
+            return submitted;
+        }
+
+        delay(1);
+    }
+}
+
 static bool appCompare(long left, const String& op, long right) {
     if (op == "==" || op == "=") return left == right;
     if (op == "!=" || op == "<>") return left != right;
@@ -346,6 +413,20 @@ static bool appCompare(long left, const String& op, long right) {
     if (op == ">=") return left >= right;
     if (op == "<=") return left <= right;
     return false;
+}
+
+static long appRandomRange(long low, long high) {
+    if (high < low) {
+        long tmp = low;
+        low = high;
+        high = tmp;
+    }
+
+    uint32_t span = (uint32_t)(high - low + 1);
+    if (span == 0) {
+        return low;
+    }
+    return low + (long)(esp_random() % span);
 }
 
 static bool appLoad(File& file, DappLine lines[], int& lineCount, DappLabel labels[], int& labelCount) {
@@ -388,6 +469,7 @@ static bool appLoad(File& file, DappLine lines[], int& lineCount, DappLabel labe
 
 static bool appExecute(DappLine lines[], int lineCount, DappLabel labels[], int labelCount) {
     DappVar vars[DAPP_MAX_VARS] = {};
+    DappStringVar stringVars[DAPP_MAX_STRING_VARS] = {};
     int pc = 0;
     int steps = 0;
     int color = C_WHITE;
@@ -412,7 +494,7 @@ static bool appExecute(DappLine lines[], int lineCount, DappLabel labels[], int 
         if (op == "LABEL") {
             continue;
         } else if (op == "PRINT" || op == "ECHO") {
-            outLine(appExpandText(arg, vars), color);
+            outLine(appExpandText(arg, vars, stringVars), color);
         } else if (op == "COLOR") {
             color = appColorByName(arg);
         } else if (op == "CLEAR" || op == "CLS") {
@@ -432,6 +514,46 @@ static bool appExecute(DappLine lines[], int lineCount, DappLabel labels[], int 
                 return false;
             }
             vars[slot].value = appValueOf(parts[1], vars);
+        } else if (op == "SETSTR") {
+            String parts[2];
+            int count = splitCommand(arg, parts, 2);
+            if (count < 2) {
+                outLine("run: SETSTR needs <name> <text>", C_RED);
+                return false;
+            }
+            int slot = appEnsureStringVar(stringVars, parts[0]);
+            if (slot < 0) {
+                outLine("run: too many string variables", C_RED);
+                return false;
+            }
+            appSetStringValue(stringVars, slot, appExpandText(parts[1], vars, stringVars));
+        } else if (op == "APPEND") {
+            String parts[2];
+            int count = splitCommand(arg, parts, 2);
+            if (count < 2) {
+                outLine("run: APPEND needs <name> <text>", C_RED);
+                return false;
+            }
+            int slot = appEnsureStringVar(stringVars, parts[0]);
+            if (slot < 0) {
+                outLine("run: too many string variables", C_RED);
+                return false;
+            }
+            appSetStringValue(stringVars, slot, stringVars[slot].value + appExpandText(parts[1], vars, stringVars));
+        } else if (op == "INPUT") {
+            String parts[2];
+            int count = splitCommand(arg, parts, 2);
+            if (count < 1) {
+                outLine("run: INPUT needs <name> [prompt]", C_RED);
+                return false;
+            }
+            int slot = appEnsureStringVar(stringVars, parts[0]);
+            if (slot < 0) {
+                outLine("run: too many string variables", C_RED);
+                return false;
+            }
+            String prompt = count >= 2 ? appExpandText(parts[1], vars, stringVars) : parts[0] + "> ";
+            appSetStringValue(stringVars, slot, appReadInput(prompt));
         } else if (op == "ADD") {
             String parts[2];
             int count = splitCommand(arg, parts, 2);
@@ -445,6 +567,29 @@ static bool appExecute(DappLine lines[], int lineCount, DappLabel labels[], int 
                 return false;
             }
             vars[slot].value += appValueOf(parts[1], vars);
+        } else if (op == "RAND") {
+            String parts[3];
+            int count = splitCommand(arg, parts, 3);
+            if (count < 2) {
+                outLine("run: RAND needs <name> <max> or <name> <min> <max>", C_RED);
+                return false;
+            }
+            int slot = appEnsureVar(vars, parts[0]);
+            if (slot < 0) {
+                outLine("run: too many variables", C_RED);
+                return false;
+            }
+
+            if (count == 2) {
+                long maxExclusive = appValueOf(parts[1], vars);
+                if (maxExclusive <= 0) {
+                    outLine("run: RAND max must be greater than 0", C_RED);
+                    return false;
+                }
+                vars[slot].value = appRandomRange(0, maxExclusive - 1);
+            } else {
+                vars[slot].value = appRandomRange(appValueOf(parts[1], vars), appValueOf(parts[2], vars));
+            }
         } else if (op == "GOTO") {
             int target = appFindLabel(labels, labelCount, arg);
             if (target < 0) {
@@ -465,6 +610,24 @@ static bool appExecute(DappLine lines[], int lineCount, DappLabel labels[], int 
                 int target = appFindLabel(labels, labelCount, parts[4]);
                 if (target < 0) {
                     outLine("run: label not found: " + parts[4], C_RED);
+                    return false;
+                }
+                pc = target;
+            }
+        } else if (op == "IFEQ" || op == "IFNE") {
+            String parts[4];
+            int count = splitCommand(arg, parts, 4);
+            String jumpOp = (count >= 3) ? parts[2] : "";
+            jumpOp.toUpperCase();
+            if (count < 4 || jumpOp != "GOTO") {
+                outLine("run: " + op + " syntax is " + op + " <left> <right> GOTO <label>", C_RED);
+                return false;
+            }
+            bool equal = appStringOperand(parts[0], vars, stringVars) == appStringOperand(parts[1], vars, stringVars);
+            if ((op == "IFEQ" && equal) || (op == "IFNE" && !equal)) {
+                int target = appFindLabel(labels, labelCount, parts[3]);
+                if (target < 0) {
+                    outLine("run: label not found: " + parts[3], C_RED);
                     return false;
                 }
                 pc = target;

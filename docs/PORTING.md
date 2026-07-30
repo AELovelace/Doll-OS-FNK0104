@@ -39,6 +39,7 @@ calls changed (`addWrappedHistoryLine(...)` -> `outLine(...)`):
 - `SysInfo.ino`: heap instrumentation (`free`), extended with a real `battery`
   command -- see below
 - `Motoko.ino`: MQTT chat, same Q&A shape
+- `Asuka.ino`: native local LLM text chat command over DS's existing shell
 - `Ssh.ino`: libssh_esp32 client, same dedicated-FreeRTOS-task pattern (mbedtls's
   handshake still needs more stack than the loop task provides, board-independent)
 
@@ -259,6 +260,30 @@ this is a battery device, and a power loss partway through an in-place write
 destroys the file being edited rather than just failing. Tabs are stored as real
 tabs and expanded only at render time, so Makefile-style files survive a round
 trip; CRLF input is normalized to LF on load.
+
+### ASUKA (new, not from DOLL-OS)
+
+`Asuka.ino` adds `asuka [host] [port]` as a native shell command for local LLM
+chat. It deliberately uses DS's existing telnet server, BLE-keyboard line editor,
+`outLine()` history, and TFT display stream instead of starting ASUKA's old
+webserver, MQTT listener, or separate telnet console. Defaults live in `config.h`
+as `ASUKA_DEFAULT_LLM_HOST`, `ASUKA_DEFAULT_LLM_PORT`,
+`ASUKA_DEFAULT_LLM_PATH`, `ASUKA_BRAVE_API_KEY`,
+`ASUKA_OPENWEATHER_API_KEY`, `ASUKA_OPENWEATHER_LOCATION_LABEL`,
+`ASUKA_OPENWEATHER_LAT`, `ASUKA_OPENWEATHER_LON`, `ASUKA_SYSTEM_PROMPT`, and
+`ASUKA_CLASSIFIER_PROMPT`. ASUKA seeds missing prompt files into LittleFS when
+the command starts: `/asuka-system.txt` for the chat system prompt and
+`/asuka-classifier.txt` for the tool-selection/classifier prompt. Runtime
+`/system <prompt>` and `/classifier <prompt>` changes are saved back to those
+files; `/system reset` and `/classifier reset` restore the compiled defaults and
+save them back to flash. Weather questions call OpenWeather directly for the
+configured coordinates; `/weather` shows the active location and `/weather <lat>
+<lon> <label>` changes it for the current ASUKA session.
+
+The `.dapp` runner remains separate. It now has interactive string primitives
+(`INPUT`, `SETSTR`, `APPEND`, `IFEQ`, `IFNE`) for small scripts, but LLM sockets
+and streaming stay native so the app format does not become a fragile HTTP/JSON
+runtime.
 
 ## Known constraints worth flagging
 

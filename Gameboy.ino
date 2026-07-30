@@ -73,6 +73,8 @@ static bool gbFitMode = true;
 // needs roughly one frame in four to leave any slack at all; at 2 the loop can
 // just barely hold realtime, which is no margin for a heavier scene.
 static const int kMaxFrameSkip = 3;
+static const int kGbRomMenuMax = 128;
+static const char* kGbRomDir = "/sd/gb";
 
 static void gbFreeScale() {
     if (gbScaleBuf) { heap_caps_free(gbScaleBuf); gbScaleBuf = nullptr; }
@@ -186,6 +188,303 @@ static String gbSiblingPath(const String& romVfs, const char* ext) {
 
 static String gbSavePath(const String& romVfs) { return gbSiblingPath(romVfs, ".sav"); }
 static String gbStatePath(const String& romVfs) { return gbSiblingPath(romVfs, ".gbs"); }
+
+static bool gbIsDisplayModeArg(const String& arg) {
+    return arg == "1x" || arg == "fit";
+}
+
+static bool gbIsHelpArg(const String& arg) {
+    return arg == "help" || arg == "-h" || arg == "--help" || arg == "?";
+}
+
+static bool gbIsRomFileName(String name) {
+    name.toLowerCase();
+    return name.endsWith(".gb") || name.endsWith(".gbc");
+}
+
+static String gbBaseName(String path) {
+    int slash = path.lastIndexOf('/');
+    if (slash >= 0) return path.substring(slash + 1);
+    return path;
+}
+
+static bool gbNameLess(const String& a, const String& b) {
+    String al = a;
+    String bl = b;
+    al.toLowerCase();
+    bl.toLowerCase();
+    return al < bl;
+}
+
+static void gbInsertRomName(String names[], int& count, const String& name, bool& truncated) {
+    if (count >= kGbRomMenuMax) {
+        truncated = true;
+        return;
+    }
+
+    int insertAt = count;
+    while (insertAt > 0 && gbNameLess(name, names[insertAt - 1])) {
+        names[insertAt] = names[insertAt - 1];
+        insertAt--;
+    }
+    names[insertAt] = name;
+    count++;
+}
+
+static int gbCollectRomNames(String names[], bool& truncated) {
+    truncated = false;
+    int count = 0;
+    if (!sdCardMounted) return 0;
+
+    RoutedPath r = routePath(kGbRomDir);
+    File dir = r.fs->open(r.realPath);
+    if (!dir || !dir.isDirectory()) {
+        if (dir) dir.close();
+        return 0;
+    }
+
+    File entry = dir.openNextFile();
+    while (entry) {
+        if (!entry.isDirectory()) {
+            String name = gbBaseName(entry.name());
+            if (gbIsRomFileName(name)) {
+                gbInsertRomName(names, count, name, truncated);
+            }
+        }
+        entry.close();
+        entry = dir.openNextFile();
+    }
+    dir.close();
+    return count;
+}
+
+static String gbFitMenuText(String text, int maxWidth) {
+    if (frameSprite.textWidth(text) <= maxWidth) return text;
+    if (maxWidth <= 0) return "";
+
+    while (text.length() > 1 && frameSprite.textWidth(text + "~") > maxWidth) {
+        text.remove(text.length() - 1);
+    }
+    return text + "~";
+}
+
+static void gbDrawRomMenu(String names[], int count, int selected, bool truncated) {
+    const int rowH = 18;
+    const int top = 28;
+    const int left = 14;
+    const int width = DISPLAY_WIDTH - left * 2;
+    const int listTop = top + 28;
+    const int footY = DISPLAY_HEIGHT - 30;
+    int visibleRows = (footY - listTop - 4) / rowH;
+    if (visibleRows < 3) visibleRows = 3;
+    if (visibleRows > count) visibleRows = count;
+
+    int first = selected - visibleRows / 2;
+    if (first < 0) first = 0;
+    if (first + visibleRows > count) first = count - visibleRows;
+    if (first < 0) first = 0;
+
+    frameSprite.fillSprite(TFT_BLACK);
+    frameSprite.setTextDatum(TL_DATUM);
+    frameSprite.setTextColor(TFT_PINK, TFT_BLACK);
+    frameSprite.drawString("GAME BOY ROMS", left, top);
+
+    frameSprite.setTextDatum(TR_DATUM);
+    frameSprite.setTextColor(TFT_CYAN, TFT_BLACK);
+    frameSprite.drawString(String(selected + 1) + "/" + String(count), DISPLAY_WIDTH - left, top);
+    frameSprite.setTextDatum(TL_DATUM);
+
+    frameSprite.drawFastHLine(left, top + 14, width, TFT_PINK);
+
+    for (int row = 0; row < visibleRows; row++) {
+        const int idx = first + row;
+        const int y = listTop + row * rowH;
+        const bool on = idx == selected;
+        frameSprite.setTextColor(on ? TFT_YELLOW : TFT_WHITE, TFT_BLACK);
+        frameSprite.drawString(on ? ">" : " ", left, y);
+        frameSprite.drawString(gbFitMenuText(names[idx], width - 18), left + 12, y);
+    }
+
+    frameSprite.setTextColor(TFT_DARKGREY, TFT_BLACK);
+    if (first > 0) frameSprite.drawString("^ more", left, listTop - 12);
+    if (first + visibleRows < count) frameSprite.drawString("v more", left, footY - 14);
+
+    frameSprite.setTextColor(truncated ? TFT_YELLOW : TFT_DARKGREY, TFT_BLACK);
+    frameSprite.drawString(truncated ? "showing first 128 ROMs" : "W/S move  N/Enter ok  M/Esc cancel",
+                           left, footY);
+    if (truncated) {
+        frameSprite.setTextColor(TFT_DARKGREY, TFT_BLACK);
+        frameSprite.drawString("W/S move  N/Enter ok  M/Esc cancel", left, footY + 12);
+    }
+    frameSprite.setTextColor(TFT_WHITE, TFT_BLACK);
+    pushDisplayFrame();
+}
+
+enum GbTelnetEscState : uint8_t {
+    GB_TELNET_NORMAL,
+    GB_TELNET_ESC,
+    GB_TELNET_CSI,
+};
+
+static GbTelnetEscState gbTelnetEscState = GB_TELNET_NORMAL;
+static uint32_t gbTelnetEscAtMs = 0;
+
+static void gbResetTelnetMenuInput() {
+    gbTelnetEscState = GB_TELNET_NORMAL;
+    gbTelnetEscAtMs = 0;
+}
+
+static uint8_t gbPumpTelnetMenuInput(uint8_t& pressed) {
+    uint8_t events = 0;
+    pressed = 0;
+
+    if (gbTelnetEscState == GB_TELNET_ESC && millis() - gbTelnetEscAtMs > 40) {
+        events |= GB_EVT_MENU;
+        gbTelnetEscState = GB_TELNET_NORMAL;
+    }
+
+    int b;
+    while ((b = telnetReadFilteredByte()) >= 0) {
+        uint8_t by = (uint8_t)b;
+        if (gbTelnetEscState == GB_TELNET_ESC) {
+            if (by == '[') {
+                gbTelnetEscState = GB_TELNET_CSI;
+            } else {
+                events |= GB_EVT_MENU;
+                gbTelnetEscState = GB_TELNET_NORMAL;
+            }
+            continue;
+        }
+        if (gbTelnetEscState == GB_TELNET_CSI) {
+            if (by == 'A') pressed |= GameBoyHost::kUp;
+            else if (by == 'B') pressed |= GameBoyHost::kDown;
+            else if (by == 'C') pressed |= GameBoyHost::kRight;
+            else if (by == 'D') pressed |= GameBoyHost::kLeft;
+            if (by >= 0x40 && by <= 0x7E) gbTelnetEscState = GB_TELNET_NORMAL;
+            continue;
+        }
+
+        if (by == 0x14 || by == 0x03) {   // Ctrl+T or Ctrl+C
+            events |= GB_EVT_QUIT;
+        } else if (by == 0x1B) {
+            gbTelnetEscState = GB_TELNET_ESC;
+            gbTelnetEscAtMs = millis();
+        } else if (by == '\r' || by == '\n') {
+            pressed |= GameBoyHost::kStart;
+        } else if (by == 'w' || by == 'W') {
+            pressed |= GameBoyHost::kUp;
+        } else if (by == 's' || by == 'S') {
+            pressed |= GameBoyHost::kDown;
+        } else if (by == 'a' || by == 'A') {
+            pressed |= GameBoyHost::kLeft;
+        } else if (by == 'd' || by == 'D') {
+            pressed |= GameBoyHost::kRight;
+        } else if (by == 'n' || by == 'N') {
+            pressed |= GameBoyHost::kA;
+        } else if (by == 'm' || by == 'M') {
+            pressed |= GameBoyHost::kB;
+        }
+    }
+    return events;
+}
+
+static bool gbPickRom(String& romLogical) {
+    if (!sdCardMounted) {
+        outLine("gb: SD not mounted (insert card and reboot)", C_RED);
+        return false;
+    }
+
+    static String names[kGbRomMenuMax];
+    bool truncated = false;
+    int count = gbCollectRomNames(names, truncated);
+    if (count == 0) {
+        outLine("gb: no .gb/.gbc files found in /sd/gb", C_YELLOW);
+        return false;
+    }
+
+    outLine("gb: choose a ROM from /sd/gb", C_CYAN);
+    drawDisplayFrame();
+
+    slaveLinkSendLine("GAME 1");
+    delay(20);
+    gbResetTelnetMenuInput();
+
+    uint8_t buttons = 0;
+    uint8_t prev = 0;
+    int selected = 0;
+    bool redraw = true;
+
+    for (;;) {
+        if (redraw) {
+            gbDrawRomMenu(names, count, selected, truncated);
+            redraw = false;
+        }
+
+        uint8_t telnetPressed = 0;
+        uint8_t events = gbPumpInput(buttons);
+        events |= gbPumpTelnetMenuInput(telnetPressed);
+        if (events & (GB_EVT_QUIT | GB_EVT_MENU)) {
+            slaveLinkSendLine("GAME 0");
+            outLine("gb: ROM selection cancelled", C_YELLOW);
+            return false;
+        }
+
+        uint8_t pressed = (buttons & ~prev) | telnetPressed;
+        prev = buttons;
+        if (pressed == 0) {
+            delay(15);
+            continue;
+        }
+
+        if (pressed & GameBoyHost::kUp) {
+            selected = (selected + count - 1) % count;
+            redraw = true;
+            continue;
+        }
+        if (pressed & GameBoyHost::kDown) {
+            selected = (selected + 1) % count;
+            redraw = true;
+            continue;
+        }
+        if (pressed & GameBoyHost::kLeft) {
+            selected -= 10;
+            if (selected < 0) selected = 0;
+            redraw = true;
+            continue;
+        }
+        if (pressed & GameBoyHost::kRight) {
+            selected += 10;
+            if (selected >= count) selected = count - 1;
+            redraw = true;
+            continue;
+        }
+        if (pressed & GameBoyHost::kB) {
+            slaveLinkSendLine("GAME 0");
+            outLine("gb: ROM selection cancelled", C_YELLOW);
+            return false;
+        }
+        if (pressed & (GameBoyHost::kA | GameBoyHost::kStart)) {
+            slaveLinkSendLine("GAME 0");
+            romLogical = String(kGbRomDir) + "/" + names[selected];
+            return true;
+        }
+    }
+}
+
+static void gbPrintUsage() {
+    outLine("Usage: gb [rom.gb|.gbc] [1x|fit]", C_CYAN);
+    outLine("  Bare 'gb' opens the /sd/gb ROM picker.", C_CYAN);
+    outLine("  ROM path is a normal DS path (e.g. /sd/roms/zelda.gb).", C_CYAN);
+    outLine("  fit (default) fills the panel but costs ~38ms of SPI per push,", C_CYAN);
+    outLine("  so most frames go undrawn; 1x is small but near-smooth.", C_CYAN);
+    outLine("  Controls (BLE keyboard via slave): WASD/arrows=D-pad, N=A,", C_CYAN);
+    outLine("  M=B, Enter=Start, \\=Select, Ctrl+T=quit.", C_CYAN);
+    outLine("  Xbox pad via slave: stick/d-pad, A=A, B=B, Menu=Start,", C_CYAN);
+    outLine("  View=Select, LB=this menu, LB+RB=quit.", C_CYAN);
+    outLine("  Esc opens the settings menu: display mode, volume, save/load", C_CYAN);
+    outLine("  state, resume, quit. States sit next to the ROM as <name>.gbs.", C_CYAN);
+    outLine("  Volume is shared with the radio ('radio vol <0-21>').", C_CYAN);
+}
 
 //---------------------------------------------------------------------------
 //   Settings menu (Escape while a game runs)
@@ -375,24 +674,20 @@ static bool gbRunMenu(uint8_t& buttons) {
 }
 
 void handleGbCommand(const String parts[], int partCount) {
-    if (partCount < 2) {
-        outLine("Usage: gb <rom.gb|.gbc> [1x|fit]", C_CYAN);
-        outLine("  ROM path is a normal DS path (e.g. /sd/roms/zelda.gb).", C_CYAN);
-        outLine("  fit (default) fills the panel but costs ~38ms of SPI per push,", C_CYAN);
-        outLine("  so most frames go undrawn; 1x is small but near-smooth.", C_CYAN);
-        outLine("  Controls (BLE keyboard via slave): WASD/arrows=D-pad, N=A,", C_CYAN);
-        outLine("  M=B, Enter=Start, \\=Select, Ctrl+T=quit.", C_CYAN);
-        outLine("  Xbox pad via slave: stick/d-pad, A=A, B=B, Menu=Start,", C_CYAN);
-        outLine("  View=Select, LB=this menu, LB+RB=quit.", C_CYAN);
-        outLine("  Esc opens the settings menu: display mode, volume, save/load", C_CYAN);
-        outLine("  state, resume, quit. States sit next to the ROM as <name>.gbs.", C_CYAN);
-        outLine("  Volume is shared with the radio ('radio vol <0-21>').", C_CYAN);
+    String romLogical;
+    if (partCount >= 2 && gbIsHelpArg(parts[1])) {
+        gbPrintUsage();
         return;
     }
+    if (partCount < 2 || (partCount == 2 && gbIsDisplayModeArg(parts[1]))) {
+        gbFitMode = !(partCount == 2 && parts[1] == "1x");
+        if (!gbPickRom(romLogical)) return;
+    } else {
+        romLogical = parts[1];
+        gbFitMode = !(partCount >= 3 && parts[2] == "1x");
+    }
 
-    gbFitMode = !(partCount >= 3 && parts[2] == "1x");
-
-    String romVfs = gbVfsPath(parts[1]);
+    String romVfs = gbVfsPath(romLogical);
     gbRomVfs = romVfs;   // the menu builds its state path from this
     if (romVfs.isEmpty()) {
         outLine("gb: SD not mounted (insert card and reboot)", C_RED);
@@ -428,7 +723,7 @@ void handleGbCommand(const String parts[], int partCount) {
         outLine("gb: audio unavailable -- running silent", C_YELLOW);
     }
 
-    outLine("gb: launching " + parts[1] + " -- Ctrl+T to quit", C_GREEN);
+    outLine("gb: launching " + romLogical + " -- Ctrl+T to quit", C_GREEN);
     drawDisplayFrame();   // flush that line to the panel before we take it over
 
     // Hand the panel and the keyboard over to the game.

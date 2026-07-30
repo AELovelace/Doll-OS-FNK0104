@@ -92,9 +92,9 @@ struct CommandEntry {
 };
 
 void helpCommandHandler(const String parts[], int partCount) {
-    outLine("Commands: apps, battery, calc, cat, cd, clear, dice, edit, free, ftp, gb,");
-    outLine("          help, ip, ls, motoko, ping, pwd, radio, reboot, slave, ssh,");
-    outLine("          run, status, telnet, uptime, usb, wifi");
+    outLine("Commands: apps, asuka, battery, calc, cat, cd, clear, cp, del, dice, edit,");
+    outLine("          ftp, gb, help, ip, ls, mkdir, motoko, mv, ping, pwd, radio,");
+    outLine("          reboot, rm, run, slave, ssh, status, telnet, uptime, usb, wifi");
 }
 
 void handleRebootCommand(const String parts[], int partCount) {
@@ -136,10 +136,13 @@ void handleStatusCommand(const String parts[], int partCount) {
 //sorted alphabetically for readability; lookup is a linear scan since the table is small
 static const CommandEntry commandTable[] = {
     { "apps",   handleAppsCommand },
+    { "asuka",  handleAsukaCommand },
     { "battery", handleBatteryCommand },
     { "calc",   handleCalcCommand },
     { "cat",    handleCatCommand },
     { "cd",     handleCdCommand },
+    { "cp",     handleCpCommand },
+    { "del",    handleDelCommand },
     { "dice",   handleDiceCommand },
     { "edit",   handleEditCommand },
     { "free",   handleFreeCommand },
@@ -148,11 +151,14 @@ static const CommandEntry commandTable[] = {
     { "help",   helpCommandHandler },
     { "ip",     handleIpCommand },
     { "ls",     handleLsCommand },
+    { "mkdir",  handleMkdirCommand },
     { "motoko", handleMotokoCommand },
+    { "mv",     handleMvCommand },
     { "ping",   handlePingCommand },
     { "pwd",    handlePwdCommand },
     { "radio",  handleRadioCommand },
     { "reboot", handleRebootCommand },
+    { "rm",     handleRmCommand },
     { "run",    handleRunCommand },
     { "slave",  handleSlaveCommand },
     { "ssh",    handleSshCommand },

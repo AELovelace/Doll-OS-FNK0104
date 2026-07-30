@@ -74,6 +74,7 @@ struct LineEditState {
 //Motoko.ino and Ssh.ino call it but sort alphabetically before TelnetServer.ino in
 //the concatenated build
 LineInputResult readLineEditedInput(String& text);
+int telnetReadFilteredByte();
 
 //keyboard-bridge counterparts of the two telnet input readers, needed by callers that sort
 //before KeyboardSerial.ino in the concatenated build (RemoteSession.ino, Ssh.ino). See
@@ -136,12 +137,36 @@ struct RoutedPath {
     bool isSd;
 };
 
+//AppRunner.ino: these live here instead of inside AppRunner.ino because the Arduino
+//builder hoists prototypes for static functions above the tab's own type definitions.
+struct DappLine {
+    String text;
+};
+
+struct DappLabel {
+    String name;
+    int lineIndex;
+};
+
+struct DappVar {
+    String name;
+    long value;
+    bool used;
+};
+
+struct DappStringVar {
+    String name;
+    String value;
+    bool used;
+};
+
 //shared helpers used across app/file command tabs
 int splitCommand(const String& input, String parts[], int maxParts);
 String resolvePath(const String& cwd, const String& inputPath);
 RoutedPath routePath(const String& resolvedPath);
 void handleAppsCommand(const String parts[], int partCount);
 void handleRunCommand(const String parts[], int partCount);
+void handleAsukaCommand(const String parts[], int partCount);
 void ftpService();
 void radioService();
 void maintainInternetConnection();
@@ -313,6 +338,11 @@ extern DisplayStreamState remoteTelnetDisplayStream;
 //which DisplayStreamState currently "owns" the last row in displayHistoryRows --
 //nullptr = no stream owns an open row right now
 DisplayStreamState* displayOpenRowOwner = nullptr;
+
+void displayStreamReset(DisplayStreamState& st);
+void displayStreamNewline(DisplayStreamState& st);
+void displayStreamPutChar(DisplayStreamState& st, char ch, uint16_t color);
+void displayStreamCarriageReturn(DisplayStreamState& st);
 
 //   Shared modal loop for character-oriented remote sessions (ssh shell, outbound
 //   telnet client). Port of DOLL-OS's RemoteSession: same shape, but both ends of

@@ -149,6 +149,203 @@ bool directoryExists(const String& resolvedPath) {
     return ok;
 }
 
+static bool pathIsProtectedRoot(const String& resolvedPath) {
+    return resolvedPath == "/" || resolvedPath == SD_MOUNT;
+}
+
+static String parentPathOf(const String& resolvedPath) {
+    if (resolvedPath == "/" || resolvedPath.length() == 0) {
+        return "/";
+    }
+    int slash = resolvedPath.lastIndexOf('/');
+    if (slash <= 0) {
+        return "/";
+    }
+    return resolvedPath.substring(0, slash);
+}
+
+static String baseNameOf(const String& resolvedPath) {
+    if (resolvedPath == "/" || resolvedPath.length() == 0) {
+        return "";
+    }
+    int slash = resolvedPath.lastIndexOf('/');
+    if (slash < 0) {
+        return resolvedPath;
+    }
+    return resolvedPath.substring(slash + 1);
+}
+
+static String childPathOf(const String& parentResolved, bool parentIsSd, const String& childName) {
+    if (childName.startsWith("/")) {
+        return parentIsSd ? SD_MOUNT + childName : childName;
+    }
+    if (parentResolved == "/") {
+        return "/" + childName;
+    }
+    return parentResolved + "/" + childName;
+}
+
+static bool ensureMountedForPath(const String& commandName, const RoutedPath& r) {
+    if (r.isSd && !sdCardMounted) {
+        outLine(commandName + ": SD not mounted (insert card and reboot)", C_RED);
+        return false;
+    }
+    return true;
+}
+
+static bool removeResolvedPath(const String& commandName, const String& resolvedPath, bool recursive) {
+    if (pathIsProtectedRoot(resolvedPath)) {
+        outLine(commandName + ": refusing to remove " + resolvedPath, C_RED);
+        return false;
+    }
+
+    RoutedPath r = routePath(resolvedPath);
+    if (!ensureMountedForPath(commandName, r)) {
+        return false;
+    }
+
+    File entry = r.fs->open(r.realPath);
+    if (!entry) {
+        outLine(commandName + ": " + resolvedPath + " not found", C_RED);
+        return false;
+    }
+
+    if (!entry.isDirectory()) {
+        entry.close();
+        if (!r.fs->remove(r.realPath)) {
+            outLine(commandName + ": could not remove " + resolvedPath, C_RED);
+            return false;
+        }
+        return true;
+    }
+
+    if (!recursive) {
+        File child = entry.openNextFile();
+        bool hasChild = child;
+        if (child) {
+            child.close();
+        }
+        entry.close();
+        if (hasChild) {
+            outLine(commandName + ": " + resolvedPath + " is a directory (use -r)", C_RED);
+            return false;
+        }
+        if (!r.fs->rmdir(r.realPath)) {
+            outLine(commandName + ": could not remove directory " + resolvedPath, C_RED);
+            return false;
+        }
+        return true;
+    }
+
+    File child = entry.openNextFile();
+    while (child) {
+        String childName = child.name();
+        child.close();
+        if (!removeResolvedPath(commandName, childPathOf(resolvedPath, r.isSd, childName), true)) {
+            entry.close();
+            return false;
+        }
+        child = entry.openNextFile();
+    }
+    entry.close();
+
+    if (!r.fs->rmdir(r.realPath)) {
+        outLine(commandName + ": could not remove directory " + resolvedPath, C_RED);
+        return false;
+    }
+    return true;
+}
+
+static bool copyResolvedFile(const String& sourceResolved, const String& destResolved, bool overwrite) {
+    RoutedPath source = routePath(sourceResolved);
+    RoutedPath dest = routePath(destResolved);
+    if (!ensureMountedForPath("cp", source) || !ensureMountedForPath("cp", dest)) {
+        return false;
+    }
+
+    File in = source.fs->open(source.realPath, "r");
+    if (!in) {
+        outLine("cp: " + sourceResolved + " not found", C_RED);
+        return false;
+    }
+    if (in.isDirectory()) {
+        in.close();
+        outLine("cp: " + sourceResolved + " is a directory", C_RED);
+        return false;
+    }
+
+    String finalDestResolved = destResolved;
+    File destProbe = dest.fs->open(dest.realPath);
+    if (destProbe && destProbe.isDirectory()) {
+        destProbe.close();
+        finalDestResolved = destResolved;
+        if (!finalDestResolved.endsWith("/")) {
+            finalDestResolved += "/";
+        }
+        finalDestResolved += baseNameOf(sourceResolved);
+        dest = routePath(finalDestResolved);
+    } else if (destProbe) {
+        destProbe.close();
+    }
+
+    if (pathIsProtectedRoot(finalDestResolved)) {
+        in.close();
+        outLine("cp: invalid destination " + finalDestResolved, C_RED);
+        return false;
+    }
+
+    File existing = dest.fs->open(dest.realPath);
+    if (existing) {
+        bool isDir = existing.isDirectory();
+        existing.close();
+        if (isDir) {
+            in.close();
+            outLine("cp: " + finalDestResolved + " is a directory", C_RED);
+            return false;
+        }
+        if (!overwrite) {
+            in.close();
+            outLine("cp: " + finalDestResolved + " already exists", C_RED);
+            return false;
+        }
+        dest.fs->remove(dest.realPath);
+    }
+
+    String parent = parentPathOf(finalDestResolved);
+    if (!directoryExists(parent)) {
+        in.close();
+        outLine("cp: destination directory not found: " + parent, C_RED);
+        return false;
+    }
+
+    File out = dest.fs->open(dest.realPath, "w");
+    if (!out) {
+        in.close();
+        outLine("cp: could not create " + finalDestResolved, C_RED);
+        return false;
+    }
+
+    uint8_t buffer[256];
+    while (in.available()) {
+        size_t readCount = in.read(buffer, sizeof(buffer));
+        if (readCount == 0) {
+            break;
+        }
+        if (out.write(buffer, readCount) != readCount) {
+            out.close();
+            in.close();
+            dest.fs->remove(dest.realPath);
+            outLine("cp: write failed for " + finalDestResolved, C_RED);
+            return false;
+        }
+        delay(1);
+    }
+
+    out.close();
+    in.close();
+    return true;
+}
+
 void handleLsCommand(const String parts[], int partCount) {
     String target = (partCount > 1) ? parts[1] : "";
     String resolved = resolvePath(cwd, target);
@@ -220,4 +417,185 @@ void handleCatCommand(const String parts[], int partCount) {
     }
 
     file.close();
+}
+
+void handleMkdirCommand(const String parts[], int partCount) {
+    if (partCount < 2) {
+        outLine("Usage: mkdir <dir>");
+        return;
+    }
+
+    String resolved = resolvePath(cwd, parts[1]);
+    if (pathIsProtectedRoot(resolved)) {
+        outLine("mkdir: invalid path " + resolved, C_RED);
+        return;
+    }
+
+    RoutedPath r = routePath(resolved);
+    if (!ensureMountedForPath("mkdir", r)) {
+        return;
+    }
+
+    File existing = r.fs->open(r.realPath);
+    if (existing) {
+        existing.close();
+        outLine("mkdir: " + resolved + " already exists", C_RED);
+        return;
+    }
+
+    String parent = parentPathOf(resolved);
+    if (!directoryExists(parent)) {
+        outLine("mkdir: parent not found: " + parent, C_RED);
+        return;
+    }
+
+    if (!r.fs->mkdir(r.realPath)) {
+        outLine("mkdir: could not create " + resolved, C_RED);
+        return;
+    }
+    outLine("mkdir: created " + resolved, C_GREEN);
+}
+
+void handleRmCommand(const String parts[], int partCount) {
+    if (partCount < 2) {
+        outLine("Usage: rm [-r] <path>");
+        return;
+    }
+
+    bool recursive = false;
+    int targetIndex = 1;
+    if (parts[1] == "-r" || parts[1] == "-R") {
+        recursive = true;
+        targetIndex = 2;
+    }
+    if (targetIndex >= partCount) {
+        outLine("Usage: rm [-r] <path>");
+        return;
+    }
+
+    String resolved = resolvePath(cwd, parts[targetIndex]);
+    if (removeResolvedPath("rm", resolved, recursive)) {
+        outLine("rm: removed " + resolved, C_GREEN);
+    }
+}
+
+void handleDelCommand(const String parts[], int partCount) {
+    if (partCount < 2) {
+        outLine("Usage: del [-r] <path>");
+        return;
+    }
+
+    bool recursive = false;
+    int targetIndex = 1;
+    if (parts[1] == "-r" || parts[1] == "-R") {
+        recursive = true;
+        targetIndex = 2;
+    }
+    if (targetIndex >= partCount) {
+        outLine("Usage: del [-r] <path>");
+        return;
+    }
+
+    String resolved = resolvePath(cwd, parts[targetIndex]);
+    if (removeResolvedPath("del", resolved, recursive)) {
+        outLine("del: removed " + resolved, C_GREEN);
+    }
+}
+
+void handleCpCommand(const String parts[], int partCount) {
+    if (partCount < 3) {
+        outLine("Usage: cp <source> <dest>");
+        return;
+    }
+
+    String sourceResolved = resolvePath(cwd, parts[1]);
+    String destResolved = resolvePath(cwd, parts[2]);
+    if (copyResolvedFile(sourceResolved, destResolved, false)) {
+        outLine("cp: " + sourceResolved + " -> " + destResolved, C_GREEN);
+    }
+}
+
+void handleMvCommand(const String parts[], int partCount) {
+    if (partCount < 3) {
+        outLine("Usage: mv <source> <dest>");
+        return;
+    }
+
+    String sourceResolved = resolvePath(cwd, parts[1]);
+    if (pathIsProtectedRoot(sourceResolved)) {
+        outLine("mv: refusing to move " + sourceResolved, C_RED);
+        return;
+    }
+
+    RoutedPath source = routePath(sourceResolved);
+    if (!ensureMountedForPath("mv", source)) {
+        return;
+    }
+
+    File sourceFile = source.fs->open(source.realPath, "r");
+    if (!sourceFile) {
+        outLine("mv: " + sourceResolved + " not found", C_RED);
+        return;
+    }
+    bool sourceIsDirectory = sourceFile.isDirectory();
+    sourceFile.close();
+
+    String destResolved = resolvePath(cwd, parts[2]);
+    RoutedPath dest = routePath(destResolved);
+    if (!ensureMountedForPath("mv", dest)) {
+        return;
+    }
+
+    File destProbe = dest.fs->open(dest.realPath);
+    if (destProbe && destProbe.isDirectory()) {
+        destProbe.close();
+        if (!destResolved.endsWith("/")) {
+            destResolved += "/";
+        }
+        destResolved += baseNameOf(sourceResolved);
+        dest = routePath(destResolved);
+    } else if (destProbe) {
+        destProbe.close();
+    }
+
+    if (pathIsProtectedRoot(destResolved)) {
+        outLine("mv: invalid destination " + destResolved, C_RED);
+        return;
+    }
+
+    String parent = parentPathOf(destResolved);
+    if (!directoryExists(parent)) {
+        outLine("mv: destination directory not found: " + parent, C_RED);
+        return;
+    }
+
+    File existing = dest.fs->open(dest.realPath);
+    if (existing) {
+        existing.close();
+        outLine("mv: " + destResolved + " already exists", C_RED);
+        return;
+    }
+
+    if (source.fs == dest.fs) {
+        if (!source.fs->rename(source.realPath, dest.realPath)) {
+            outLine("mv: could not move " + sourceResolved, C_RED);
+            return;
+        }
+        outLine("mv: " + sourceResolved + " -> " + destResolved, C_GREEN);
+        return;
+    }
+
+    if (sourceIsDirectory) {
+        outLine("mv: cross-filesystem directory moves are not supported", C_RED);
+        return;
+    }
+
+    if (!copyResolvedFile(sourceResolved, destResolved, false)) {
+        return;
+    }
+    if (!removeResolvedPath("mv", sourceResolved, false)) {
+        outLine("mv: copied, but could not remove original " + sourceResolved, C_RED);
+        return;
+    }
+    outLine("mv: " + sourceResolved + " -> " + destResolved, C_GREEN);
 }
