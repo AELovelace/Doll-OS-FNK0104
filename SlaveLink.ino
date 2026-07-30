@@ -4,6 +4,10 @@
 //   newline-terminated line commands on its UART1 RX (GPIO18) at 115200 8N1:
 //     HELP  STATUS  KEYBOARDS/PAIRED  FORGET  PAIR  SCAN
 //     LED <0-31>  NUM 0|1  CAPS 0|1  SCROLL 0|1  OUT <hex bytes>
+//     GAME 0|1  PAD [slot] AUTO|KEYBOARD|GAMEPAD  DUMP 0|1  DROP
+//   DS-Slave holds up to two HID devices at once (a keyboard and a controller),
+//   merging their input into one stream, so nothing here needs to care which is
+//   which; "slave status" lists the slots on the slave's own console.
 //
 //   Why bit-bang instead of the hardware UART:
 //     KeyboardSerial (UART1, KeyboardSerial.ino) owns this board's only spare
@@ -125,12 +129,15 @@ static void slaveLinkUsage() {
     outLine("slave <subcommand> -- drive the DS-Slave BLE-keyboard bridge", C_CYAN);
     outLine("  slave status              request STATUS");
     outLine("  slave keyboards|paired    list saved keyboards");
-    outLine("  slave pair                enter BLE pairing mode");
+    outLine("  slave pair                pair one more device (existing ones stay)");
     outLine("  slave scan                rescan / reconnect");
     outLine("  slave forget              clear saved keyboards + bonds");
     outLine("  slave led <0-31>          set the keyboard LED mask");
     outLine("  slave num|caps|scroll 0|1 toggle one lock LED");
     outLine("  slave game 0|1            gamepad mode (button events vs keystrokes)");
+    outLine("  slave pad [slot] auto|keyboard|gamepad  how to parse a peer's reports");
+    outLine("  slave drop                disconnect every paired device (bonds kept)");
+    outLine("  slave dump 0|1            hex-log raw input reports on the slave console");
     outLine("  slave out <hex bytes>     send a raw HID output report");
     outLine("  slave help                ask the slave to print its help");
     outLine("  slave raw <text...>       forward a line verbatim");
@@ -185,6 +192,22 @@ void handleSlaveCommand(const String parts[], int partCount) {
             return;
         }
         line = "GAME " + parts[2];
+    } else if (sub == "pad") {
+        if (partCount < 3) {
+            outLine("usage: slave pad [slot] auto|keyboard|gamepad", C_RED);
+            return;
+        }
+        String rest = slaveLinkJoinFrom(parts, partCount, 2);   //optional slot, then the mode
+        rest.toUpperCase();
+        line = "PAD " + rest;
+    } else if (sub == "drop") {
+        line = "DROP";
+    } else if (sub == "dump") {
+        if (partCount < 3) {
+            outLine("usage: slave dump 0|1", C_RED);
+            return;
+        }
+        line = "DUMP " + parts[2];
     } else if (sub == "out") {
         if (partCount < 3) {
             outLine("usage: slave out <hex bytes>", C_RED);

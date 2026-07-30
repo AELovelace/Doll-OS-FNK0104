@@ -382,6 +382,8 @@ void handleGbCommand(const String parts[], int partCount) {
         outLine("  so most frames go undrawn; 1x is small but near-smooth.", C_CYAN);
         outLine("  Controls (BLE keyboard via slave): WASD/arrows=D-pad, N=A,", C_CYAN);
         outLine("  M=B, Enter=Start, \\=Select, Ctrl+T=quit.", C_CYAN);
+        outLine("  Xbox pad via slave: stick/d-pad, A=A, B=B, Menu=Start,", C_CYAN);
+        outLine("  View=Select, LB=this menu, LB+RB=quit.", C_CYAN);
         outLine("  Esc opens the settings menu: display mode, volume, save/load", C_CYAN);
         outLine("  state, resume, quit. States sit next to the ROM as <name>.gbs.", C_CYAN);
         outLine("  Volume is shared with the radio ('radio vol <0-21>').", C_CYAN);
