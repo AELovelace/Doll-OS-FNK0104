@@ -2,24 +2,32 @@
 
 #include <Arduino.h>
 
-// DS port note: cube-boy's AudioOut captured an I2S TX handle from the
-// Waveshare sensors HAL. DS's onboard ES8311 codec + I2S are owned by Radio.ino
-// (its own FreeRTOS task), so wiring emulator audio means handing that I2S port
-// and the codec over from the radio while a game runs -- deferred. Until then
-// begin() returns false, available() stays false, and GameBoyHost passes a NULL
-// audio callback to gnuboy: the core mixes into its scratch buffer and stays
-// silent (failure-soft, exactly the path cube-boy uses on boards with no audio).
+// Emulator audio sink: the Game Boy APU's samples on the board's onboard ES8311
+// codec + speaker.
 //
-// The ring/pump/onSamples members below are kept as no-op-safe shims so turning
-// audio on later is a change confined to this one file (bring up an i2s_std TX
-// channel on RADIO_I2S_* pins + es8311_codec_init(), flip `ready` true) rather
-// than a change to GameBoyHost or the glue.
+// DS port note: DS's codec is normally Radio.ino's -- it owns the I2C control
+// bus, the codec registers, and *both* of the S3's two I2S controllers (one
+// bootstrap channel for MCLK, one for the ESP32-audioI2S engine). So a game
+// can't just open a channel: Gameboy.ino first calls radioReleaseAudio()
+// (Radio.ino), which stops any stream and hands the controllers back, then
+// begin() below claims one for itself and reuses the codec registers Radio
+// already knows how to program (audioCodecEnsure()). end() gives it back, so a
+// "radio play" after a game session brings the stream up again normally.
+//
+// Everything here is failure-soft: if the codec or a channel can't be had,
+// ready stays false, onSamples() drops silently, and the game runs mute --
+// exactly the path cube-boy takes on boards with no audio.
 namespace AudioOut {
+// 2^21 / 64 exactly -- the only rate where gnuboy's integer cycles-per-sample
+// divider comes out whole, so pitch is true. GameBoyHost hands this to
+// gnuboy_init and the I2S channel below runs at it, so the emulator's clock and
+// the codec's barely drift.
+constexpr uint32_t kSampleRate = 32768;
+
 bool begin();
+void end();
 bool available();
-void onSamples(void* buf, size_t len);   // gb_audio_cb_t shape; len = int16 count
-void pump();                              // call each loop tick while a game runs
-void setDiscard(bool on);
-void startStream();
+void onSamples(void* buf, size_t len);   // gb_audio_cb_t shape; len = mono int16 count
+void setDiscard(bool on);                // true = swallow samples (paused/quitting)
 void stats(uint32_t& pushed, uint32_t& dropped, uint32_t& underruns);
 }  // namespace AudioOut

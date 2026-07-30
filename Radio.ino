@@ -42,7 +42,9 @@
 #define RADIO_I2C_SDA 16
 #define RADIO_I2C_SPEED 400000
 
-const int RADIO_VOLUME_MAX = 21;             //ESP32-audioI2S's default volume scale
+//RADIO_VOLUME_MAX lives in global.h -- Gameboy.ino's settings menu shows the level
+//too, and the .ino files concatenate alphabetically, so Gameboy.ino is compiled
+//above this file and can't see a constant defined here.
 const unsigned long RADIO_STREAM_RETRY_MS = 5000;
 const int RADIO_TASK_STACK_SIZE = 12288;     //MP3 decode runs on this stack (audio.loop())
 
@@ -83,6 +85,8 @@ static bool radioI2sReady = false;           //radioI2s.begin() has claimed its 
                                               //only ever happen once: the S3 has two controllers total
                                               //(one for this bootstrap channel, one for Audio), and a
                                               //re-begin on a retry would leak a fresh one, starving Audio
+static volatile bool radioReleased = false;  //set by the task once RADIO_CMD_RELEASE has torn the
+                                              //I2S controllers down -- radioReleaseAudio() waits on it
 static bool radioWantPlaying = false;        //user intent: keep the stream up (drives auto-reconnect)
 static bool radioPaused = false;
 static unsigned long radioLastAttemptMs = 0;
@@ -129,12 +133,18 @@ static void radioScanI2cBus() {
     }
 }
 
-//codec + I2S bring-up, once, lazily on the first "radio play" -- the exact sequence
-//sgcrelay's driver_es8311_init()/setup() ran, minus the parts DS already owns.
-//es8311.cpp's register helpers use Wire (see the driver_ng note there), so the only
-//prerequisite is the Wire.begin below -- nothing else in DS touches I2C.
-static bool radioEnsureCodec() {
-    if (radioCodecReady) {
+//Amp + I2C + ES8311 register programming, once. Split out of radioEnsureCodec so the
+//Game Boy emulator's audio path (src/AudioOut.cpp) can reuse it: that path brings up
+//its own I2S TX channel but needs the same codec configured behind it, and calling
+//es8311_codec_init() twice would leak a handle. es8311.cpp's register helpers use Wire
+//(see the driver_ng note there), so Wire.begin below is the only prerequisite --
+//nothing else in DS touches I2C.
+//
+//Caller must already have clocks on the I2S pins: the codec is a slave and wants MCLK
+//running while its dividers are programmed. Not static -- AudioOut.cpp declares it.
+bool audioCodecEnsure() {
+    static bool codecRegsReady = false;
+    if (codecRegsReady) {
         return true;
     }
 
@@ -142,8 +152,26 @@ static bool radioEnsureCodec() {
     digitalWrite(RADIO_AMP_ENABLE, LOW);
 
     if (!Wire.begin(RADIO_I2C_SDA, RADIO_I2C_SCL, RADIO_I2C_SPEED)) {
-        radioAnnounce("radio: I2C init failed", C_RED);
+        Serial.println("[audio] I2C init failed");
         return false;
+    }
+
+    if (es8311_codec_init() != ESP_OK) {
+        radioScanI2cBus();   //serial-only: says whether anything at all answers on the bus
+        Serial.println("[audio] ES8311 codec init failed");
+        return false;
+    }
+
+    codecRegsReady = true;
+    Serial.println("[audio] ES8311 codec up");
+    return true;
+}
+
+//codec + I2S bring-up, once, lazily on the first "radio play" -- the exact sequence
+//sgcrelay's driver_es8311_init()/setup() ran, minus the parts DS already owns.
+static bool radioEnsureCodec() {
+    if (radioCodecReady) {
+        return true;
     }
 
     if (!radioI2sReady) {
@@ -155,8 +183,7 @@ static bool radioEnsureCodec() {
         radioI2sReady = true;
     }
 
-    if (es8311_codec_init() != ESP_OK) {
-        radioScanI2cBus();   //serial-only: says whether anything at all answers on the bus
+    if (!audioCodecEnsure()) {
         radioAnnounce("radio: ES8311 codec init failed (see serial log)", C_RED);
         return false;
     }
@@ -190,7 +217,6 @@ static bool radioEnsureCodec() {
     radioAudio->setVolume(radioVolume);
 
     radioCodecReady = true;
-    Serial.println("[radio] ES8311 codec up");
     return true;
 }
 
@@ -245,6 +271,28 @@ static void radioTaskHandleCommand() {
             if (radioAudio != nullptr) {
                 radioAudio->setVolume(volume);
             }
+            break;
+        case RADIO_CMD_RELEASE:
+            //Give both I2S controllers back (see radioReleaseAudio). Done here, on the
+            //task, rather than by the caller: radioAudio is task-local and audio.loop()
+            //is running on this stack -- deleting the engine from the main loop would
+            //race the decoder mid-frame.
+            radioWantPlaying = false;
+            radioPaused = false;
+            if (radioAudio != nullptr) {
+                radioAudio->stopSong();
+                delete radioAudio;
+                radioAudio = nullptr;
+            }
+            if (radioI2sReady) {
+                radioI2s.end();
+                radioI2sReady = false;
+            }
+            //codec *registers* stay programmed (audioCodecEnsure keeps its own latch);
+            //only the streaming side has to be rebuilt on the next "radio play"
+            radioCodecReady = false;
+            radioSetState(RADIO_STOPPED);
+            radioReleased = true;
             break;
     }
 }
@@ -406,6 +454,28 @@ static void radioPrintStatus() {
     }
     outLine("Volume: " + String(volume) + "/" + String(RADIO_VOLUME_MAX));
     outLine("");
+}
+
+//Hand the audio hardware to something else -- currently only the Game Boy emulator
+//(Gameboy.ino -> src/AudioOut.cpp), which needs one of the S3's two I2S controllers
+//and can't have one while the radio holds both (a bootstrap channel for MCLK plus
+//ESP32-audioI2S's). Stops any stream, deletes the engine, frees the controllers.
+//Nothing is auto-restored: the next "radio play" walks radioEnsureCodec again and
+//rebuilds what it needs, which by then is free because the game called AudioOut::end().
+//
+//Blocks until the task confirms (it polls the mailbox every tick, so this is
+//milliseconds); the timeout is only so a wedged radio task can't hang the shell.
+//Returns true if the hardware is actually free.
+bool radioReleaseAudio() {
+    if (radioTaskHandle == NULL) {
+        return true;   //task never started -- nothing was ever claimed
+    }
+    radioReleased = false;
+    radioPostCommand(RADIO_CMD_RELEASE, NULL, 0);
+    for (int waited = 0; waited < 2000 && !radioReleased; waited += 10) {
+        delay(10);
+    }
+    return radioReleased;
 }
 
 //current volume, snapshotted under the mux -- the status bar (Display.ino's

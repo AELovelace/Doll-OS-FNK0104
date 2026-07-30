@@ -141,9 +141,18 @@ const int C_PINK    = 95;   //bright magenta stands in for DOLL-OS's PINK accent
 //   hoisted-prototype reason as LineInputResult above.
 enum RadioState { RADIO_OFF, RADIO_CONNECTING, RADIO_PLAYING, RADIO_PAUSED, RADIO_STOPPED, RADIO_ERROR };
 
+//ESP32-audioI2S's software volume scale, and the level the Game Boy emulator mixes
+//its APU output at (src/AudioOut.cpp) -- one notion of loudness for the whole board.
+//Here rather than in Radio.ino for the same hoisting reason as the enums: Gameboy.ino
+//sorts above Radio.ino in the concatenated sketch and its settings menu displays this.
+const int RADIO_VOLUME_MAX = 21;
+
 //one-slot command mailbox kinds, shell -> radio task (also here for hoisting: the
 //poster/consumer function signatures use it)
-enum RadioCommandKind { RADIO_CMD_NONE, RADIO_CMD_PLAY, RADIO_CMD_PAUSE, RADIO_CMD_STOP, RADIO_CMD_VOLUME };
+//RADIO_CMD_RELEASE is the Game Boy emulator's: it stops the stream and tears the
+//radio's I2S controllers back down so src/AudioOut.cpp can claim one (the S3 has
+//exactly two, and a playing radio holds both). See radioReleaseAudio().
+enum RadioCommandKind { RADIO_CMD_NONE, RADIO_CMD_PLAY, RADIO_CMD_PAUSE, RADIO_CMD_STOP, RADIO_CMD_VOLUME, RADIO_CMD_RELEASE };
 
 extern String sshInputBuffer;
 extern String motokoChannel;
