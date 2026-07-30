@@ -96,6 +96,8 @@ void setup() {
         outLine("DS ready. WiFi not connected -- run 'wifi connect' for telnet access.");
     }
     outLine("");
+    setActiveInput(shellPrompt(), "", false);   //panel's command bar starts on the same path-aware
+                                                 //prompt the telnet side gets from printPrompt()
     printPrompt();
     drawDisplayFrame();
 }

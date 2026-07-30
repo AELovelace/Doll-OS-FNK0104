@@ -76,13 +76,16 @@ void sshPumpStream(void* channelPtr, int isStderr) {
                 continue;
             }
             char outCh;
-            bool colorChanged, isBackspace, eraseToEndOfLine;
-            if (ansiFilterByte(ansi, (uint8_t)ch, defaultColor, dispColor, outCh, colorChanged, isBackspace, eraseToEndOfLine)) {
+            bool colorChanged, isBackspace, isCarriageReturn;
+            DisplayEraseKind erase;
+            if (ansiFilterByte(ansi, (uint8_t)ch, defaultColor, dispColor, outCh, colorChanged, isBackspace, isCarriageReturn, erase)) {
                 displayStreamPutChar(dispStream, outCh, dispColor);
             } else if (isBackspace) {
                 displayStreamBackspace(dispStream);
-            } else if (eraseToEndOfLine) {
-                displayStreamEraseToEnd(dispStream);
+            } else if (isCarriageReturn) {
+                displayStreamCarriageReturn(dispStream);
+            } else if (erase != DISPLAY_ERASE_NONE) {
+                displayStreamErase(dispStream, erase);
             }
         }
     }
@@ -284,7 +287,7 @@ void sshConnectAndRun(const String& user, const String& host, unsigned int port)
     ssh_disconnect(session);
     ssh_free(session);
 
-    setActiveInput("> ", "", false);
+    setActiveInput(shellPrompt(), "", false);
 
     outLine("ssh: session ended");
     //no printPrompt() here -- handleSshCommand's caller (commandProcessor(), via

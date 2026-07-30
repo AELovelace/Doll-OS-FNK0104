@@ -67,13 +67,16 @@ static void remoteTelnetMirrorToDisplay(uint8_t ch) {
         return;
     }
     char outCh;
-    bool colorChanged, isBackspace, eraseToEndOfLine;
-    if (ansiFilterByte(remoteTelnetAnsi, ch, TFT_WHITE, remoteTelnetDisplayColor, outCh, colorChanged, isBackspace, eraseToEndOfLine)) {
+    bool colorChanged, isBackspace, isCarriageReturn;
+    DisplayEraseKind erase;
+    if (ansiFilterByte(remoteTelnetAnsi, ch, TFT_WHITE, remoteTelnetDisplayColor, outCh, colorChanged, isBackspace, isCarriageReturn, erase)) {
         displayStreamPutChar(remoteTelnetDisplayStream, outCh, remoteTelnetDisplayColor);
     } else if (isBackspace) {
         displayStreamBackspace(remoteTelnetDisplayStream);
-    } else if (eraseToEndOfLine) {
-        displayStreamEraseToEnd(remoteTelnetDisplayStream);
+    } else if (isCarriageReturn) {
+        displayStreamCarriageReturn(remoteTelnetDisplayStream);
+    } else if (erase != DISPLAY_ERASE_NONE) {
+        displayStreamErase(remoteTelnetDisplayStream, erase);
     }
 }
 
@@ -226,7 +229,7 @@ void handleTelnetCommand(const String parts[], int partCount) {
 
     remoteTelnetClient.stop();
 
-    setActiveInput("> ", "", false);
+    setActiveInput(shellPrompt(), "", false);
 
     outLine("telnet: session ended");
     //no printPrompt() here -- readTelnetClient()'s loop (TelnetServer.ino) already
