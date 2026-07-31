@@ -109,7 +109,7 @@ test("current repository sources validate", async () => {
   // and the shape of each record instead, plus the apps that must not vanish.
   const ids = result.records.map((record) => record.id);
   assert.deepEqual(ids, [...ids].sort((left, right) => left.localeCompare(right, "en")));
-  for (const id of ["2048", "adventure", "beacon", "decide", "lamp", "mines", "notes", "sheet", "simon", "snake", "sysmon", "tetris"]) {
+  for (const id of ["2048", "adventure", "beacon", "decide", "drill", "four", "lamp", "life", "mines", "notes", "page", "plot", "sheet", "simon", "snake", "sysmon", "tetris"]) {
     assert.ok(ids.includes(id), `${id} is published`);
   }
   for (const record of result.records) {

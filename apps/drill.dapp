@@ -82,14 +82,19 @@ IFEQ $judge "y" GOTO rv_right
 IFEQ $judge "n" GOTO rv_wrong
 IFEQ $judge "q" GOTO menu
 GOTO rv_ask
+# newlevel is captured before savedeck runs, not read back after: savedeck
+# has its own idx loop running 0..count, and since every variable here is
+# global, that would otherwise leave $idx pointing past the last card by
+# the time this line prints it
 :rv_right
 ADD level[$idx] 1
 IF $level[$idx] <= 5 GOTO rv_save
 SET level[$idx] 5
 :rv_save
+SET newlevel $level[$idx]
 GOSUB savedeck
 COLOR green
-PRINT "promoted to box $level[$idx]"
+PRINT "promoted to box $newlevel"
 GOTO rv_again
 :rv_wrong
 SET level[$idx] 1
