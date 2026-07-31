@@ -1790,6 +1790,196 @@ PRINT "snake: length $len, score $score (best $hiscore)"
 EXIT
 )DOLLAPP";
 
+// Generated from apps/sgc-chat.dapp for firmware-side LittleFS seeding.
+static const char BUNDLED_APP_SGC_CHAT[] = R"DOLLAPP(# @dapp-format 1
+# @id sgc-chat
+# @name SGC Chat
+# @version 1.0.0
+# @boards fnk0104
+# @runtime >=1.4.0 <2.0.0
+# @summary Chat with other DOLL-OS/DS units over the Sad Girls Club backend
+# /apps/sgc-chat.dapp
+# Turn-based network chat: log in (first use of a username creates the
+# account), pick a room, then each line is poll-new-messages, block for
+# what you type, send if it isn't blank. See sgc-chat-server/README.md for
+# the backend this talks to and how to point it elsewhere.
+
+SETSTR endpoint "https://sadgirlsclub.wtf/chat"
+SETSTR room "lobby"
+SET since 0
+CHR q 34
+
+COLOR pink
+PRINT "SGC CHAT"
+PRINT "letters/numbers/-/_ only for username and room"
+COLOR white
+
+HTTPCLEAR
+HTTPHEADER "Content-Type" "application/json"
+
+:login
+INPUT username "username> "
+IFEQ $username "" GOTO login
+INPUTSECRET password "password> "
+
+JSONESC safeuser $username
+JSONESC safepass $password
+SETSTR password ""
+
+SETSTR body "{"
+APPEND body $q
+APPEND body "username$q:"
+APPEND body $q
+APPEND body "$safeuser$q,"
+APPEND body $q
+APPEND body "password$q:"
+APPEND body $q
+APPEND body "$safepass$q}"
+SETSTR safepass ""
+
+SETSTR url "$endpoint/auth"
+PRINT "signing in..."
+HTTPPOST raw $url $body 512
+SETSTR body ""
+IF $httpok = 0 GOTO auth_http_error
+
+JSONGET ok $raw "ok"
+IFEQ $ok "true" GOTO auth_ok
+JSONGET err $raw "error"
+COLOR red
+IFEQ $err "bad_password" GOTO bad_password
+PRINT "sign-in failed: $err"
+COLOR white
+GOTO login
+
+:bad_password
+PRINT "wrong password for $username"
+COLOR white
+GOTO login
+
+:auth_http_error
+COLOR red
+PRINT "could not reach sgc-chat: HTTP $httpcode"
+COLOR white
+WAIT 1500
+GOTO login
+
+:auth_ok
+JSONGET token $raw "token"
+JSONGET created $raw "created"
+COLOR green
+IFEQ $created "true" GOTO welcome_new
+PRINT "welcome back, $username"
+GOTO room_prompt
+:welcome_new
+PRINT "account created - welcome, $username"
+
+:room_prompt
+COLOR white
+INPUT roomin "room [$room]> "
+IFEQ $roomin "" GOTO room_default
+SETSTR room $roomin
+:room_default
+SET since 0
+COLOR cyan
+PRINT "-- room: $room --  /quit to leave, blank line to refresh"
+COLOR white
+
+HTTPHEADER "Authorization" "Bearer $token"
+
+:chat
+GOSUB poll
+
+INPUT msg "$username> "
+IFEQ $msg "/quit" GOTO done
+IFEQ $msg "" GOTO chat
+
+JSONESC safemsg $msg
+IF $jsonok = 0 GOTO msg_too_long
+
+SETSTR sbody "{"
+APPEND sbody $q
+APPEND sbody "room$q:"
+APPEND sbody $q
+APPEND sbody "$room$q,"
+APPEND sbody $q
+APPEND sbody "text$q:"
+APPEND sbody $q
+APPEND sbody $safemsg
+APPEND sbody $q
+APPEND sbody "}"
+
+SETSTR url "$endpoint/send"
+HTTPPOST sraw $url $sbody 512
+IF $httpok = 0 GOTO send_http_error
+GOTO chat
+
+:msg_too_long
+COLOR red
+PRINT "message too long after JSON escaping"
+COLOR white
+GOTO chat
+
+:send_http_error
+COLOR red
+PRINT "send failed: HTTP $httpcode"
+COLOR white
+GOTO chat
+
+# ---------------------------------------------------------------- polling
+
+# out: prints any messages newer than $since, then advances $since to the
+# server's last_id. A quiet network hiccup just means the next poll shows
+# a bit more -- it does not stop the chat.
+:poll
+SETSTR url "$endpoint/poll?room=$room&since=$since"
+HTTPGET praw $url 4096
+IF $httpok = 0 RETURN
+SET pi 0
+:poll_next
+JSONGET ptext $praw "messages[$pi].text"
+IF $jsonok = 0 GOTO poll_done
+JSONGET puser $praw "messages[$pi].user"
+COLOR cyan
+PRINT "$puser: $ptext"
+COLOR white
+ADD pi 1
+GOTO poll_next
+:poll_done
+JSONGET newsince $praw "last_id"
+IF $jsonok = 0 RETURN
+SETSTR text $newsince
+GOSUB str2num
+SET since $num
+RETURN
+
+# in: text (string)   out: num -- digits off the front of a string, since a
+# JSON number comes back through JSONGET as text (the tetris/snake routine)
+:str2num
+SET num 0
+SET s2i 0
+LEN s2len $text
+:s2n_loop
+IF $s2i >= $s2len GOTO s2n_done
+CHARAT s2d $text $s2i
+IF $s2d < 48 GOTO s2n_done
+IF $s2d > 57 GOTO s2n_done
+SUB s2d 48
+MUL num 10
+ADD num $s2d
+ADD s2i 1
+GOTO s2n_loop
+:s2n_done
+RETURN
+
+:done
+HTTPCLEAR
+SETSTR token ""
+COLOR pink
+PRINT "bye"
+EXIT
+)DOLLAPP";
+
 // Generated from docs/DAPP.txt for firmware-side LittleFS seeding.
 static const char BUNDLED_DOC_DAPP[] = R"DOLLDOC(DOLL-OS .dapp Apps
 
