@@ -1435,6 +1435,176 @@ Extensions, in rough order of difficulty — the honest way to own this code:
 
 ---
 
+## Chapter 11 — Project: Talk to an LLM
+
+Tetris was a closed world: every fact it needed was already in its arrays.
+This project crosses the network. It sends one user message to an
+OpenAI-compatible `/v1/chat/completions` endpoint, receives JSON, extracts the
+assistant's text, and loops for another prompt.
+
+The finished source ships as `/apps/llm-chat.dapp`. It needs AppRunner 1.4, so
+it runs on FNK0104 firmware; Cardputer 1.3 does not have these HTTP and JSON
+commands yet.
+
+### 11.1 Choose where the endpoint lives
+
+For a device on your LAN, edit the first two lines to match the server and a
+model that server exposes:
+
+```text
+SETSTR endpoint "http://192.168.1.50:8000/v1/chat/completions"
+SETSTR model "local-model"
+```
+
+Do not use `127.0.0.1` unless the LLM server is running on the DOLL itself — on
+the device, "localhost" means the ESP32. Use the computer's LAN address.
+
+The browser runner may instead use a same-origin path:
+
+```text
+SETSTR endpoint "/v1/chat/completions"
+```
+
+That requires the site hosting the runner to proxy that path to the LLM. Browser
+CORS rules still apply, and a production API key must live on the server, not
+in downloadable JavaScript or a published `.dapp`.
+
+### 11.2 A secret input is different
+
+Some compatible servers require a bearer token. Read it with `INPUTSECRET`,
+which is masked on the device and uses a password field in the browser:
+
+```text
+INPUTSECRET apikey "Bearer token (blank if none)> "
+HTTPCLEAR
+HTTPHEADER "Content-Type" "application/json"
+IFEQ $apikey "" GOTO headers_ready
+HTTPHEADER "Authorization" "Bearer $apikey"
+:headers_ready
+```
+
+`INPUTSECRET` keeps the submitted value out of terminal output, but the token
+still exists in RAM for this run. Do not write it to a file; clear it on exit.
+
+Generic HTTPS encrypts traffic but does not authenticate arbitrary server
+certificates. Do not send a valuable production token directly through that
+device path. Use a trusted LAN gateway or authenticated server-side proxy.
+
+### 11.3 Build JSON without lying to it
+
+User text may contain quotes, backslashes, or control characters, so inserting
+raw `$prompt` would eventually create invalid JSON. Escape it first:
+
+```text
+INPUT prompt "you> "
+IFEQ $prompt "/quit" GOTO done
+JSONESC safe $prompt
+IF $jsonok = 0 GOTO prompt_too_long
+```
+
+`.dapp` literals do not interpret a backslash-quote. Make a real quote with
+`CHR`, then assemble the payload in pieces:
+
+```text
+CHR q 34
+SETSTR body "{"
+APPEND body $q
+APPEND body "model$q:"
+APPEND body $q
+APPEND body "$model$q,"
+APPEND body $q
+APPEND body "messages$q:[{"
+APPEND body $q
+APPEND body "role$q:"
+APPEND body $q
+APPEND body "user$q,"
+APPEND body $q
+APPEND body "content$q:"
+APPEND body $q
+APPEND body $safe
+APPEND body $q
+APPEND body "}],"
+APPEND body $q
+APPEND body "max_completion_tokens$q:256}"
+```
+
+`$q` supplies every JSON quote; `$safe` is the only part from the user. The
+4096-character limit applies to request and response, so this is a small client.
+
+### 11.4 POST, then inspect facts
+
+```text
+PRINT "thinking..."
+HTTPPOST raw $endpoint $body 4096
+IF $httpok = 0 GOTO http_error
+```
+
+A timeout, DNS failure, CORS rejection, or non-2xx status leaves facts instead
+of crashing the app:
+
+```text
+$httpok          1 only for a successfully read 2xx response
+$httpcode        HTTP status, or a negative transport error
+$httplen         response bytes retained
+$httptruncated   1 when the response exceeded the maximum
+```
+
+The network failing is an event to handle. Missing `HTTPPOST` arguments are a
+program bug and stop the app.
+
+### 11.5 Pull the answer out of JSON
+
+The first choice's message contains the assistant text:
+
+```text
+JSONGET answer $raw "choices[0].message.content"
+IF $jsonok = 0 GOTO json_error
+COLOR cyan
+PRINT "llm> $answer"
+COLOR white
+GOTO chat
+```
+
+`JSONGET` understands dotted object keys and bracketed array indexes. Missing
+paths and malformed JSON leave `$jsonok` at 0 rather than stopping the program.
+
+### 11.6 Finish every exit path
+
+```text
+:http_error
+COLOR red
+PRINT "request failed: HTTP $httpcode"
+PRINT "$raw"
+COLOR white
+GOTO chat
+
+:json_error
+COLOR red
+PRINT "response did not contain choices[0].message.content"
+PRINT "$raw"
+COLOR white
+GOTO chat
+
+:done
+HTTPCLEAR
+SETSTR apikey ""
+PRINT "bye"
+END
+```
+
+Run the shipped version with `run llm-chat`. Each request is intentionally
+single-turn. Conversation memory is the next design problem: append earlier
+messages while watching the 4096-character ceiling.
+
+### Practice 11
+
+1. Add a system message before the user message; `JSONESC` its text.
+2. Warn when `$httptruncated` is 1.
+3. Include the previous assistant reply in the next request.
+4. Add `/model` to change the model string without sending a request.
+
+---
+
 ## Chapter 12 — Files
 
 Everything so far vanishes when the app ends. Every variable, every array,
@@ -1444,7 +1614,7 @@ note for its future self, and they are the last commands in the language.
 ### 12.1 One file at a time
 
 ```text
-FOPEN <path> <mode>    open a file: read, write, or append
+FOPEN <path> <mode>    open: read, write, append, or update
 FCLOSE                 close it
 ```
 
@@ -1454,12 +1624,13 @@ old one first, and the app ending closes whatever was left — so a forgotten
 everything else is flash, and `$variables` expand inside them (so
 `FOPEN "/apps/save_$slot.txt" read` works).
 
-The three modes:
+The four modes:
 
 ```text
 read     the file must exist; you will FREAD from it
 write    start the file over from nothing; you will FWRITE to it
 append   like write, but existing content is kept and you add to the end
+update   read and write in place without truncating the existing file
 ```
 
 Whether the open *worked* is in the built-in `$fok` — 1 or 0:
@@ -1542,7 +1713,31 @@ makes it the polite first move before an `FOPEN read`. `FDELETE` is the reset
 button — a "clear high score" menu option is one line. Deleting a file that
 isn't there just leaves `$fok` at 0; nothing stops.
 
-### 12.5 Numbers come back as text
+### 12.5 Binary files and honest hex
+
+`FREAD` is a line reader, so it cannot represent every byte. A NUL byte and a
+newline are data in a binary file, not string punctuation. Use numeric byte I/O:
+
+```text
+FOPEN "/apps/data.bin" update
+FSIZE size
+FSEEK 0
+FREADB byte
+IF $feof = 1 GOTO done
+HEX shown $byte 2
+PRINT "$shown"
+FSEEK 0
+FWRITEB 255
+:done
+FCLOSE
+```
+
+`FREADB` returns 0..255; `$feof` distinguishes a real zero byte from end of
+file. `FSEEK`, `FTELL`, and `FSIZE` use absolute byte positions, and `update`
+writes without erasing the file first. The shipped `run hex` app builds its
+viewer/editor from exactly these commands.
+
+### 12.6 Numbers come back as text
 
 Here is the trap the chapter has been building toward. You `FWRITE $score`
 and the file now holds `3300` — as **four characters**. When `FREAD` brings
@@ -1554,7 +1749,7 @@ the front of a string. Write number → text is free (`FWRITE` expands `$score`
 for you); text → number is `str2num`. Every save-file scheme in this language
 is those two moves.
 
-### 12.6 Tetris remembers
+### 12.7 Tetris remembers
 
 Now the real thing — the code that makes `run tetris` greet you with your
 best score. Two additions to the shipped game, both short. Loading, called
@@ -1644,11 +1839,17 @@ CHARAT <n> <t> <i>     character code at i, 0 past the end
 
 ── input ───────────────────────────────────────────────────────────
 INPUT <name> [prompt]  read a line (blocks); result is TEXT, not a number
+INPUTSECRET <n> [p]    read a masked line; clear secrets when finished
 KEY <name>             one keypress or 0, never blocks
 LED <r> <g> <b>        set rear RGB LED channels (needs runtime >=1.3.0)
 WAVE <ch> <kind> <hz> <level>  three-channel PCM synth (runtime >=1.4.0)
 WAVESTOP               silence and release the synth
 HTTPGET <n> <url> [max] bounded text GET; inspect $httpok/$httpcode
+HTTPPOST <n> <url> <body> [max] bounded POST response
+HTTPHEADER <n> <value> set/replace one of eight request headers
+HTTPCLEAR              clear request headers
+JSONESC <n> <text>     escape text for a JSON string; sets $jsonok
+JSONGET <n> <json> <path> extract dotted/bracketed path; sets $jsonok
 
 ── files ───────────────────────────────────────────────────────────
 FOPEN <path> <mode>    read | write | append | update; $fok = success
@@ -1694,7 +1895,8 @@ Every limit reports on the terminal when hit — including array indexes out of
 range, which stop the app with the line number.
 
 Built-ins: `$battery` `$cwd` `$heap` `$ip` `$millis` `$seconds` `$wifi`
-`$ledok` `$audiook` `$httpok` `$httpcode` `$httplen` `$httptruncated`, the
+`$ledok` `$audiook` `$httpok` `$httpcode` `$httplen` `$httptruncated`
+`$jsonok`, the
 file status pair `$fok` (last FOPEN/FDELETE/FSEEK worked) and `$feof`
 (last FREAD hit end of file), and the key codes below.
 

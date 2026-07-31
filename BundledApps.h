@@ -1865,10 +1865,16 @@ SUBSTR <n> <t> <s> <c>  slice a string into a string variable
 LEN <name> <text>    character count into a numeric variable
 CHARAT <n> <t> <i>   character code at index i, or 0 past the end
 INPUT <name> [p]     read a line into a string variable (blocks until Enter)
+INPUTSECRET <name> [p] read a masked line into a string variable
 KEY <name>           read one keypress into a numeric variable, 0 if none
 WAVE <ch> <kind> <hz> <level>  set sine/triangle/square/noise/off channel 1..3
 WAVESTOP             silence the synth and release the audio hardware
 HTTPGET <n> <url> [max] bounded HTTP/HTTPS GET into string variable n
+HTTPPOST <n> <url> <body> [max] bounded POST response into string variable n
+HTTPHEADER <name> <value> set/replace one of up to eight request headers
+HTTPCLEAR             clear all request headers
+JSONESC <n> <text>    escape text for insertion inside a JSON string
+JSONGET <n> <json> <path> extract a JSON value; $jsonok reports success
 FOPEN <path> <mode>  open a file: read, write, append, or update
 FCLOSE               close it (automatic when the app ends)
 FREAD <name>         read one line into a string variable; $feof goes 1 at end
@@ -2032,9 +2038,14 @@ WAVESTOP (and app exit) silences/releases the hardware. $audiook reports the
 most recent start. run synth is the interactive mixer and waveform display.
 
 HTTPGET body "https://example.com/data.json" 2048 stores a bounded text body.
+HTTPPOST adds a request body; HTTPHEADER/HTTPCLEAR manage up to eight headers.
 $httpok, $httpcode, $httplen, and $httptruncated report the result. HTTPS is
 encrypted but generic script URLs are not certificate-authenticated; Dapper's
 verified package-download path is separate.
+
+JSONESC safely quotes user text before it is placed inside JSON. JSONGET walks
+paths such as choices[0].message.content. $jsonok reports malformed JSON,
+missing paths, or an escaped/extracted value that exceeds the string limit.
 
 Limits:
 
@@ -2074,6 +2085,7 @@ $httpok
 $httpcode
 $httplen
 $httptruncated
+$jsonok
 
 Numeric only (see Keys and games): $kup, $kdown, $kleft, $kright, $kenter,
 $kesc, $kback, $ktab, $kspace; plus the file-op status pair $fok (last

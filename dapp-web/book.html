@@ -101,14 +101,23 @@
 <li class="toc-depth-3"><a href="#10-10-locking-and-clearing-lines">10.10 Locking and clearing lines</a></li>
 <li class="toc-depth-3"><a href="#10-11-spawning-dying-leaving">10.11 Spawning, dying, leaving</a></li>
 <li class="toc-depth-3"><a href="#10-12-what-you-built-and-what-to-build-next">10.12 What you built, and what to build next</a></li>
-<li class="toc-depth-2"><a href="#chapter-11-files">Chapter 11 — Files</a></li>
-<li class="toc-depth-3"><a href="#11-1-one-file-at-a-time">11.1 One file at a time</a></li>
-<li class="toc-depth-3"><a href="#11-2-writing">11.2 Writing</a></li>
-<li class="toc-depth-3"><a href="#11-3-reading">11.3 Reading</a></li>
-<li class="toc-depth-3"><a href="#11-4-fexists-and-fdelete">11.4 FEXISTS and FDELETE</a></li>
-<li class="toc-depth-3"><a href="#11-5-numbers-come-back-as-text">11.5 Numbers come back as text</a></li>
-<li class="toc-depth-3"><a href="#11-6-tetris-remembers">11.6 Tetris remembers</a></li>
+<li class="toc-depth-2"><a href="#chapter-11-project-talk-to-an-llm">Chapter 11 — Project: Talk to an LLM</a></li>
+<li class="toc-depth-3"><a href="#11-1-choose-where-the-endpoint-lives">11.1 Choose where the endpoint lives</a></li>
+<li class="toc-depth-3"><a href="#11-2-a-secret-input-is-different">11.2 A secret input is different</a></li>
+<li class="toc-depth-3"><a href="#11-3-build-json-without-lying-to-it">11.3 Build JSON without lying to it</a></li>
+<li class="toc-depth-3"><a href="#11-4-post-then-inspect-facts">11.4 POST, then inspect facts</a></li>
+<li class="toc-depth-3"><a href="#11-5-pull-the-answer-out-of-json">11.5 Pull the answer out of JSON</a></li>
+<li class="toc-depth-3"><a href="#11-6-finish-every-exit-path">11.6 Finish every exit path</a></li>
 <li class="toc-depth-3"><a href="#practice-11">Practice 11</a></li>
+<li class="toc-depth-2"><a href="#chapter-12-files">Chapter 12 — Files</a></li>
+<li class="toc-depth-3"><a href="#12-1-one-file-at-a-time">12.1 One file at a time</a></li>
+<li class="toc-depth-3"><a href="#12-2-writing">12.2 Writing</a></li>
+<li class="toc-depth-3"><a href="#12-3-reading">12.3 Reading</a></li>
+<li class="toc-depth-3"><a href="#12-4-fexists-and-fdelete">12.4 FEXISTS and FDELETE</a></li>
+<li class="toc-depth-3"><a href="#12-5-binary-files-and-honest-hex">12.5 Binary files and honest hex</a></li>
+<li class="toc-depth-3"><a href="#12-6-numbers-come-back-as-text">12.6 Numbers come back as text</a></li>
+<li class="toc-depth-3"><a href="#12-7-tetris-remembers">12.7 Tetris remembers</a></li>
+<li class="toc-depth-3"><a href="#practice-12">Practice 12</a></li>
 <li class="toc-depth-2"><a href="#appendix-a-command-reference">Appendix A — Command Reference</a></li>
 <li class="toc-depth-2"><a href="#appendix-b-limits-and-built-ins">Appendix B — Limits and Built-ins</a></li>
 <li class="toc-depth-2"><a href="#appendix-c-key-codes">Appendix C — Key Codes</a></li>
@@ -132,7 +141,7 @@
       <article class="book-content">
         <hr>
 <p>A <code>.dapp</code> file is a plain text program that the DOLL-OS shell runs with the <code>run</code> command. The language is small on purpose: about forty commands, numbers, strings, arrays, and jumps. Small does not mean weak — by the end of this book you will have built Tetris in it — but it does mean <em>learnable</em>. Every command fits on one line, every program is a text file you can read top to bottom, and nothing is hiding anywhere.</p>
-<p><strong>How to use this book.</strong> Each chapter teaches a handful of commands, shows them working, and ends with practice problems. Type the examples in — really type them; that is where the learning happens. Answers to the practice problems are in Appendix D, but wrestle with them first. The last two chapters are the payoff: a full walkthrough of the Tetris that ships on this device as <code>/apps/tetris.dapp</code>, and then teaching that Tetris to remember its high score after the power goes out.</p>
+<p><strong>How to use this book.</strong> Each chapter teaches a handful of commands, shows them working, and ends with practice problems. Type the examples in — really type them; that is where the learning happens. Answers to the practice problems are in Appendix D, but wrestle with them first. The last three chapters are the payoff: a full walkthrough of the Tetris that ships on this device, a real app that talks to an LLM over <code>/v1/chat/completions</code>, and then teaching Tetris to remember its high score after the power goes out.</p>
 <hr>
 <h2 id="chapter-0-getting-set-up">Chapter 0 — Getting Set Up</h2>
 <p>Apps live in two places:</p>
@@ -891,25 +900,123 @@ GOTO loop</code></pre>
 <li><strong>Next-piece preview.</strong> <code>RAND</code> one piece ahead; draw it in the sidebar (a second, smaller version of the draw-piece loop).</li>
 <li><strong>Ghost piece.</strong> Where would the piece land? You have <code>collide</code> — drop a copy of <code>py</code> until it hits, draw the outline there. (Save and restore <code>py</code> around it. Which variables does <code>cellat</code> touch? That contract discipline suddenly matters.)</li>
 <li><strong>Hold slot.</strong> Swap the current piece into storage, once per drop.</li>
-<li><strong>A high score that survives the power switch.</strong> That one needs a whole new power — files — and it is exactly what Chapter 11 builds.</li>
+<li><strong>A high score that survives the power switch.</strong> That one needs a whole new power — files — and it is exactly what Chapter 12 builds.</li>
 <li><strong>Two-player.</strong> There is a second set of... no. Some things need a bigger language. Everything above fits in this one.</li>
 </ol>
 <hr>
-<h2 id="chapter-11-files">Chapter 11 — Files</h2>
+<h2 id="chapter-11-project-talk-to-an-llm">Chapter 11 — Project: Talk to an LLM</h2>
+<p>Tetris was a closed world: every fact it needed was already in its arrays. This project crosses the network. It sends one user message to an OpenAI-compatible <code>/v1/chat/completions</code> endpoint, receives JSON, extracts the assistant's text, and loops for another prompt.</p>
+<p>The finished source ships as <code>/apps/llm-chat.dapp</code>. It needs AppRunner 1.4, so it runs on FNK0104 firmware; Cardputer 1.3 does not have these HTTP and JSON commands yet.</p>
+<h3 id="11-1-choose-where-the-endpoint-lives">11.1 Choose where the endpoint lives</h3>
+<p>For a device on your LAN, edit the first two lines to match the server and a model that server exposes:</p>
+<pre><code class="language-text">SETSTR endpoint &quot;http://192.168.1.50:8000/v1/chat/completions&quot;
+SETSTR model &quot;local-model&quot;</code></pre>
+<p>Do not use <code>127.0.0.1</code> unless the LLM server is running on the DOLL itself — on the device, &quot;localhost&quot; means the ESP32. Use the computer's LAN address.</p>
+<p>The browser runner may instead use a same-origin path:</p>
+<pre><code class="language-text">SETSTR endpoint &quot;/v1/chat/completions&quot;</code></pre>
+<p>That requires the site hosting the runner to proxy that path to the LLM. Browser CORS rules still apply, and a production API key must live on the server, not in downloadable JavaScript or a published <code>.dapp</code>.</p>
+<h3 id="11-2-a-secret-input-is-different">11.2 A secret input is different</h3>
+<p>Some compatible servers require a bearer token. Read it with <code>INPUTSECRET</code>, which is masked on the device and uses a password field in the browser:</p>
+<pre><code class="language-text">INPUTSECRET apikey &quot;Bearer token (blank if none)&gt; &quot;
+HTTPCLEAR
+HTTPHEADER &quot;Content-Type&quot; &quot;application/json&quot;
+IFEQ $apikey &quot;&quot; GOTO headers_ready
+HTTPHEADER &quot;Authorization&quot; &quot;Bearer $apikey&quot;
+:headers_ready</code></pre>
+<p><code>INPUTSECRET</code> keeps the submitted value out of terminal output, but the token still exists in RAM for this run. Do not write it to a file; clear it on exit.</p>
+<p>Generic HTTPS encrypts traffic but does not authenticate arbitrary server certificates. Do not send a valuable production token directly through that device path. Use a trusted LAN gateway or authenticated server-side proxy.</p>
+<h3 id="11-3-build-json-without-lying-to-it">11.3 Build JSON without lying to it</h3>
+<p>User text may contain quotes, backslashes, or control characters, so inserting raw <code>$prompt</code> would eventually create invalid JSON. Escape it first:</p>
+<pre><code class="language-text">INPUT prompt &quot;you&gt; &quot;
+IFEQ $prompt &quot;/quit&quot; GOTO done
+JSONESC safe $prompt
+IF $jsonok = 0 GOTO prompt_too_long</code></pre>
+<p><code>.dapp</code> literals do not interpret a backslash-quote. Make a real quote with <code>CHR</code>, then assemble the payload in pieces:</p>
+<pre><code class="language-text">CHR q 34
+SETSTR body &quot;{&quot;
+APPEND body $q
+APPEND body &quot;model$q:&quot;
+APPEND body $q
+APPEND body &quot;$model$q,&quot;
+APPEND body $q
+APPEND body &quot;messages$q:[{&quot;
+APPEND body $q
+APPEND body &quot;role$q:&quot;
+APPEND body $q
+APPEND body &quot;user$q,&quot;
+APPEND body $q
+APPEND body &quot;content$q:&quot;
+APPEND body $q
+APPEND body $safe
+APPEND body $q
+APPEND body &quot;}],&quot;
+APPEND body $q
+APPEND body &quot;max_completion_tokens$q:256}&quot;</code></pre>
+<p><code>$q</code> supplies every JSON quote; <code>$safe</code> is the only part from the user. The 4096-character limit applies to request and response, so this is a small client.</p>
+<h3 id="11-4-post-then-inspect-facts">11.4 POST, then inspect facts</h3>
+<pre><code class="language-text">PRINT &quot;thinking...&quot;
+HTTPPOST raw $endpoint $body 4096
+IF $httpok = 0 GOTO http_error</code></pre>
+<p>A timeout, DNS failure, CORS rejection, or non-2xx status leaves facts instead of crashing the app:</p>
+<pre><code class="language-text">$httpok          1 only for a successfully read 2xx response
+$httpcode        HTTP status, or a negative transport error
+$httplen         response bytes retained
+$httptruncated   1 when the response exceeded the maximum</code></pre>
+<p>The network failing is an event to handle. Missing <code>HTTPPOST</code> arguments are a program bug and stop the app.</p>
+<h3 id="11-5-pull-the-answer-out-of-json">11.5 Pull the answer out of JSON</h3>
+<p>The first choice's message contains the assistant text:</p>
+<pre><code class="language-text">JSONGET answer $raw &quot;choices[0].message.content&quot;
+IF $jsonok = 0 GOTO json_error
+COLOR cyan
+PRINT &quot;llm&gt; $answer&quot;
+COLOR white
+GOTO chat</code></pre>
+<p><code>JSONGET</code> understands dotted object keys and bracketed array indexes. Missing paths and malformed JSON leave <code>$jsonok</code> at 0 rather than stopping the program.</p>
+<h3 id="11-6-finish-every-exit-path">11.6 Finish every exit path</h3>
+<pre><code class="language-text">:http_error
+COLOR red
+PRINT &quot;request failed: HTTP $httpcode&quot;
+PRINT &quot;$raw&quot;
+COLOR white
+GOTO chat
+
+:json_error
+COLOR red
+PRINT &quot;response did not contain choices[0].message.content&quot;
+PRINT &quot;$raw&quot;
+COLOR white
+GOTO chat
+
+:done
+HTTPCLEAR
+SETSTR apikey &quot;&quot;
+PRINT &quot;bye&quot;
+END</code></pre>
+<p>Run the shipped version with <code>run llm-chat</code>. Each request is intentionally single-turn. Conversation memory is the next design problem: append earlier messages while watching the 4096-character ceiling.</p>
+<h3 id="practice-11">Practice 11</h3>
+<ol>
+<li>Add a system message before the user message; <code>JSONESC</code> its text.</li>
+<li>Warn when <code>$httptruncated</code> is 1.</li>
+<li>Include the previous assistant reply in the next request.</li>
+<li>Add <code>/model</code> to change the model string without sending a request.</li>
+</ol>
+<hr>
+<h2 id="chapter-12-files">Chapter 12 — Files</h2>
 <p>Everything so far vanishes when the app ends. Every variable, every array, the high score you just fought for — gone. Files are how a program leaves a note for its future self, and they are the last commands in the language.</p>
-<h3 id="11-1-one-file-at-a-time">11.1 One file at a time</h3>
-<pre><code class="language-text">FOPEN &lt;path&gt; &lt;mode&gt;    open a file: read, write, or append
+<h3 id="12-1-one-file-at-a-time">12.1 One file at a time</h3>
+<pre><code class="language-text">FOPEN &lt;path&gt; &lt;mode&gt;    open: read, write, append, or update
 FCLOSE                 close it</code></pre>
 <p>One file can be open at a time. <code>FOPEN</code> while another file is open closes the old one first, and the app ending closes whatever was left — so a forgotten <code>FCLOSE</code> is untidy, never fatal. Paths are shell paths: <code>/sd/...</code> is the card, everything else is flash, and <code>$variables</code> expand inside them (so <code>FOPEN &quot;/apps/save_$slot.txt&quot; read</code> works).</p>
-<p>The three modes:</p>
+<p>The four modes:</p>
 <pre><code class="language-text">read     the file must exist; you will FREAD from it
 write    start the file over from nothing; you will FWRITE to it
-append   like write, but existing content is kept and you add to the end</code></pre>
+append   like write, but existing content is kept and you add to the end
+update   read and write in place without truncating the existing file</code></pre>
 <p>Whether the open <em>worked</em> is in the built-in <code>$fok</code> — 1 or 0:</p>
 <pre><code class="language-text">FOPEN &quot;/apps/save.txt&quot; read
 IF $fok = 0 GOTO nosave</code></pre>
 <p>Notice the philosophy split, because it is the same one the array bounds check taught: a <strong>missing file is a fact</strong>, not a bug — save files legitimately don't exist yet, so <code>FOPEN</code> reports through <code>$fok</code> and lets the script decide. But <strong>misusing the handle is a bug</strong> — <code>FREAD</code> with nothing open, or against a file opened for <code>write</code> — and stops the app with an error like any other.</p>
-<h3 id="11-2-writing">11.2 Writing</h3>
+<h3 id="12-2-writing">12.2 Writing</h3>
 <p><code>FWRITE</code> writes one line, <code>$variables</code> expanded, newline supplied:</p>
 <pre><code class="language-text"># /sd/apps/log.dapp -- a captain's log, one entry per run
 FOPEN &quot;/apps/log.txt&quot; append
@@ -923,7 +1030,7 @@ EXIT
 PRINT &quot;couldn't open the log&quot;
 EXIT</code></pre>
 <p>Run it a few times, then <code>cat /apps/log.txt</code> from the shell — one line per run. <code>append</code> is what made that accumulate; <code>write</code> would have started over each time, leaving only the newest entry. Choosing between them <em>is</em> the design decision most file code comes down to: a log appends, a save file overwrites.</p>
-<h3 id="11-3-reading">11.3 Reading</h3>
+<h3 id="12-3-reading">12.3 Reading</h3>
 <p><code>FREAD</code> reads one line into a string variable. The built-in <code>$feof</code> (&quot;end of file&quot;) becomes 1 when a read finds nothing left — and that, not the empty string, is how you detect the end, because an empty <em>line</em> in the middle of a file is real data that leaves <code>$feof</code> at 0:</p>
 <pre><code class="language-text">FOPEN &quot;/apps/log.txt&quot; read
 IF $fok = 0 GOTO nolog
@@ -942,14 +1049,28 @@ EXIT
 PRINT &quot;no log yet&quot;
 EXIT</code></pre>
 <p>That <code>:rl</code> loop is the file-reading pattern, and it is worth reading twice: <em>read first, test <code>$feof</code>, then use the line</em>. Testing after using processes a phantom empty line at the end; reading after testing skips the first line. Read, test, use.</p>
-<h3 id="11-4-fexists-and-fdelete">11.4 FEXISTS and FDELETE</h3>
+<h3 id="12-4-fexists-and-fdelete">12.4 FEXISTS and FDELETE</h3>
 <pre><code class="language-text">FEXISTS &lt;numvar&gt; &lt;path&gt;     1 if the path exists, else 0
 FDELETE &lt;path&gt;              delete a file; $fok says whether it worked</code></pre>
 <p><code>FEXISTS</code> answers &quot;is there a save?&quot; without disturbing the open handle, which makes it the polite first move before an <code>FOPEN read</code>. <code>FDELETE</code> is the reset button — a &quot;clear high score&quot; menu option is one line. Deleting a file that isn't there just leaves <code>$fok</code> at 0; nothing stops.</p>
-<h3 id="11-5-numbers-come-back-as-text">11.5 Numbers come back as text</h3>
+<h3 id="12-5-binary-files-and-honest-hex">12.5 Binary files and honest hex</h3>
+<p><code>FREAD</code> is a line reader, so it cannot represent every byte. A NUL byte and a newline are data in a binary file, not string punctuation. Use numeric byte I/O:</p>
+<pre><code class="language-text">FOPEN &quot;/apps/data.bin&quot; update
+FSIZE size
+FSEEK 0
+FREADB byte
+IF $feof = 1 GOTO done
+HEX shown $byte 2
+PRINT &quot;$shown&quot;
+FSEEK 0
+FWRITEB 255
+:done
+FCLOSE</code></pre>
+<p><code>FREADB</code> returns 0..255; <code>$feof</code> distinguishes a real zero byte from end of file. <code>FSEEK</code>, <code>FTELL</code>, and <code>FSIZE</code> use absolute byte positions, and <code>update</code> writes without erasing the file first. The shipped <code>run hex</code> app builds its viewer/editor from exactly these commands.</p>
+<h3 id="12-6-numbers-come-back-as-text">12.6 Numbers come back as text</h3>
 <p>Here is the trap the chapter has been building toward. You <code>FWRITE $score</code> and the file now holds <code>3300</code> — as <strong>four characters</strong>. When <code>FREAD</code> brings it back, you hold a string, and Chapter 3's warning applies in full: using it as a number yields 0, silently.</p>
 <p>The cure is the routine you already own: Chapter 5.4's <code>str2num</code>, digits off the front of a string. Write number → text is free (<code>FWRITE</code> expands <code>$score</code> for you); text → number is <code>str2num</code>. Every save-file scheme in this language is those two moves.</p>
-<h3 id="11-6-tetris-remembers">11.6 Tetris remembers</h3>
+<h3 id="12-7-tetris-remembers">12.7 Tetris remembers</h3>
 <p>Now the real thing — the code that makes <code>run tetris</code> greet you with your best score. Two additions to the shipped game, both short. Loading, called once at startup (<code>GOSUB loadhs</code>):</p>
 <pre><code class="language-text"># reads /apps/tetris.hs into hiscore, tolerating a missing or garbled file
 :loadhs
@@ -978,10 +1099,10 @@ PUT 4 8 &quot;NEW HIGH SCORE&quot;
 :go_banner
 ...</code></pre>
 <p><code>write</code>, not <code>append</code> — a save file's whole job is to hold the latest truth. Note the shipped <code>str2num</code> wears prefixed names (<code>s2i</code>, <code>s2len</code>, <code>s2d</code>) instead of Chapter 5.4's bare ones: inside a program that already uses <code>i</code> and <code>d</code> everywhere, Practice 5.4's label-and-name lesson stopped being theoretical. One more detail worth stealing: the banner shows even when the <em>saving</em> failed (<code>go_nosave</code>) — the player still earned it; only the bookkeeping fell short.</p>
-<h3 id="practice-11">Practice 11</h3>
+<h3 id="practice-12">Practice 12</h3>
 <ol>
 <li>Extend the captain's log with a run counter: the first line of <code>/apps/log.txt</code> holds how many times the app has run, and each run rewrites the file with the incremented count plus a fresh entry line. (Read-modify-write — you will need <code>str2num</code>.)</li>
-<li>Point the 11.3 reader at any file and report the number of lines and the length of the longest one.</li>
+<li>Point the 12.3 reader at any file and report the number of lines and the length of the longest one.</li>
 <li>Give the Chapter 9 bouncing ball a settings file: if <code>/apps/ball.cfg</code> exists, its first line is the <code>WAIT</code> delay; otherwise use 50.</li>
 <li><code>FWRITE &quot;hello&quot;</code> immediately followed by <code>FREAD line</code> stops the app. Why — and what is the correct sequence to write a file and then read it back?</li>
 </ol>
@@ -1009,11 +1130,17 @@ CHARAT &lt;n&gt; &lt;t&gt; &lt;i&gt;     character code at i, 0 past the end
 
 ── input ───────────────────────────────────────────────────────────
 INPUT &lt;name&gt; [prompt]  read a line (blocks); result is TEXT, not a number
+INPUTSECRET &lt;n&gt; [p]    read a masked line; clear secrets when finished
 KEY &lt;name&gt;             one keypress or 0, never blocks
 LED &lt;r&gt; &lt;g&gt; &lt;b&gt;        set rear RGB LED channels (needs runtime &gt;=1.3.0)
 WAVE &lt;ch&gt; &lt;kind&gt; &lt;hz&gt; &lt;level&gt;  three-channel PCM synth (runtime &gt;=1.4.0)
 WAVESTOP               silence and release the synth
 HTTPGET &lt;n&gt; &lt;url&gt; [max] bounded text GET; inspect $httpok/$httpcode
+HTTPPOST &lt;n&gt; &lt;url&gt; &lt;body&gt; [max] bounded POST response
+HTTPHEADER &lt;n&gt; &lt;value&gt; set/replace one of eight request headers
+HTTPCLEAR              clear request headers
+JSONESC &lt;n&gt; &lt;text&gt;     escape text for a JSON string; sets $jsonok
+JSONGET &lt;n&gt; &lt;json&gt; &lt;path&gt; extract dotted/bracketed path; sets $jsonok
 
 ── files ───────────────────────────────────────────────────────────
 FOPEN &lt;path&gt; &lt;mode&gt;    read | write | append | update; $fok = success
@@ -1050,7 +1177,7 @@ EXIT                   end the app  (alias END)</code></pre>
 120 x 60   largest canvas         1       open file at a time
 1000000    steps between WAITs before the loop guard trips</code></pre>
 <p>Every limit reports on the terminal when hit — including array indexes out of range, which stop the app with the line number.</p>
-<p>Built-ins: <code>$battery</code> <code>$cwd</code> <code>$heap</code> <code>$ip</code> <code>$millis</code> <code>$seconds</code> <code>$wifi</code> <code>$ledok</code> <code>$audiook</code> <code>$httpok</code> <code>$httpcode</code> <code>$httplen</code> <code>$httptruncated</code>, the file status pair <code>$fok</code> (last FOPEN/FDELETE/FSEEK worked) and <code>$feof</code> (last FREAD hit end of file), and the key codes below.</p>
+<p>Built-ins: <code>$battery</code> <code>$cwd</code> <code>$heap</code> <code>$ip</code> <code>$millis</code> <code>$seconds</code> <code>$wifi</code> <code>$ledok</code> <code>$audiook</code> <code>$httpok</code> <code>$httpcode</code> <code>$httplen</code> <code>$httptruncated</code> <code>$jsonok</code>, the file status pair <code>$fok</code> (last FOPEN/FDELETE/FSEEK worked) and <code>$feof</code> (last FREAD hit end of file), and the key codes below.</p>
 <h2 id="appendix-c-key-codes">Appendix C — Key Codes</h2>
 <pre><code class="language-text">0    nothing pressed            $kenter  5   enter
 $kup     1   arrow up           $kesc    6   escape (also Ctrl+C, Ctrl+T)
