@@ -11,11 +11,14 @@ git clone <this repo> sgc-chat && cd sgc-chat/sgc-chat-server
 sudo ./install.sh
 ```
 
-This creates a dedicated `sgc-chat` system user, runs `npm install`, and
-installs+starts a systemd service (`sgc-chat.service`) that runs `server.js`
-as that user, restarting on failure. It's safe to re-run after `git pull` --
-it stops the service, refreshes dependencies, and starts it back up; the
-`data/` directory (the SQLite file) is never touched.
+This creates a dedicated `sgc-chat` system user, **copies the app to
+`/opt/sgc-chat`** (not the git clone -- a service account can't be relied on
+to have traversal rights into wherever you happened to clone this under your
+home directory), runs `npm install` there, and installs+starts a systemd
+service (`sgc-chat.service`) that runs `server.js` as that user, restarting
+on failure. It's safe to re-run after `git pull`: it re-syncs `/opt/sgc-chat`
+from the clone and restarts the service; the `data/` directory (the SQLite
+file, living under `/opt/sgc-chat/data`) is never touched.
 
 Useful afterwards:
 
@@ -25,8 +28,9 @@ journalctl -u sgc-chat -f
 sudo systemctl restart sgc-chat
 ```
 
-Override the port or system user by setting env vars before running the
-script: `PORT=8080 APP_USER=sgcchat sudo -E ./install.sh`.
+Override the port, system user, or install location by setting env vars
+before running the script:
+`PORT=8080 APP_USER=sgcchat INSTALL_DIR=/srv/sgc-chat sudo -E ./install.sh`.
 
 ### Running it by hand instead
 
