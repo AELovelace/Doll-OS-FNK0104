@@ -4,7 +4,31 @@ Backend for `apps/sgc-chat.dapp`, the DOLL-OS/DS chat client. A small
 self-contained Node process -- SQLite lives in one file on disk next to it,
 so there's no separate database to provision.
 
-## Run it
+## Install as a service
+
+```bash
+git clone <this repo> sgc-chat && cd sgc-chat/sgc-chat-server
+sudo ./install.sh
+```
+
+This creates a dedicated `sgc-chat` system user, runs `npm install`, and
+installs+starts a systemd service (`sgc-chat.service`) that runs `server.js`
+as that user, restarting on failure. It's safe to re-run after `git pull` --
+it stops the service, refreshes dependencies, and starts it back up; the
+`data/` directory (the SQLite file) is never touched.
+
+Useful afterwards:
+
+```bash
+systemctl status sgc-chat
+journalctl -u sgc-chat -f
+sudo systemctl restart sgc-chat
+```
+
+Override the port or system user by setting env vars before running the
+script: `PORT=8080 APP_USER=sgcchat sudo -E ./install.sh`.
+
+### Running it by hand instead
 
 ```bash
 cd sgc-chat-server
@@ -18,9 +42,6 @@ Listens on `PORT` (default `4390`). The SQLite file is created at
 ```bash
 PORT=4390 SGC_CHAT_DB=/var/lib/sgc-chat/chat.sqlite node server.js
 ```
-
-Keep it running with whatever this host already uses for that (pm2,
-systemd, a screen/tmux session).
 
 ## Expose it at sadgirlsclub.wtf
 
