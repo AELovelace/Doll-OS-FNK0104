@@ -327,20 +327,22 @@ release for any board.
 
 ## 7. On-device layout and ownership
 
-Managed packages install to internal LittleFS by default:
+Managed packages install to internal LittleFS or SD at the user's choice:
 
 ```text
 /apps/<id>.dapp
+/sd/apps/<id>.dapp
 /.dapper/installed.ndjson
 /.dapper/catalog-v1.ndjson
 /.dapper/catalog.part
 /.dapper/package.part
-/.dapper/package.bak
 ```
 
-Dapper installs managed packages to `/apps/<id>.dapp` on internal flash. SD-card
-installation is reserved for a later client because a transaction cannot rename
-atomically across LittleFS and SD.
+Dapper asks whether to save a fresh install to internal flash or the SD card
+when an SD card is mounted. `--internal` and `--sd` skip the prompt, and update
+operations preserve the existing managed install path. Repository/cache state
+stays in internal LittleFS under `/.dapper`; package commits stage a temporary
+file on the target filesystem before renaming it into place there.
 
 The installed record contains at least repository ID, app ID, app version,
 board ID, AppRunner constraint, installed path, size, and SHA-256. Package
@@ -365,8 +367,8 @@ Bundled apps should therefore be seeded into a fallback directory:
 
 The lookup order becomes:
 
-1. `/sd/apps/<id>.dapp` -- removable/manual override;
-2. `/apps/<id>.dapp` -- managed or manually installed user copy;
+1. `/sd/apps/<id>.dapp` -- managed or manually installed removable copy;
+2. `/apps/<id>.dapp` -- managed or manually installed internal user copy;
 3. `/system/apps/<id>.dapp` -- firmware-bundled fallback.
 
 Installing an updated copy shadows the bundled app. Removing it reveals the
@@ -386,12 +388,13 @@ An installation is successful only after all of these steps complete:
 5. parse the downloaded header and verify its ID, version, boards, runtime range,
    and package format against the selected catalog record;
 6. validate the source against the current board's known opcode and line limits;
-7. move the previous managed file to the backup path;
-8. move the completed temporary file into its final path;
-9. atomically replace the installed-package database; and
-10. delete the backup only after the database commit succeeds.
+7. copy the verified download to a staging file on the target filesystem;
+8. move the previous managed file to the target filesystem's backup path;
+9. move the completed staging file into its final path;
+10. atomically replace the installed-package database; and
+11. delete the backup only after the database commit succeeds.
 
-On any failure after step 7, the client restores the backup. Temporary files are
+On any failure after step 8, the client restores the backup. Temporary files are
 safe to remove on the next package-manager invocation after an interrupted boot.
 
 The client must never use an insecure TLS mode. SHA-256 protects an artifact
@@ -408,7 +411,9 @@ dapper runtime                    show board, AppRunner, and package-format vers
 dapper refresh                    refresh and validate the cached catalog
 dapper search [text]              search compatible stable releases
 dapper info <id>                  show installed and available versions
-dapper install <id>[@version]     install to internal flash
+dapper install <id>[@version]     ask for internal flash or SD
+dapper install <id> --sd          install to /sd/apps without prompting
+dapper install <id> --internal    install to /apps without prompting
 dapper install <id> --force       take ownership of an unmanaged app path
 dapper update [id|--all]          update managed packages only
 dapper remove <id>                remove a managed package but keep app data

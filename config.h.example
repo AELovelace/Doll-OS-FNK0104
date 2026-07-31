@@ -30,9 +30,10 @@
     const int BATTERY_ADC_PIN = 9;
 #endif
 
-//   Rear RGB LED (used by the .dapp LED opcode). Leave unset to use RGB_BUILTIN
-//   from the board package, or set to -1 to disable LED control in this build.
-// #define REAR_RGB_LED_PIN 48
+//   Rear WS2812 RGB LED (used by indicators and the .dapp LED opcode). Leave
+//   unset to use Freenove's documented default: GPIO42 on AB/S, GPIO40 on N.
+//   Set to -1 to disable LED control in this build.
+// #define REAR_RGB_LED_PIN 42
 
 //battery voltage divider on this board is 2:1 (see Freenove's Battery_Voltage example)
 const float BATTERY_ADC_DIVIDER = 2.0f;

@@ -627,10 +627,12 @@ Not a C++ API — a second way to add an app, as a plain text file in `/apps`
 (LittleFS) or `/sd/apps`, launched with `run <name>`. Full language reference is
 [`DAPP.md`](DAPP.md); `docs/DAPP-BOOK.md` is the long-form version, and
 `apps/*.dapp` are working examples: games (snake, tetris, 2048, mines, simon),
-utilities (sysmon, notes, lamp, beacon, decide), and a text adventure. The last
-three of the utilities are the ones to read for `LED`, which is guarded behind
-`$ledok` in each of them because the opcode stops an app on a build without a
-rear LED.
+utilities (sysmon, notes, sheet, lamp, beacon, decide), and a text adventure.
+`lamp`, `beacon` and `simon` are the ones to read for `LED`, which is guarded
+behind `$ledok` in each of them because the opcode stops an app on a build
+without a rear LED. `sheet` is the largest one — a spreadsheet, with a
+shunting-yard formula parser and packed cell text — and the best answer to
+"how far does this language actually go".
 
 What matters from the C++ side:
 

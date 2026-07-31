@@ -6,6 +6,7 @@
 #include <WiFiClientSecure.h>
 #include <ArduinoJson.h>
 #include <LittleFS.h>
+#include <SD_MMC.h>
 #include <mbedtls/sha256.h>
 #include <time.h>
 
@@ -19,7 +20,6 @@ static const char* DAPPER_REPO_PART_PATH = "/.dapper/repo.part";
 static const char* DAPPER_INSTALLED_PATH = "/.dapper/installed.ndjson";
 static const char* DAPPER_INSTALLED_PART_PATH = "/.dapper/installed.part";
 static const char* DAPPER_PACKAGE_PART_PATH = "/.dapper/package.part";
-static const char* DAPPER_PACKAGE_BACKUP_PATH = "/.dapper/package.bak";
 static const size_t DAPPER_MAX_REPO_BYTES = 4096;
 static const size_t DAPPER_MAX_CATALOG_BYTES = 128 * 1024;
 static const size_t DAPPER_MAX_PACKAGE_BYTES = 256 * 1024;
@@ -73,6 +73,71 @@ static bool dapperEnsureStorage(String& error) {
     }
     if (!dapperEnsureDirectory("/apps")) {
         error = "cannot create /apps";
+        return false;
+    }
+    return true;
+}
+
+static String dapperInternalAppPath(const String& id) {
+    return "/apps/" + id + ".dapp";
+}
+
+static String dapperSdAppPath(const String& id) {
+    return "/sd/apps/" + id + ".dapp";
+}
+
+static bool dapperIsManagedAppPath(const String& id, const String& path) {
+    return path == dapperInternalAppPath(id) || path == dapperSdAppPath(id);
+}
+
+static bool dapperPathIsSd(const String& path) {
+    return path == "/sd" || path.startsWith("/sd/");
+}
+
+static bool dapperFileExists(const String& path) {
+    RoutedPath r = routePath(path);
+    if (r.isSd && !sdCardMounted) return false;
+    ledPulseStorageRead(r.isSd);
+    File file = r.fs->open(r.realPath, "r");
+    bool ok = file && !file.isDirectory();
+    if (file) file.close();
+    return ok;
+}
+
+static bool dapperRemoveFile(const String& path) {
+    RoutedPath r = routePath(path);
+    if (r.isSd && !sdCardMounted) return false;
+    ledPulseStorageWrite(r.isSd);
+    return r.fs->remove(r.realPath);
+}
+
+static bool dapperRenameFile(const String& fromPath, const String& toPath) {
+    RoutedPath from = routePath(fromPath);
+    RoutedPath to = routePath(toPath);
+    if (from.fs != to.fs || from.isSd != to.isSd) return false;
+    if (from.isSd && !sdCardMounted) return false;
+    ledPulseStorageWrite(from.isSd);
+    return from.fs->rename(from.realPath, to.realPath);
+}
+
+static bool dapperEnsureAppDirectoryForTarget(const String& target, String& error) {
+    RoutedPath r = routePath(target);
+    if (r.isSd && !sdCardMounted) {
+        error = "SD not mounted";
+        return false;
+    }
+
+    ledPulseStorageRead(r.isSd);
+    File appsDir = r.fs->open("/apps");
+    if (appsDir && appsDir.isDirectory()) {
+        appsDir.close();
+        return true;
+    }
+    if (appsDir) appsDir.close();
+
+    ledPulseStorageWrite(r.isSd);
+    if (!r.fs->mkdir("/apps")) {
+        error = r.isSd ? "cannot create /sd/apps" : "cannot create /apps";
         return false;
     }
     return true;
@@ -657,8 +722,10 @@ static bool dapperValidateDownloadedPackage(const DapperRecord& record, String& 
 }
 
 static bool dapperHashFile(const String& path, String& hash, size_t& size) {
-    ledPulseStorageRead(false);
-    File file = LittleFS.open(path, "r");
+    RoutedPath r = routePath(path);
+    if (r.isSd && !sdCardMounted) return false;
+    ledPulseStorageRead(r.isSd);
+    File file = r.fs->open(r.realPath, "r");
     if (!file || file.isDirectory()) {
         if (file) file.close();
         return false;
@@ -670,7 +737,7 @@ static bool dapperHashFile(const String& path, String& hash, size_t& size) {
     size = 0;
     while (file.available()) {
         int received = file.read(buffer, sizeof(buffer));
-        ledPulseStorageRead(false);
+        ledPulseStorageRead(r.isSd);
         if (received <= 0) break;
         size += (size_t)received;
         mbedtls_sha256_update(&sha, buffer, (size_t)received);
@@ -683,26 +750,81 @@ static bool dapperHashFile(const String& path, String& hash, size_t& size) {
     return true;
 }
 
-static bool dapperInstallRecord(const DapperRecord& record, bool force) {
+static bool dapperCopyDownloadedPackageToTargetPart(const String& targetPart, String& error) {
+    File input = LittleFS.open(DAPPER_PACKAGE_PART_PATH, "r");
+    if (!input || input.isDirectory()) {
+        if (input) input.close();
+        error = "cannot reopen verified download";
+        return false;
+    }
+
+    RoutedPath part = routePath(targetPart);
+    if (part.isSd && !sdCardMounted) {
+        input.close();
+        error = "SD not mounted";
+        return false;
+    }
+    part.fs->remove(part.realPath);
+    ledPulseStorageWrite(part.isSd);
+    File output = part.fs->open(part.realPath, "w");
+    if (!output) {
+        input.close();
+        error = "cannot create package staging file";
+        return false;
+    }
+
+    uint8_t buffer[1024];
+    while (input.available()) {
+        int received = input.read(buffer, sizeof(buffer));
+        ledPulseStorageRead(false);
+        if (received <= 0) break;
+        if (output.write(buffer, (size_t)received) != (size_t)received) {
+            input.close();
+            output.close();
+            dapperRemoveFile(targetPart);
+            error = "filesystem write failed";
+            return false;
+        }
+        ledPulseStorageWrite(part.isSd);
+        dapperServiceUi();
+    }
+
+    input.close();
+    output.close();
+    ledPulseStorageWrite(false);
+    LittleFS.remove(DAPPER_PACKAGE_PART_PATH);
+    return true;
+}
+
+static bool dapperInstallRecord(const DapperRecord& record, bool force, const String& target) {
     String error;
     if (!dapperEnsureStorage(error)) {
         outLine("Dapper: " + error, C_RED);
         return false;
     }
-    String target = "/apps/" + record.id + ".dapp";
+    if (!dapperIsManagedAppPath(record.id, target)) {
+        outLine("Dapper: refusing unsupported install path: " + target, C_RED);
+        return false;
+    }
+    if (!dapperEnsureAppDirectoryForTarget(target, error)) {
+        outLine("Dapper: " + error, C_RED);
+        return false;
+    }
+
     DapperInstalled installed;
     bool managed = dapperFindInstalled(record.id, installed);
-    if (LittleFS.exists(target) && !managed && !force) {
+    if (dapperFileExists(target) && (!managed || installed.installedPath != target) && !force) {
         outLine("Dapper: " + target + " is unmanaged; use --force to take ownership", C_RED);
         return false;
     }
-    if (managed && installed.installedPath != target) {
+    if (managed && !dapperIsManagedAppPath(record.id, installed.installedPath)) {
         outLine("Dapper: installed path is not supported by this client: " + installed.installedPath, C_RED);
         return false;
     }
     if (managed && installed.record.version == record.version &&
-        installed.record.sha256 == record.sha256 && LittleFS.exists(target)) {
-        outLine(record.id + " " + record.version + " is already installed", C_GREEN);
+        installed.record.sha256 == record.sha256 && installed.installedPath == target &&
+        dapperFileExists(target)) {
+        outLine(record.id + " " + record.version + " is already installed at " + target, C_GREEN);
         return true;
     }
 
@@ -721,30 +843,42 @@ static bool dapperInstallRecord(const DapperRecord& record, bool force) {
         return false;
     }
 
-    ledPulseStorageWrite(false);
-    LittleFS.remove(DAPPER_PACKAGE_BACKUP_PATH);
-    bool hadTarget = LittleFS.exists(target);
-    if (hadTarget && !LittleFS.rename(target, DAPPER_PACKAGE_BACKUP_PATH)) {
+    String targetPart = target + ".part.dsys";
+    String targetBackup = target + ".bak.dsys";
+    dapperRemoveFile(targetPart);
+    dapperRemoveFile(targetBackup);
+    if (!dapperCopyDownloadedPackageToTargetPart(targetPart, error)) {
         ledPulseStorageWrite(false);
         LittleFS.remove(DAPPER_PACKAGE_PART_PATH);
+        outLine("Dapper: " + error, C_RED);
+        return false;
+    }
+
+    bool hadTarget = dapperFileExists(target);
+    if (hadTarget && !dapperRenameFile(target, targetBackup)) {
+        dapperRemoveFile(targetPart);
         outLine("Dapper: cannot back up the installed app", C_RED);
         return false;
     }
-    if (!LittleFS.rename(DAPPER_PACKAGE_PART_PATH, target)) {
-        if (hadTarget) LittleFS.rename(DAPPER_PACKAGE_BACKUP_PATH, target);
+    if (!dapperRenameFile(targetPart, target)) {
+        if (hadTarget) dapperRenameFile(targetBackup, target);
         outLine("Dapper: cannot commit the downloaded app", C_RED);
         return false;
     }
     if (!dapperRewriteInstalled(record.id, &record, target, error)) {
-        ledPulseStorageWrite(false);
-        LittleFS.remove(target);
-        if (hadTarget) LittleFS.rename(DAPPER_PACKAGE_BACKUP_PATH, target);
+        dapperRemoveFile(target);
+        if (hadTarget) dapperRenameFile(targetBackup, target);
         outLine("Dapper: " + error + "; previous app restored", C_RED);
         return false;
     }
-    ledPulseStorageWrite(false);
-    LittleFS.remove(DAPPER_PACKAGE_BACKUP_PATH);
-    outLine("Installed " + record.id + " " + record.version, C_GREEN);
+    dapperRemoveFile(targetBackup);
+    if (managed && installed.installedPath != target && dapperFileExists(installed.installedPath)) {
+        if (!dapperRemoveFile(installed.installedPath)) {
+            outLine("Dapper: installed at " + target + ", but old copy remains at " +
+                    installed.installedPath, C_YELLOW);
+        }
+    }
+    outLine("Installed " + record.id + " " + record.version + " at " + target, C_GREEN);
     return true;
 }
 
@@ -806,9 +940,66 @@ static void dapperCommandInfo(const String& id) {
     if (matches == 0) outLine("Dapper: package not found: " + id, C_RED);
 }
 
+static String dapperPromptInstallTarget(const DapperRecord& record, const String& currentPath) {
+    if (!sdCardMounted) {
+        outLine("Dapper: SD not mounted; using internal flash", C_YELLOW);
+        return dapperInternalAppPath(record.id);
+    }
+
+    String defaultChoice = dapperPathIsSd(currentPath) ? "s" : "i";
+    outLine("Dapper: install " + record.id + " " + record.version + " where?", C_CYAN);
+    outLine("  [i] internal flash: " + dapperInternalAppPath(record.id));
+    outLine("  [s] SD card:        " + dapperSdAppPath(record.id));
+    outLine("Press Enter for " + String(defaultChoice == "s" ? "SD card" : "internal flash") + ".");
+
+    String answer = "";
+    commandCursorPos = 0;
+    const String prompt = "dapper install> ";
+    if (telnetClient && telnetClient.connected()) {
+        telnetClient.print(prompt);
+    }
+    setActiveInput(prompt, answer, false);
+
+    while (true) {
+        LineInputResult r = readLineEditedInput(answer);
+        if (r == LINE_NO_INPUT) {
+            r = readKeyboardLineEditedInput(answer);
+        }
+        setActiveInput(prompt, answer, false);
+        dapperServiceUi();
+
+        if (r == LINE_SUBMITTED) {
+            String choice = answer;
+            choice.trim();
+            choice.toLowerCase();
+            if (choice.length() == 0) choice = defaultChoice;
+            outLine(prompt + choice, C_CYAN);
+            commandCursorPos = 0;
+            setActiveInput(shellPrompt(), "", false);
+
+            if (choice == "i" || choice == "internal" || choice == "flash") {
+                return dapperInternalAppPath(record.id);
+            }
+            if (choice == "s" || choice == "sd" || choice == "card") {
+                return dapperSdAppPath(record.id);
+            }
+
+            outLine("Dapper: choose i/internal or s/sd", C_RED);
+            answer = "";
+            commandCursorPos = 0;
+            if (telnetClient && telnetClient.connected()) {
+                telnetClient.print(prompt);
+            }
+            setActiveInput(prompt, answer, false);
+        }
+
+        delay(1);
+    }
+}
+
 static void dapperCommandInstall(const String parts[], int partCount) {
     if (partCount < 3) {
-        outLine("Usage: dapper install <id>[@version] [--force]");
+        outLine("Usage: dapper install <id>[@version] [--force] [--internal|--sd]");
         return;
     }
     String request = parts[2];
@@ -820,8 +1011,22 @@ static void dapperCommandInstall(const String parts[], int partCount) {
         version = request.substring(at + 1);
     }
     bool force = false;
+    String requestedTarget;
     for (int i = 3; i < partCount; i++) {
         if (parts[i] == "--force") force = true;
+        else if (parts[i] == "--internal" || parts[i] == "--flash") {
+            if (requestedTarget.length() > 0) {
+                outLine("Dapper: choose only one install location", C_RED);
+                return;
+            }
+            requestedTarget = dapperInternalAppPath(id);
+        } else if (parts[i] == "--sd") {
+            if (requestedTarget.length() > 0) {
+                outLine("Dapper: choose only one install location", C_RED);
+                return;
+            }
+            requestedTarget = dapperSdAppPath(id);
+        }
         else {
             outLine("Dapper: unknown install option: " + parts[i], C_RED);
             return;
@@ -839,7 +1044,14 @@ static void dapperCommandInstall(const String parts[], int partCount) {
         outLine("Dapper: " + failure, C_RED);
         return;
     }
-    dapperInstallRecord(record, force);
+
+    DapperInstalled installed;
+    bool managed = dapperFindInstalled(record.id, installed);
+    String target = requestedTarget;
+    if (target.length() == 0) {
+        target = dapperPromptInstallTarget(record, managed ? installed.installedPath : "");
+    }
+    dapperInstallRecord(record, force, target);
 }
 
 static bool dapperUpdateOne(const String& id) {
@@ -858,7 +1070,7 @@ static bool dapperUpdateOne(const String& id) {
         outLine(id + " is current at " + installed.record.version, C_GREEN);
         return true;
     }
-    return dapperInstallRecord(available, false);
+    return dapperInstallRecord(available, false, installed.installedPath);
 }
 
 static void dapperCommandUpdate(const String parts[], int partCount) {
@@ -894,24 +1106,24 @@ static void dapperCommandRemove(const String& id) {
         outLine("Dapper: not installed: " + id, C_RED);
         return;
     }
-    String expectedPath = "/apps/" + id + ".dapp";
-    if (installed.installedPath != expectedPath) {
+    if (!dapperIsManagedAppPath(id, installed.installedPath)) {
         outLine("Dapper: refusing unexpected installed path " + installed.installedPath, C_RED);
         return;
     }
-    LittleFS.remove(DAPPER_PACKAGE_BACKUP_PATH);
-    bool hadFile = LittleFS.exists(expectedPath);
-    if (hadFile && !LittleFS.rename(expectedPath, DAPPER_PACKAGE_BACKUP_PATH)) {
+    String backupPath = installed.installedPath + ".bak.dsys";
+    dapperRemoveFile(backupPath);
+    bool hadFile = dapperFileExists(installed.installedPath);
+    if (hadFile && !dapperRenameFile(installed.installedPath, backupPath)) {
         outLine("Dapper: cannot back up installed app", C_RED);
         return;
     }
     String error;
     if (!dapperRewriteInstalled(id, nullptr, "", error)) {
-        if (hadFile) LittleFS.rename(DAPPER_PACKAGE_BACKUP_PATH, expectedPath);
+        if (hadFile) dapperRenameFile(backupPath, installed.installedPath);
         outLine("Dapper: " + error + "; app restored", C_RED);
         return;
     }
-    LittleFS.remove(DAPPER_PACKAGE_BACKUP_PATH);
+    dapperRemoveFile(backupPath);
     outLine("Removed " + id + " (save data kept)", C_GREEN);
 }
 
@@ -959,7 +1171,7 @@ static void dapperPrintHelp() {
     outLine("  dapper refresh");
     outLine("  dapper search [text]");
     outLine("  dapper info <id>");
-    outLine("  dapper install <id>[@version] [--force]");
+    outLine("  dapper install <id>[@version] [--force] [--internal|--sd]");
     outLine("  dapper update [id|--all]");
     outLine("  dapper remove <id>");
     outLine("  dapper doctor");

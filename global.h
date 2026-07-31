@@ -23,15 +23,18 @@
 //   other cross-file type lives in this file.
 #include "Audio.h"
 
-//   Optional rear RGB LED for app/runtime effects. Defaults to the board variant's
-//   RGB_BUILTIN when available; set REAR_RGB_LED_PIN in config.h to override, or -1
-//   to disable LED control entirely.
+//   Rear WS2812 RGB LED for app/runtime effects. Pin defaults match Freenove's
+//   FNK0104 RGB examples: GPIO42 on the AB/S variants, GPIO40 on the N variant.
+//   Set REAR_RGB_LED_PIN in config.h to override, or -1 to disable LED control.
 #ifndef REAR_RGB_LED_PIN
-    #ifdef RGB_BUILTIN
-        #define REAR_RGB_LED_PIN RGB_BUILTIN
+    #ifdef FNK0104N_3P5_320x480_ST77922
+        #define REAR_RGB_LED_PIN 40
     #else
-        #define REAR_RGB_LED_PIN -1
+        #define REAR_RGB_LED_PIN 42
     #endif
+#endif
+#ifndef REAR_RGB_LED_BRIGHTNESS
+    #define REAR_RGB_LED_BRIGHTNESS 255
 #endif
 
 //   Shared rear-LED API for native modules (.ino/.cpp) and AppRunner opcodes.
