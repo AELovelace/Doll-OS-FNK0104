@@ -4,18 +4,40 @@
 //   .dapp opcodes behave identically.
 
 #if REAR_RGB_LED_PIN >= 0
-    // FNK0104 boards use Freenove's onboard WS2812 implementation. Keep this
-    // dependency explicit: silently selecting another installed LED library made
-    // the previous fix compile without ever exercising the vendor-tested path.
-    #include <Freenove_WS2812_Lib_for_ESP32.h>
+    #include <esp32-hal-rmt.h>
 #endif
 
 static const uint8_t REAR_RGB_LED_COUNT = 1;
-static const uint8_t REAR_RGB_LED_CHANNEL = 0;
 
 #if REAR_RGB_LED_PIN >= 0
-static Freenove_ESP32_WS2812 rearLedStrip =
-    Freenove_ESP32_WS2812(REAR_RGB_LED_COUNT, REAR_RGB_LED_PIN, REAR_RGB_LED_CHANNEL, TYPE_GRB);
+//Freenove's otherwise-correct one-pixel driver embeds waveform storage for 256
+//pixels in every object: 6,144 RMT symbols / 24,576 bytes of internal .bss. This
+//board has one GRB pixel, so keep the same vendor timing and Arduino RMT path with
+//only the 24 DMA/ISR-safe symbols the hardware can actually transmit. These must
+//stay internal; shrinking them is safer than moving an RMT source buffer to PSRAM.
+static rmt_data_t rearLedSymbols[REAR_RGB_LED_COUNT * 24];
+
+static void rearLedEncodeByte(uint8_t value, size_t& symbolIndex) {
+    for (uint8_t mask = 0x80; mask != 0; mask >>= 1) {
+        rmt_data_t& symbol = rearLedSymbols[symbolIndex++];
+        symbol.level0 = 1;
+        symbol.duration0 = (value & mask) ? 8 : 4;
+        symbol.level1 = 0;
+        symbol.duration1 = (value & mask) ? 4 : 8;
+    }
+}
+
+static bool rearLedWrite(uint8_t red, uint8_t green, uint8_t blue) {
+    red = (uint16_t)red * REAR_RGB_LED_BRIGHTNESS / 255;
+    green = (uint16_t)green * REAR_RGB_LED_BRIGHTNESS / 255;
+    blue = (uint16_t)blue * REAR_RGB_LED_BRIGHTNESS / 255;
+
+    size_t symbolIndex = 0;
+    rearLedEncodeByte(green, symbolIndex);   //FNK0104 onboard pixel is GRB
+    rearLedEncodeByte(red, symbolIndex);
+    rearLedEncodeByte(blue, symbolIndex);
+    return rmtWrite(REAR_RGB_LED_PIN, rearLedSymbols, symbolIndex, RMT_WAIT_FOR_EVER);
+}
 #endif
 
 static bool rearLedInitialized = false;
@@ -41,14 +63,12 @@ static void rearLedHardwareBegin() {
     }
     rearLedBeginAttempted = true;
 #if REAR_RGB_LED_PIN >= 0
-    rearLedInitialized = rearLedStrip.begin();
+    rearLedInitialized = rmtInit(REAR_RGB_LED_PIN, RMT_TX_MODE, RMT_MEM_NUM_BLOCKS_1, 10000000);
     if (!rearLedInitialized) {
         Serial.printf("[boot] rear RGB LED init failed on GPIO %d\n", REAR_RGB_LED_PIN);
         return;
     }
-    rearLedStrip.setBrightness(REAR_RGB_LED_BRIGHTNESS);
-    rearLedStrip.setLedColorData(0, 0, 0, 0);
-    rearLedStrip.show();
+    rearLedWrite(0, 0, 0);
 #endif
 }
 
@@ -58,8 +78,7 @@ void rearLedSetRgb(uint8_t red, uint8_t green, uint8_t blue) {
     if (!rearLedInitialized) {
         return;
     }
-    rearLedStrip.setLedColorData(0, red, green, blue);
-    rearLedStrip.show();
+    rearLedWrite(red, green, blue);
 #else
     (void)red;
     (void)green;
@@ -175,7 +194,7 @@ void ledBegin() {
     rearLedHardwareBegin();
 #if REAR_RGB_LED_PIN >= 0
     if (rearLedInitialized) {
-        Serial.printf("[boot] rear RGB LED ready: GPIO %d, Freenove WS2812\n", REAR_RGB_LED_PIN);
+        Serial.printf("[boot] rear RGB LED ready: GPIO %d, compact Freenove RMT timing\n", REAR_RGB_LED_PIN);
         // A brief, deterministic hardware self-test before the status mixer takes
         // ownership. This also makes it obvious that the newly flashed image ran.
         rearLedSetRgb(96, 0, 0);

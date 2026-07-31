@@ -4,15 +4,16 @@
 //   sockets, streaming, and heap limits are easier to control.
 #include <LittleFS.h>
 
-String asukaLlmHost = ASUKA_DEFAULT_LLM_HOST;
+String asukaLlmHost = "";
 uint16_t asukaLlmPort = ASUKA_DEFAULT_LLM_PORT;
-String asukaLlmPath = ASUKA_DEFAULT_LLM_PATH;
-String asukaSystemPrompt = ASUKA_SYSTEM_PROMPT;
-String asukaClassifierPrompt = ASUKA_CLASSIFIER_PROMPT;
-String asukaWeatherLocationLabel = ASUKA_OPENWEATHER_LOCATION_LABEL;
+String asukaLlmPath = "";
+String asukaSystemPrompt = "";
+String asukaClassifierPrompt = "";
+String asukaWeatherLocationLabel = "";
 double asukaWeatherLat = ASUKA_OPENWEATHER_LAT;
 double asukaWeatherLon = ASUKA_OPENWEATHER_LON;
 bool asukaBraveSearchEnabled = true;
+static bool asukaDefaultsInitialized = false;
 
 const int ASUKA_HISTORY_MAX = 6;
 String asukaHistory[ASUKA_HISTORY_MAX];
@@ -23,6 +24,21 @@ const char* ASUKA_SYSTEM_PROMPT_FILE = "/system/conf/asuka-system.dsys";
 const char* ASUKA_CLASSIFIER_PROMPT_FILE = "/system/conf/asuka-classifier.dsys";
 const char* ASUKA_LEGACY_SYSTEM_PROMPT_FILE = "/asuka-system.txt";
 const char* ASUKA_LEGACY_CLASSIFIER_PROMPT_FILE = "/asuka-classifier.txt";
+
+//Global String constructors run before setup() enables the PSRAM-backed general
+//heap. Delay their payloads until ASUKA is actually launched so its long classifier
+//prompt cannot permanently occupy scarce internal heap from boot.
+static void asukaEnsureDefaults() {
+    if (asukaDefaultsInitialized) {
+        return;
+    }
+    asukaLlmHost = ASUKA_DEFAULT_LLM_HOST;
+    asukaLlmPath = ASUKA_DEFAULT_LLM_PATH;
+    asukaSystemPrompt = ASUKA_SYSTEM_PROMPT;
+    asukaClassifierPrompt = ASUKA_CLASSIFIER_PROMPT;
+    asukaWeatherLocationLabel = ASUKA_OPENWEATHER_LOCATION_LABEL;
+    asukaDefaultsInitialized = true;
+}
 
 static String asukaPrompt() {
     return "asuka> ";
@@ -707,6 +723,8 @@ void handleAsukaCommand(const String parts[], int partCount) {
         outLine("asuka: WiFi not connected. Run 'wifi connect' first.", C_RED);
         return;
     }
+
+    asukaEnsureDefaults();
 
     if (partCount > 1) {
         asukaLlmHost = parts[1];

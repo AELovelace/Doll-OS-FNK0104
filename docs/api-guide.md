@@ -552,6 +552,17 @@ failing. Note that `enablePsramHeap()`'s 512-byte threshold means a few thousand
 small `String`s still land internally — which is why `Edit.ino` uses one flat
 PSRAM slab plus a line index rather than an array of `String` lines.
 
+Cold feature storage is lazy as well: the editor's undo records are allocated
+with its PSRAM slabs, the FTP server object is constructed in PSRAM only while
+FTP is enabled, and ASUKA does not copy its configured defaults until launch.
+The Game Boy's CPU-rendered 160x144 framebuffer is PSRAM-backed; only its small
+audio scratch buffer stays internal for the I2S path.
+
+The rear status LED is intentionally different: its 24 RMT symbols remain in
+internal RAM because the transmitter may access them outside normal cached code.
+`Led.ino` uses the Freenove-tested 10 MHz waveform directly instead of the vendor
+class, whose fixed 256-pixel member array cost 24,576 bytes for this one-pixel board.
+
 ```cpp
 float readBatteryVoltage();
 int   readBatteryPercent();    // linear LiPo estimate; no fuel-gauge chip on this board

@@ -2,8 +2,8 @@
 
 #include <Arduino.h>
 
-// Minimal host boundary around the vendored GPLv2 gnuboy core.  It owns the
-// core's fast internal-SRAM framebuffer while cart data is allocated in PSRAM.
+// Minimal host boundary around the vendored GPLv2 gnuboy core. Its CPU-rendered
+// framebuffer and cart data live in PSRAM; audio scratch stays internal for I2S.
 class GameBoyHost {
  public:
   static constexpr int16_t kWidth = 160;

@@ -24,15 +24,27 @@ constexpr uint32_t kSaveMinIntervalMs = 30000;
 
 bool GameBoyHost::begin() {
   if (ready_) return true;
-  frame_ = static_cast<uint16_t*>(heap_caps_malloc(
-      kWidth * kHeight * sizeof(uint16_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+  const size_t framePixels = kWidth * kHeight;
+  frame_ = static_cast<uint16_t*>(heap_caps_calloc(
+      framePixels, sizeof(uint16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  const bool frameInPsram = frame_ != nullptr;
+  if (!frame_) {
+    frame_ = static_cast<uint16_t*>(heap_caps_calloc(
+        framePixels, sizeof(uint16_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+  }
   soundScratch_ = static_cast<int16_t*>(heap_caps_malloc(
       kSoundScratchSamples * sizeof(int16_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
   if (!frame_ || !soundScratch_) {
+    if (frame_) heap_caps_free(frame_);
+    if (soundScratch_) heap_caps_free(soundScratch_);
+    frame_ = nullptr;
+    soundScratch_ = nullptr;
     status_ = "Game Boy buffers unavailable";
     return false;
   }
-  memset(frame_, 0, kWidth * kHeight * sizeof(uint16_t));
+  Serial.printf("[psram] gbFrame: %u bytes -> %s\n",
+                (unsigned)(framePixels * sizeof(uint16_t)),
+                frameInPsram ? "PSRAM" : "INTERNAL RAM (PSRAM unavailable)");
   // The callback is always registered, even if the codec never came up: gnuboy
   // is init'd once for the life of the firmware, so binding on AudioOut's state
   // here would freeze the first launch's answer in forever. AudioOut::onSamples
@@ -43,6 +55,10 @@ bool GameBoyHost::begin() {
   // mixdown note in AudioOut::onSamples.
   if (gnuboy_init(kSampleRate, GB_AUDIO_MONO_S16, GB_PIXEL_565_LE, nullptr,
                   &audioTrampoline) != 0) {
+    heap_caps_free(frame_);
+    heap_caps_free(soundScratch_);
+    frame_ = nullptr;
+    soundScratch_ = nullptr;
     status_ = "gnuboy initialization failed";
     return false;
   }

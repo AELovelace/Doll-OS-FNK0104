@@ -96,7 +96,9 @@ struct EditUndoRec {
     size_t cursorBefore;
 };
 
-static EditUndoRec editUndo[EDIT_UNDO_MAX];
+//Allocated alongside the editor's text/index slabs. The records are cold while the
+//editor is closed, so a permanent internal-.bss ring only reduced multitasking headroom.
+static EditUndoRec* editUndo = nullptr;
 static int  editUndoCount = 0;
 static int  editUndoHead = 0;
 static bool editUndoSuspended = false;   //true while an undo is being applied, so
@@ -232,6 +234,13 @@ static void editUndoFreeSlot(int slot) {
 }
 
 static void editUndoClear() {
+    if (!editUndo) {
+        editUndoCount = 0;
+        editUndoHead = 0;
+        editUndoRun = 0;
+        editSavedUndoDepth = -1;
+        return;
+    }
     for (int i = 0; i < EDIT_UNDO_MAX; i++) {
         editUndoFreeSlot(i);
     }
@@ -1380,9 +1389,11 @@ static bool editDoExit() {
 static bool editAlloc() {
     editBuf = (char*)psramOrInternalCalloc(EDIT_BUF_CAP, 1, "editBuf");
     editLineStart = (int32_t*)psramOrInternalCalloc(EDIT_MAX_LINES, sizeof(int32_t), "editLineIndex");
-    if (!editBuf || !editLineStart) {
+    editUndo = (EditUndoRec*)psramOrInternalCalloc(EDIT_UNDO_MAX, sizeof(EditUndoRec), "editUndo");
+    if (!editBuf || !editLineStart || !editUndo) {
         if (editBuf) { heap_caps_free(editBuf); editBuf = nullptr; }
         if (editLineStart) { heap_caps_free(editLineStart); editLineStart = nullptr; }
+        if (editUndo) { heap_caps_free(editUndo); editUndo = nullptr; }
         return false;
     }
     return true;
@@ -1390,6 +1401,7 @@ static bool editAlloc() {
 
 static void editFree() {
     editUndoClear();   //each delete record owns a PSRAM payload
+    if (editUndo) { heap_caps_free(editUndo); editUndo = nullptr; }
     if (editBuf) { heap_caps_free(editBuf); editBuf = nullptr; }
     if (editLineStart) { heap_caps_free(editLineStart); editLineStart = nullptr; }
 }

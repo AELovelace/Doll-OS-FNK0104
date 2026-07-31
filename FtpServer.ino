@@ -19,16 +19,59 @@
 //   already mounted with this board's custom pins. Creds come from config.h.
 #include <Arduino.h>
 #include <SimpleFTPServer.h>
+#include <esp_heap_caps.h>
+#include <new>
 
 //command port 21, passive data port 50009 -- the library defaults (FtpServer.h)
-static FtpServer ftpSrv;
+//FtpServer embeds its fallback transfer buffer plus several 263-byte path/command
+//buffers. Keeping the object static charged all of that to internal .bss even while
+//FTP was off. Construct it lazily in PSRAM instead; FTP is never serviced from an ISR
+//and its actual socket buffers still choose whatever capabilities their drivers need.
+static FtpServer* ftpSrv = nullptr;
+static bool ftpSrvUsesPlacementStorage = false;
 static bool ftpActive = false;
+
+static bool ftpEnsureServer() {
+    if (ftpSrv != nullptr) {
+        return true;
+    }
+
+    void* storage = heap_caps_malloc(sizeof(FtpServer), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (storage != nullptr) {
+        ftpSrv = new (storage) FtpServer();
+        ftpSrvUsesPlacementStorage = true;
+        Serial.printf("[psram] ftpServer: %u bytes -> PSRAM\n", (unsigned)sizeof(FtpServer));
+        return true;
+    }
+
+    ftpSrv = new (std::nothrow) FtpServer();
+    ftpSrvUsesPlacementStorage = false;
+    if (ftpSrv != nullptr) {
+        Serial.printf("[psram] ftpServer: %u bytes -> general heap (PSRAM unavailable)\n",
+                      (unsigned)sizeof(FtpServer));
+    }
+    return ftpSrv != nullptr;
+}
+
+static void ftpReleaseServer() {
+    if (ftpSrv == nullptr) {
+        return;
+    }
+    if (ftpSrvUsesPlacementStorage) {
+        ftpSrv->~FtpServer();
+        heap_caps_free(ftpSrv);
+    } else {
+        delete ftpSrv;
+    }
+    ftpSrv = nullptr;
+    ftpSrvUsesPlacementStorage = false;
+}
 
 //serviced every loop() tick while active -- non-blocking, drives the FTP state
 //machine one step (accept/auth/one buffer of transfer) and returns immediately
 void ftpService() {
-    if (ftpActive) {
-        ftpSrv.handleFTP();
+    if (ftpActive && ftpSrv != nullptr) {
+        ftpSrv->handleFTP();
     }
     ledSetFtpActive(ftpActive);
 }
@@ -42,9 +85,13 @@ static void ftpStart() {
         outLine("ftp: SD card not mounted", C_RED);
         return;
     }
+    if (!ftpEnsureServer()) {
+        outLine("ftp: not enough memory for server", C_RED);
+        return;
+    }
     //begin() only starts the listeners + allocates the transfer buffer; the SD card
     //stays mounted exactly as Storage.ino left it
-    ftpSrv.begin(FTP_USER, FTP_PASS);
+    ftpSrv->begin(FTP_USER, FTP_PASS);
     ftpActive = true;
     ledSetFtpActive(true);
 
@@ -63,8 +110,9 @@ static void ftpStop() {
         outLine("ftp: not running", C_YELLOW);
         return;
     }
-    ftpSrv.end();
+    ftpSrv->end();
     ftpActive = false;
+    ftpReleaseServer();
     ledSetFtpActive(false);
     outLine("FTP server off");
 }
