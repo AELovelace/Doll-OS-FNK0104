@@ -49,11 +49,11 @@ PORT=4390 SGC_CHAT_DB=/var/lib/sgc-chat/chat.sqlite node server.js
 
 ## Expose it at sadgirlsclub.wtf
 
-The dapp's default endpoint is `https://sadgirlsclub.wtf/chat`. Reverse-proxy
-that path to the local port, e.g. an Nginx location block:
+The dapp's default endpoint is `https://sadgirlsclub.wtf/dappchat`.
+Reverse-proxy that path to the local port, e.g. an Nginx location block:
 
 ```nginx
-location /chat/ {
+location /dappchat/ {
     proxy_pass http://127.0.0.1:4390/;
     proxy_set_header Host $host;
 }

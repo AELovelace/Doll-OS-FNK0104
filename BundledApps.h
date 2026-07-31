@@ -1804,7 +1804,7 @@ static const char BUNDLED_APP_SGC_CHAT[] = R"DOLLAPP(# @dapp-format 1
 # what you type, send if it isn't blank. See sgc-chat-server/README.md for
 # the backend this talks to and how to point it elsewhere.
 
-SETSTR endpoint "https://sadgirlsclub.wtf/chat"
+SETSTR endpoint "https://sadgirlsclub.wtf/dappchat"
 SETSTR room "lobby"
 SET since 0
 CHR q 34

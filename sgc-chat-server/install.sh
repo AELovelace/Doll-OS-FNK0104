@@ -119,6 +119,6 @@ systemctl enable --now "$SERVICE_NAME"
 echo "==> done"
 systemctl --no-pager status "$SERVICE_NAME"
 echo
-echo "Listening on 127.0.0.1:$PORT -- reverse-proxy /chat/ to it (see README.md)."
+echo "Listening on 127.0.0.1:$PORT -- reverse-proxy /dappchat/ to it (see README.md)."
 echo "App + data now live at $INSTALL_DIR (not the git clone) -- re-run this script after 'git pull' to sync updates."
 echo "Logs: journalctl -u $SERVICE_NAME -f"
