@@ -118,7 +118,7 @@ Run `help` on the device for the live list.
 
 | Command | Description |
 |---|---|
-| `alias` `unalias` | list, create, and remove command aliases stored in `/aliases.dsys` |
+| `alias` `unalias` | list, create, and remove command aliases stored in `/system/conf/alias.dsys` |
 | `apps` | list installed `.dapp` apps |
 | `asuka` | LLM chat |
 | `battery` | battery voltage / percent |

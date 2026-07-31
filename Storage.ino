@@ -30,6 +30,26 @@ static void setTaskWdtTimeout(uint32_t timeoutMs) {
 #endif
 }
 
+bool ensureSystemConfDirectory() {
+    const char* dirs[] = { "/system", "/system/conf" };
+    for (const char* dirPath : dirs) {
+        ledPulseStorageRead(false);
+        File dir = LittleFS.open(dirPath);
+        if (dir && dir.isDirectory()) {
+            dir.close();
+            continue;
+        }
+        if (dir) {
+            dir.close();
+        }
+        ledPulseStorageWrite(false);
+        if (!LittleFS.mkdir(dirPath)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 //mounts LittleFS (formatting it on first boot if needed) and the SD card, called once from setup()
 void initStorage() {
     //begin(true) asks esp_littlefs to auto-format when the mount fails, which covers a
@@ -49,6 +69,7 @@ void initStorage() {
             outLine("LittleFS: mount failed -- settings won't persist", C_RED);
         }
     }
+    ensureSystemConfDirectory();
     ensureDefaultAliases();
 
     //with no card inserted, the SD_MMC driver's internal retry loop (sdmmc_init_ocr) can run

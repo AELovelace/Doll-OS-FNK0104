@@ -7,6 +7,7 @@
 #include <ArduinoJson.h>
 #include <LittleFS.h>
 #include <SD_MMC.h>
+#include <esp_heap_caps.h>
 #include <mbedtls/sha256.h>
 #include <time.h>
 
@@ -24,6 +25,7 @@ static const size_t DAPPER_MAX_REPO_BYTES = 4096;
 static const size_t DAPPER_MAX_CATALOG_BYTES = 128 * 1024;
 static const size_t DAPPER_MAX_PACKAGE_BYTES = 256 * 1024;
 static const size_t DAPPER_MAX_CATALOG_LINE = 4096;
+static const size_t DAPPER_IO_BUFFER_BYTES = 512;
 static const unsigned long DAPPER_HTTP_IDLE_TIMEOUT_MS = 15000;
 static const unsigned long DAPPER_CLOCK_TIMEOUT_MS = 8000;
 static const int DAPPER_MAX_INSTALLED = 32;
@@ -243,31 +245,52 @@ static bool dapperFetchToFile(const String& url, const char* destination,
     if (!dapperEnsureClock(error)) return false;
 
     ledPulseNetwork();
-    WiFiClientSecure secureClient;
-    secureClient.setCACert(DAPPER_ISRG_ROOT_X2);
-    HTTPClient http;
-    http.setConnectTimeout(10000);
-    http.setTimeout(DAPPER_HTTP_IDLE_TIMEOUT_MS);
-    if (!http.begin(secureClient, url)) {
-        error = "could not begin HTTPS request";
+    WiFiClientSecure* secureClient = new WiFiClientSecure();
+    HTTPClient* http = new HTTPClient();
+    uint8_t* buffer = (uint8_t*)heap_caps_malloc(DAPPER_IO_BUFFER_BYTES, MALLOC_CAP_8BIT);
+    if (!secureClient || !http || !buffer) {
+        delete http;
+        delete secureClient;
+        if (buffer) heap_caps_free(buffer);
+        error = "not enough heap for HTTPS download";
         return false;
     }
 
-    int status = http.GET();
-    if (status != HTTP_CODE_OK) {
-        error = "HTTP " + String(status);
-        http.end();
+    secureClient->setCACert(DAPPER_ISRG_ROOT_X2);
+    http->setConnectTimeout(10000);
+    http->setTimeout(DAPPER_HTTP_IDLE_TIMEOUT_MS);
+    if (!http->begin(*secureClient, url)) {
+        error = "could not begin HTTPS request";
+        delete http;
+        delete secureClient;
+        heap_caps_free(buffer);
         return false;
     }
-    int contentLength = http.getSize();
+
+    int status = http->GET();
+    if (status != HTTP_CODE_OK) {
+        error = "HTTP " + String(status);
+        http->end();
+        delete http;
+        delete secureClient;
+        heap_caps_free(buffer);
+        return false;
+    }
+    int contentLength = http->getSize();
     if (contentLength > 0 && (size_t)contentLength > maximumBytes) {
         error = "response is larger than the allowed limit";
-        http.end();
+        http->end();
+        delete http;
+        delete secureClient;
+        heap_caps_free(buffer);
         return false;
     }
     if (expectedBytes > 0 && contentLength > 0 && (size_t)contentLength != expectedBytes) {
         error = "Content-Length does not match the catalog";
-        http.end();
+        http->end();
+        delete http;
+        delete secureClient;
+        heap_caps_free(buffer);
         return false;
     }
 
@@ -276,20 +299,22 @@ static bool dapperFetchToFile(const String& url, const char* destination,
     File output = LittleFS.open(destination, "w");
     if (!output) {
         error = "cannot create temporary download";
-        http.end();
+        http->end();
+        delete http;
+        delete secureClient;
+        heap_caps_free(buffer);
         return false;
     }
 
     mbedtls_sha256_context sha;
     mbedtls_sha256_init(&sha);
     mbedtls_sha256_starts(&sha, 0);
-    WiFiClient* stream = http.getStreamPtr();
-    uint8_t buffer[1024];
+    WiFiClient* stream = http->getStreamPtr();
     size_t total = 0;
     unsigned long lastActivity = millis();
     bool failed = false;
 
-    while (http.connected() || stream->available()) {
+    while (http->connected() || stream->available()) {
         int available = stream->available();
         if (available <= 0) {
             if (contentLength >= 0 && total >= (size_t)contentLength) break;
@@ -303,7 +328,7 @@ static bool dapperFetchToFile(const String& url, const char* destination,
         }
 
         size_t wanted = (size_t)available;
-        if (wanted > sizeof(buffer)) wanted = sizeof(buffer);
+        if (wanted > DAPPER_IO_BUFFER_BYTES) wanted = DAPPER_IO_BUFFER_BYTES;
         int received = stream->read(buffer, wanted);
         ledPulseNetwork();
         if (received <= 0) {
@@ -331,7 +356,10 @@ static bool dapperFetchToFile(const String& url, const char* destination,
     mbedtls_sha256_finish(&sha, digest);
     mbedtls_sha256_free(&sha);
     output.close();
-    http.end();
+    http->end();
+    delete http;
+    delete secureClient;
+    heap_caps_free(buffer);
     actualSha256 = dapperShaHex(digest);
 
     if (!failed && contentLength >= 0 && total != (size_t)contentLength) {
@@ -733,10 +761,15 @@ static bool dapperHashFile(const String& path, String& hash, size_t& size) {
     mbedtls_sha256_context sha;
     mbedtls_sha256_init(&sha);
     mbedtls_sha256_starts(&sha, 0);
-    uint8_t buffer[1024];
+    uint8_t* buffer = (uint8_t*)heap_caps_malloc(DAPPER_IO_BUFFER_BYTES, MALLOC_CAP_8BIT);
+    if (!buffer) {
+        mbedtls_sha256_free(&sha);
+        file.close();
+        return false;
+    }
     size = 0;
     while (file.available()) {
-        int received = file.read(buffer, sizeof(buffer));
+        int received = file.read(buffer, DAPPER_IO_BUFFER_BYTES);
         ledPulseStorageRead(r.isSd);
         if (received <= 0) break;
         size += (size_t)received;
@@ -745,6 +778,7 @@ static bool dapperHashFile(const String& path, String& hash, size_t& size) {
     unsigned char digest[32];
     mbedtls_sha256_finish(&sha, digest);
     mbedtls_sha256_free(&sha);
+    heap_caps_free(buffer);
     file.close();
     hash = dapperShaHex(digest);
     return true;
@@ -773,12 +807,20 @@ static bool dapperCopyDownloadedPackageToTargetPart(const String& targetPart, St
         return false;
     }
 
-    uint8_t buffer[1024];
+    uint8_t* buffer = (uint8_t*)heap_caps_malloc(DAPPER_IO_BUFFER_BYTES, MALLOC_CAP_8BIT);
+    if (!buffer) {
+        input.close();
+        output.close();
+        dapperRemoveFile(targetPart);
+        error = "not enough heap for package copy";
+        return false;
+    }
     while (input.available()) {
-        int received = input.read(buffer, sizeof(buffer));
+        int received = input.read(buffer, DAPPER_IO_BUFFER_BYTES);
         ledPulseStorageRead(false);
         if (received <= 0) break;
         if (output.write(buffer, (size_t)received) != (size_t)received) {
+            heap_caps_free(buffer);
             input.close();
             output.close();
             dapperRemoveFile(targetPart);
@@ -789,6 +831,7 @@ static bool dapperCopyDownloadedPackageToTargetPart(const String& targetPart, St
         dapperServiceUi();
     }
 
+    heap_caps_free(buffer);
     input.close();
     output.close();
     ledPulseStorageWrite(false);

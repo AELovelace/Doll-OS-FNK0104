@@ -307,6 +307,7 @@ void ensureDefaultAliases();
 bool expandCommandAlias(String& command, String& aliasName, String& aliasExpansion);
 String resolvePath(const String& cwd, const String& inputPath);
 RoutedPath routePath(const String& resolvedPath);
+bool ensureSystemConfDirectory();
 void handleAliasCommand(const String parts[], int partCount);
 void handleAppsCommand(const String parts[], int partCount);
 void handleDapperCommand(const String parts[], int partCount);

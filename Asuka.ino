@@ -19,8 +19,10 @@ String asukaHistory[ASUKA_HISTORY_MAX];
 String asukaInputBuffer = "";
 DisplayStreamState asukaDisplayStream;
 
-const char* ASUKA_SYSTEM_PROMPT_FILE = "/asuka-system.txt";
-const char* ASUKA_CLASSIFIER_PROMPT_FILE = "/asuka-classifier.txt";
+const char* ASUKA_SYSTEM_PROMPT_FILE = "/system/conf/asuka-system.dsys";
+const char* ASUKA_CLASSIFIER_PROMPT_FILE = "/system/conf/asuka-classifier.dsys";
+const char* ASUKA_LEGACY_SYSTEM_PROMPT_FILE = "/asuka-system.txt";
+const char* ASUKA_LEGACY_CLASSIFIER_PROMPT_FILE = "/asuka-classifier.txt";
 
 static String asukaPrompt() {
     return "asuka> ";
@@ -36,6 +38,9 @@ static void asukaServiceUi() {
 }
 
 static bool asukaWritePromptFile(const char* path, const String& promptText) {
+    if (!ensureSystemConfDirectory()) {
+        return false;
+    }
     ledPulseStorageWrite(false);
     File file = LittleFS.open(path, "w");
     if (!file) {
@@ -47,8 +52,24 @@ static bool asukaWritePromptFile(const char* path, const String& promptText) {
     return true;
 }
 
-static bool asukaLoadOrSeedPromptFile(const char* path, const char* defaultPrompt, String& promptText, bool& createdFile) {
+static bool asukaMigratePromptFile(const char* legacyPath, const char* currentPath) {
+    if (LittleFS.exists(currentPath)) {
+        return true;
+    }
+    if (!ensureSystemConfDirectory()) {
+        return false;
+    }
+    if (!LittleFS.exists(legacyPath)) {
+        return false;
+    }
+    ledPulseStorageWrite(false);
+    return LittleFS.rename(legacyPath, currentPath);
+}
+
+static bool asukaLoadOrSeedPromptFile(const char* path, const char* legacyPath, const char* defaultPrompt,
+                                      String& promptText, bool& createdFile) {
     createdFile = false;
+    asukaMigratePromptFile(legacyPath, path);
 
     ledPulseStorageRead(false);
     File file = LittleFS.open(path, "r");
@@ -630,8 +651,10 @@ static void runAsukaBlocking() {
 
     bool systemPromptCreated = false;
     bool classifierPromptCreated = false;
-    bool loadedSystemPrompt = asukaLoadOrSeedPromptFile(ASUKA_SYSTEM_PROMPT_FILE, ASUKA_SYSTEM_PROMPT, asukaSystemPrompt, systemPromptCreated);
-    bool loadedClassifierPrompt = asukaLoadOrSeedPromptFile(ASUKA_CLASSIFIER_PROMPT_FILE, ASUKA_CLASSIFIER_PROMPT, asukaClassifierPrompt, classifierPromptCreated);
+    bool loadedSystemPrompt = asukaLoadOrSeedPromptFile(ASUKA_SYSTEM_PROMPT_FILE, ASUKA_LEGACY_SYSTEM_PROMPT_FILE,
+                                                        ASUKA_SYSTEM_PROMPT, asukaSystemPrompt, systemPromptCreated);
+    bool loadedClassifierPrompt = asukaLoadOrSeedPromptFile(ASUKA_CLASSIFIER_PROMPT_FILE, ASUKA_LEGACY_CLASSIFIER_PROMPT_FILE,
+                                                            ASUKA_CLASSIFIER_PROMPT, asukaClassifierPrompt, classifierPromptCreated);
     outLine("ASUKA local chat", C_PINK);
     outLine("System prompt: " + asukaPromptLoadStatus(loadedSystemPrompt, systemPromptCreated));
     outLine("Classifier prompt: " + asukaPromptLoadStatus(loadedClassifierPrompt, classifierPromptCreated));

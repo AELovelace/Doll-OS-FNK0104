@@ -4,9 +4,12 @@
 //   arguments the user typed after the alias.
 #include <LittleFS.h>
 
-static const char* ALIAS_FILE_PATH = "/aliases.dsys";
-static const char* ALIAS_LEGACY_PATH = "/aliases.txt";
-static const char* ALIAS_TMP_PATH = "/aliases.tmp.dsys";
+static const char* ALIAS_FILE_PATH = "/system/conf/alias.dsys";
+static const char* ALIAS_LEGACY_SYSTEM_DSYS_PATH = "/system/conf/aliases.dsys";
+static const char* ALIAS_LEGACY_DSYS_PATH = "/aliases.dsys";
+static const char* ALIAS_LEGACY_SINGULAR_DSYS_PATH = "/alias.dsys";
+static const char* ALIAS_LEGACY_TXT_PATH = "/aliases.txt";
+static const char* ALIAS_TMP_PATH = "/system/conf/alias.tmp.dsys";
 static const int ALIAS_MAX_ENTRIES = 32;
 static const int ALIAS_NAME_MAX = 24;
 static const int ALIAS_EXPANSION_MAX = 160;
@@ -69,6 +72,9 @@ static int aliasLoadEntries(AliasEntry entries[], int maxEntries) {
 }
 
 static bool aliasSaveEntries(const AliasEntry entries[], int count) {
+    if (!ensureSystemConfDirectory()) {
+        return false;
+    }
     ledPulseStorageWrite(false);
     LittleFS.remove(ALIAS_TMP_PATH);
     File file = LittleFS.open(ALIAS_TMP_PATH, "w");
@@ -99,10 +105,27 @@ static bool aliasSaveEntries(const AliasEntry entries[], int count) {
 }
 
 void ensureDefaultAliases() {
+    ensureSystemConfDirectory();
     if (LittleFS.exists(ALIAS_FILE_PATH)) {
         return;
     }
-    if (LittleFS.exists(ALIAS_LEGACY_PATH) && LittleFS.rename(ALIAS_LEGACY_PATH, ALIAS_FILE_PATH)) {
+    if (LittleFS.exists(ALIAS_LEGACY_SYSTEM_DSYS_PATH) &&
+        LittleFS.rename(ALIAS_LEGACY_SYSTEM_DSYS_PATH, ALIAS_FILE_PATH)) {
+        ledPulseStorageWrite(false);
+        return;
+    }
+    if (LittleFS.exists(ALIAS_LEGACY_DSYS_PATH) &&
+        LittleFS.rename(ALIAS_LEGACY_DSYS_PATH, ALIAS_FILE_PATH)) {
+        ledPulseStorageWrite(false);
+        return;
+    }
+    if (LittleFS.exists(ALIAS_LEGACY_SINGULAR_DSYS_PATH) &&
+        LittleFS.rename(ALIAS_LEGACY_SINGULAR_DSYS_PATH, ALIAS_FILE_PATH)) {
+        ledPulseStorageWrite(false);
+        return;
+    }
+    if (LittleFS.exists(ALIAS_LEGACY_TXT_PATH) &&
+        LittleFS.rename(ALIAS_LEGACY_TXT_PATH, ALIAS_FILE_PATH)) {
         ledPulseStorageWrite(false);
         return;
     }

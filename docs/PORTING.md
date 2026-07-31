@@ -273,8 +273,8 @@ as `ASUKA_DEFAULT_LLM_HOST`, `ASUKA_DEFAULT_LLM_PORT`,
 `ASUKA_OPENWEATHER_API_KEY`, `ASUKA_OPENWEATHER_LOCATION_LABEL`,
 `ASUKA_OPENWEATHER_LAT`, `ASUKA_OPENWEATHER_LON`, `ASUKA_SYSTEM_PROMPT`, and
 `ASUKA_CLASSIFIER_PROMPT`. ASUKA seeds missing prompt files into LittleFS when
-the command starts: `/asuka-system.txt` for the chat system prompt and
-`/asuka-classifier.txt` for the tool-selection/classifier prompt. Runtime
+the command starts: `/system/conf/asuka-system.dsys` for the chat system prompt
+and `/system/conf/asuka-classifier.dsys` for the tool-selection/classifier prompt. Runtime
 `/system <prompt>` and `/classifier <prompt>` changes are saved back to those
 files; `/system reset` and `/classifier reset` restore the compiled defaults and
 save them back to flash. Weather questions call OpenWeather directly for the

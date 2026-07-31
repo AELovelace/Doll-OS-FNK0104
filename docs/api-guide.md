@@ -234,7 +234,7 @@ static const CommandEntry commandTable[] = {
 };
 ```
 Before lookup, `commandProcessor()` expands a matching shell alias from
-`/aliases.dsys` (`nano foo` becomes `edit foo`). Lookup is then a linear scan
+`/system/conf/alias.dsys` (`nano foo` becomes `edit foo`). Lookup is then a linear scan
 (`parts[0] == commandTable[i].name`), exact match, case-sensitive. `clear` is the one exception — handled inline in
 `commandProcessor()` because it clears both surfaces directly rather than going
 through the table. An unmatched word prints `Unknown command: ...` in red.
@@ -684,7 +684,8 @@ the sketch-local `TFT_eSPI` fork and `PartitionScheme=custom` →
 - **8-token command line, hard cap.** `splitCommand(dispatchCommand, parts, 8)`
   prepares the command handler arguments in `commandProcessor()`.
 - **Command dispatch is exact-match, case-sensitive, linear scan** over a small
-  static table after file-backed shell aliases from `/aliases.dsys` are expanded.
+  static table after file-backed shell aliases from `/system/conf/alias.dsys`
+  are expanded.
   There is still no prefix matching.
 - **New cross-file types go in `global.h`**, not their owning `.ino` (§15).
 - **One session at a time.** A second telnet connection is refused with a
