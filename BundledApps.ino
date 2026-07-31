@@ -94,7 +94,7 @@ void seedBundledApps() {
         { "/system/apps/adventure.dapp", BUNDLED_APP_ADVENTURE },
         { "/system/apps/tetris.dapp", BUNDLED_APP_TETRIS },
         { "/system/apps/snake.dapp", BUNDLED_APP_SNAKE },
-        { "/system/apps/sgc-chat.dapp", BUNDLED_APP_SGC_CHAT },
+        { "/system/apps/dappchat.dapp", BUNDLED_APP_DAPPCHAT },
         { "/docs/dapp.txt", BUNDLED_DOC_DAPP },
     };
 

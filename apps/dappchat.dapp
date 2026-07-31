@@ -1,11 +1,11 @@
 # @dapp-format 1
-# @id sgc-chat
-# @name SGC Chat
+# @id dappchat
+# @name DappChat
 # @version 1.0.0
 # @boards fnk0104
 # @runtime >=1.4.0 <2.0.0
 # @summary Chat with other DOLL-OS/DS units over the Sad Girls Club backend
-# /apps/sgc-chat.dapp
+# /apps/dappchat.dapp
 # Turn-based network chat: log in (first use of a username creates the
 # account), pick a room, then each line is poll-new-messages, block for
 # what you type, send if it isn't blank. See sgc-chat-server/README.md for
@@ -17,7 +17,7 @@ SET since 0
 CHR q 34
 
 COLOR pink
-PRINT "SGC CHAT"
+PRINT "DAPPCHAT"
 PRINT "letters/numbers/-/_ only for username and room"
 COLOR white
 
@@ -50,12 +50,14 @@ HTTPPOST raw $url $body 512
 SETSTR body ""
 IF $httpok = 0 GOTO auth_http_error
 
-JSONGET ok $raw "ok"
-IFEQ $ok "true" GOTO auth_ok
+JSONGET authok $raw "ok"
+PRINT "debug ok=[$authok] jsonok=$jsonok len=$httplen"
+IFEQ $authok "true" GOTO auth_ok
 JSONGET err $raw "error"
 COLOR red
 IFEQ $err "bad_password" GOTO bad_password
-PRINT "sign-in failed: $err"
+PRINT "sign-in failed: HTTP $httpcode ($httplen bytes)"
+PRINT "$raw"
 COLOR white
 GOTO login
 
@@ -66,16 +68,16 @@ GOTO login
 
 :auth_http_error
 COLOR red
-PRINT "could not reach sgc-chat: HTTP $httpcode"
+PRINT "could not reach dappchat: HTTP $httpcode"
 COLOR white
 WAIT 1500
 GOTO login
 
 :auth_ok
-JSONGET token $raw "token"
-JSONGET created $raw "created"
+JSONGET authtoken $raw "token"
+JSONGET wascreated $raw "created"
 COLOR green
-IFEQ $created "true" GOTO welcome_new
+IFEQ $wascreated "true" GOTO welcome_new
 PRINT "welcome back, $username"
 GOTO room_prompt
 :welcome_new
@@ -92,7 +94,7 @@ COLOR cyan
 PRINT "-- room: $room --  /quit to leave, blank line to refresh"
 COLOR white
 
-HTTPHEADER "Authorization" "Bearer $token"
+HTTPHEADER "Authorization" "Bearer $authtoken"
 
 :chat
 GOSUB poll
@@ -181,7 +183,7 @@ RETURN
 
 :done
 HTTPCLEAR
-SETSTR token ""
+SETSTR authtoken ""
 COLOR pink
 PRINT "bye"
 EXIT
