@@ -1,0 +1,843 @@
+# /sd/apps/adventure.dapp
+# A Mini DS Adventure Game - "The Cursed Grotto"
+# Run with: apps run adventure
+
+COLOR cyan
+PRINT "=================================="
+PRINT "   THE CURSED GROTTO"
+PRINT "   A Mini DS Adventure"
+PRINT "=================================="
+WAIT 500
+CLEAR
+
+COLOR white
+PRINT "You stand before a moss-covered"
+PRINT "stone archway leading deep into"
+PRINT "an ancient cave system..."
+WAIT 600
+PRINT ""
+PRINT "Rumor says a treasure lies deep"
+PRINT "within, but danger lurks at every"
+PRINT "turn. Will you enter?"
+WAIT 500
+
+:menu
+PRINT ""
+COLOR yellow
+PRINT "Choose your path:"
+COLOR white
+PRINT "  1. Enter the Grotto"
+PRINT "  2. Turn back"
+INPUT choice "> "
+IFEQ $choice 2 GOTO coward
+IFEQ $choice 1 GOTO enter
+COLOR magenta
+PRINT "Hmm, try 1 or 2!"
+GOTO menu
+
+:coward
+COLOR red
+PRINT "You wisely turn back."
+PRINT "Some say wisdom is just"
+PRINT "another word for fear..."
+WAIT 500
+COLOR pink
+PRINT "Better luck next time!"
+PRINT "Score: 0"
+EXIT
+
+:enter
+CLEAR
+COLOR green
+PRINT "You push through the archway"
+PRINT "and descend into darkness..."
+WAIT 700
+CLEAR
+COLOR white
+PRINT "Inside the Cursed Grotto"
+PRINT "========================="
+PRINT ""
+PRINT "The cave opens into a large"
+PRINT "chamber with a faint blue"
+PRINT "glow on the walls. Three"
+PRINT "passages are visible:"
+WAIT 600
+
+SET gold 0
+SET health 100
+SET potions 1
+
+:chamber1
+PRINT ""
+COLOR yellow
+PRINT "1. Left - A narrow tunnel"
+PRINT "2. Center - A wide corridor"
+PRINT "3. Right - A crack in the wall"
+INPUT choice "> "
+IFEQ $choice 1 GOTO narrow
+IFEQ $choice 2 GOTO wide
+IFEQ $choice 3 GOTO crack
+COLOR magenta
+PRINT "Choose 1, 2, or 3!"
+GOTO chamber1
+
+:narrow
+CLEAR
+COLOR white
+PRINT "The Narrow Tunnel"
+PRINT "=================="
+PRINT ""
+PRINT "You squeeze through the tight"
+PRINT "passage. Rocks scrape your"
+PRINT "arms and something scratches!"
+ADD health -10
+COLOR red
+PRINT "* Health: $health *"
+WAIT 400
+PRINT ""
+COLOR cyan
+PRINT "But at the end, you find a"
+PRINT "shimmering crystal! It pulses"
+PRINT "with magical energy."
+SETSTR item "Crystal of Light"
+COLOR green
+PRINT "* Found: $item *"
+ADD gold 50
+COLOR yellow
+PRINT "* Gold: $gold *"
+PRINT ""
+COLOR white
+PRINT "The tunnel leads to a fork:"
+COLOR yellow
+PRINT "1. Take the high path"
+PRINT "2. Take the low path"
+INPUT choice "> "
+IFEQ $choice 1 GOTO highpath
+IFEQ $choice 2 GOTO lowpath
+COLOR magenta
+PRINT "Choose 1 or 2!"
+GOTO narrow
+
+:highpath
+CLEAR
+COLOR white
+PRINT "The High Path"
+PRINT "=============="
+PRINT ""
+PRINT "You climb over rocky ledges"
+PRINT "and find yourself on a narrow"
+PRINT "bridge over a chasm!"
+WAIT 600
+PRINT ""
+COLOR cyan
+PRINT "On the bridge, a hooded figure"
+PRINT "stands before you."
+WAIT 400
+PRINT ""
+COLOR magenta
+PRINT "Trader: 'Greetings, adventurer!"
+PRINT "I have something you might need.'"
+PRINT "A healing potion for 30 gold?'"
+WAIT 600
+PRINT ""
+COLOR yellow
+PRINT "1. Buy potion (30g)"
+PRINT "2. Decline"
+INPUT choice "> "
+IFEQ $choice 1 GOTO buy
+IFEQ $choice 2 GOTO decline
+COLOR magenta
+PRINT "Choose 1 or 2!"
+GOTO highpath
+
+:decline
+COLOR white
+PRINT "You keep your gold and move on."
+WAIT 400
+GOTO continuebridge
+
+:buy
+IF $gold <= 30 GOTO toopoor
+ADD gold -30
+ADD potions 1
+COLOR green
+PRINT "* Bought a potion! *"
+COLOR yellow
+PRINT "* Gold: $gold | Potions: $potions *"
+GOTO continuebridge
+
+:toopoor
+COLOR red
+PRINT "Trader: 'Ah, not enough gold!"
+PRINT "Come back richer, friend!'"
+WAIT 400
+PRINT ""
+
+:continuebridge
+PRINT "The trader nods and vanishes."
+COLOR white
+PRINT "You cross the bridge safely"
+PRINT "and find a small chest!"
+WAIT 500
+PRINT ""
+COLOR yellow
+PRINT "1. Open the chest"
+PRINT "2. Leave it (trap?)"
+INPUT choice "> "
+IFEQ $choice 1 GOTO openchest
+IFEQ $choice 2 GOTO skipchest
+COLOR magenta
+PRINT "Choose 1 or 2!"
+GOTO continuebridge
+
+:openchest
+RAND trap 1 6
+IF $trap >= 4 GOTO safechest
+GOTO trapped
+
+:trapped
+COLOR red
+PRINT "* A trap! The chest sprays"
+PRINT "poisonous spores! *"
+ADD health -25
+COLOR red
+PRINT "* Health: $health *"
+WAIT 600
+IF $health <= 0 GOTO gameover
+PRINT ""
+COLOR white
+PRINT "You stumble onward..."
+GOTO afterchest
+
+:safechest
+COLOR green
+PRINT "* The chest is safe! *"
+ADD gold 75
+COLOR yellow
+PRINT "* Found 75 gold! Total: $gold *"
+WAIT 500
+GOTO afterchest
+
+:skipchest
+COLOR white
+PRINT "You leave the chest behind"
+PRINT "and move onward wisely."
+WAIT 400
+
+:afterchest
+CLEAR
+COLOR white
+PRINT "The bridge leads to an ancient"
+PRINT "altar with a carved stone:"
+PRINT ""
+COLOR cyan
+PRINT "'The one who holds light"
+PRINT "shall pass, but beware"
+PRINT "the shadows below.'"
+WAIT 700
+PRINT ""
+COLOR yellow
+PRINT "1. Continue to the depths"
+PRINT "2. Return to the chamber"
+INPUT choice "> "
+IFEQ $choice 1 GOTO depths
+IFEQ $choice 2 GOTO chamber1
+COLOR magenta
+PRINT "Choose 1 or 2!"
+GOTO afterchest
+
+:wide
+CLEAR
+COLOR white
+PRINT "The Wide Corridor"
+PRINT "==================="
+PRINT ""
+PRINT "This spacious passage is lined"
+PRINT "with strange murals depicting"
+PRINT "an ancient civilization."
+WAIT 600
+PRINT ""
+COLOR cyan
+PRINT "One mural shows a figure holding"
+PRINT "a glowing orb toward a sealed"
+PRINT "door marked with three symbols."
+WAIT 500
+PRINT ""
+COLOR yellow
+PRINT "1. Study the murals"
+PRINT "2. Continue forward"
+INPUT choice "> "
+IFEQ $choice 1 GOTO study
+IFEQ $choice 2 GOTO forward
+COLOR magenta
+PRINT "Choose 1 or 2!"
+GOTO wide
+
+:study
+CLEAR
+COLOR white
+PRINT "You examine the murals closely."
+WAIT 400
+PRINT ""
+COLOR cyan
+PRINT "They tell the story of a guardian"
+PRINT "beast and how only those with"
+PRINT "a 'light source' can pass safely."
+WAIT 600
+PRINT ""
+COLOR green
+PRINT "* You learn about the guardian! *"
+SETSTR knowledge "Guardian weak to light"
+WAIT 500
+PRINT ""
+COLOR yellow
+PRINT "1. Continue forward"
+PRINT "2. Return to the chamber"
+INPUT choice "> "
+IFEQ $choice 1 GOTO forward
+IFEQ $choice 2 GOTO chamber1
+COLOR magenta
+PRINT "Choose 1 or 2!"
+GOTO study
+
+:forward
+CLEAR
+COLOR white
+PRINT "You press onward through the"
+PRINT "corridor. A low growl echoes"
+PRINT "from ahead..."
+WAIT 700
+PRINT ""
+COLOR red
+PRINT "* A massive cave bat swoops"
+PRINT "down at you! *"
+WAIT 500
+PRINT ""
+COLOR yellow
+PRINT "1. Fight it!"
+PRINT "2. Use a potion"
+INPUT choice "> "
+IFEQ $choice 1 GOTO fightbat
+IFEQ $choice 2 GOTO usepotionbat
+COLOR magenta
+PRINT "Choose 1 or 2!"
+GOTO forward
+
+:fightbat
+CLEAR
+RAND damage 15 40
+COLOR white
+PRINT "You swing wildly at the bat!"
+PRINT "Its wings block some attacks."
+WAIT 500
+PRINT ""
+COLOR red
+PRINT "* The bat strikes back! *"
+ADD health -$damage
+COLOR red
+PRINT "* Health: $health *"
+WAIT 400
+IF $health <= 0 GOTO gameover
+PRINT ""
+COLOR green
+PRINT "But you drive the bat away!"
+PRINT "It screeches and flees."
+WAIT 500
+GOTO guardian
+
+:usepotionbat
+ADD potions -1
+IF $potions < 0 GOTO nopotion
+COLOR white
+PRINT "You toss a potion to create a"
+PRINT "smokescreen and escape!"
+ADD health 15
+COLOR green
+PRINT "* Health restored to: $health *"
+COLOR yellow
+PRINT "* Potions: $potions *"
+WAIT 500
+GOTO guardian
+
+:nopotion
+COLOR red
+PRINT "No potions left!"
+ADD health -30
+COLOR red
+PRINT "* Health: $health *"
+IF $health <= 0 GOTO gameover
+COLOR white
+PRINT "You barely escape!"
+WAIT 400
+GOTO guardian
+
+:guardian
+CLEAR
+COLOR white
+PRINT "You arrive before a massive"
+PRINT "sealed door. The guardian"
+PRINT "legend speaks of appears!"
+WAIT 700
+PRINT ""
+COLOR red
+PRINT "* A shadow serpent coils"
+PRINT "before the door! *"
+WAIT 600
+PRINT ""
+COLOR yellow
+PRINT "1. Attack head-on!"
+PRINT "2. Use your crystal"
+INPUT choice "> "
+IFEQ $choice 1 GOTO attacksnake
+IFEQ $choice 2 GOTO usecrystal
+COLOR magenta
+PRINT "Choose 1 or 2!"
+GOTO guardian
+
+:attacksnake
+COLOR red
+PRINT "You charge the serpent!"
+ADD health -40
+COLOR red
+PRINT "* Health: $health *"
+WAIT 400
+IF $health <= 0 GOTO gameover
+COLOR white
+PRINT "You wound it, but it strikes"
+PRINT "back viciously!"
+WAIT 500
+PRINT ""
+COLOR yellow
+PRINT "1. Press the attack"
+PRINT "2. Retreat to chamber"
+INPUT choice "> "
+IFEQ $choice 1 GOTO pressattack
+IFEQ $choice 2 GOTO chamber1
+COLOR magenta
+PRINT "Choose 1 or 2!"
+GOTO attacksnake
+
+:pressattack
+COLOR white
+PRINT "You strike with all your might!"
+COLOR green
+PRINT "The serpent recoils and"
+PRINT "the door unlocks behind it!"
+ADD gold 100
+COLOR yellow
+PRINT "* Gold: $gold *"
+WAIT 500
+GOTO treasure_room
+
+:usecrystal
+COLOR cyan
+PRINT "You hold up the Crystal of Light!"
+COLOR white
+PRINT "The serpent hisses and writhes"
+PRINT "as the light weakens it!"
+WAIT 700
+COLOR green
+PRINT "* The serpent retreats into"
+PRINT "the shadows, defeated! *"
+WAIT 500
+COLOR white
+PRINT "The door slides open before you."
+GOTO treasure_room
+
+:lowpath
+CLEAR
+COLOR white
+PRINT "The Low Path"
+PRINT "============="
+PRINT ""
+PRINT "You descend into a flooded"
+PRINT "passage. Cold water laps at"
+PRINT "your ankles."
+WAIT 600
+PRINT ""
+COLOR cyan
+PRINT "The water glows faintly. Fish"
+PRINT "with luminous scales dart"
+PRINT "past you."
+WAIT 500
+PRINT ""
+COLOR yellow
+PRINT "1. Search the underwater crevices"
+PRINT "2. Keep moving forward"
+INPUT choice "> "
+IFEQ $choice 1 GOTO searchwater
+IFEQ $choice 2 GOTO keepmoving
+COLOR magenta
+PRINT "Choose 1 or 2!"
+GOTO lowpath
+
+:searchwater
+COLOR white
+PRINT "You dive into the crevices..."
+WAIT 500
+RAND find 1 5
+IF $find >= 3 GOTO foundgold
+COLOR cyan
+PRINT "You find some glowing pearls!"
+ADD gold 40
+COLOR yellow
+PRINT "* Found 40 gold! Total: $gold *"
+WAIT 500
+GOTO afterwater
+
+:foundgold
+COLOR yellow
+PRINT "You uncover an old stash of coins!"
+ADD gold 60
+PRINT "* Found 60 gold! Total: $gold *"
+WAIT 500
+GOTO afterwater
+
+:keepmoving
+COLOR white
+PRINT "You wade through the passage"
+PRINT "carefully, avoiding the deeper"
+PRINT "sections."
+WAIT 500
+PRINT ""
+COLOR white
+PRINT "The passage ends at a small"
+PRINT "underground pool."
+WAIT 400
+
+:afterwater
+CLEAR
+COLOR white
+PRINT "You emerge from the water at a"
+PRINT "stone staircase leading upward."
+WAIT 500
+PRINT ""
+COLOR yellow
+PRINT "1. Climb the stairs"
+PRINT "2. Return to the chamber"
+INPUT choice "> "
+IFEQ $choice 1 GOTO climbstairs
+IFEQ $choice 2 GOTO chamber1
+COLOR magenta
+PRINT "Choose 1 or 2!"
+GOTO afterwater
+
+:climbstairs
+CLEAR
+COLOR white
+PRINT "You climb the ancient stairs."
+PRINT "At the top, a massive door"
+PRINT "blocks your path!"
+WAIT 600
+PRINT ""
+COLOR yellow
+PRINT "1. Push the door"
+PRINT "2. Look for another way"
+INPUT choice "> "
+IFEQ $choice 1 GOTO pushdoor
+IFEQ $choice 2 GOTO findlever
+COLOR magenta
+PRINT "Choose 1 or 2!"
+GOTO climbstairs
+
+:pushdoor
+COLOR white
+PRINT "You strain against the door..."
+ADD health -15
+COLOR red
+PRINT "* Health: $health *"
+WAIT 400
+IF $health <= 0 GOTO gameover
+COLOR white
+PRINT "It cracks open just enough!"
+WAIT 500
+GOTO treasure_room
+
+:findlever
+COLOR white
+PRINT "You search the walls and find"
+PRINT "a hidden lever! It clicks"
+PRINT "smoothly and the door swings open."
+WAIT 700
+GOTO treasure_room
+
+:crack
+CLEAR
+COLOR white
+PRINT "The Crack in the Wall"
+PRINT "====================="
+PRINT ""
+PRINT "You squeeze through a narrow"
+PRINT "crack. It's tight but you make"
+PRINT "it through!"
+ADD health -5
+COLOR red
+PRINT "* Health: $health *"
+WAIT 400
+IF $health <= 0 GOTO gameover
+PRINT ""
+COLOR white
+PRINT "You find yourself in a hidden"
+PRINT "nook with a small altar."
+WAIT 600
+PRINT ""
+COLOR cyan
+PRINT "On the altar sits a potion!"
+COLOR yellow
+PRINT "1. Take the potion"
+INPUT choice "> "
+ADD potions 1
+COLOR green
+PRINT "* Potion acquired! *"
+COLOR yellow
+PRINT "* Potions: $potions *"
+WAIT 500
+PRINT ""
+COLOR white
+PRINT "The nook has one exit leading"
+PRINT "down into darkness."
+COLOR yellow
+PRINT "1. Descend"
+INPUT choice "> "
+GOTO depths
+
+:depths
+CLEAR
+COLOR white
+PRINT "The Depths"
+PRINT "==========="
+PRINT ""
+COLOR red
+PRINT "The air grows cold. Strange"
+PRINT "whispers echo from the walls."
+WAIT 700
+PRINT ""
+COLOR cyan
+PRINT "You see a faint glow ahead."
+PRINT "As you approach, you discover"
+PRINT "the heart of the grotto!"
+WAIT 600
+PRINT ""
+COLOR yellow
+PRINT "1. Enter the glowing chamber"
+PRINT "2. Turn back to safety"
+INPUT choice "> "
+IFEQ $choice 1 GOTO treasure_room
+IFEQ $choice 2 GOTO chamber1
+COLOR magenta
+PRINT "Choose 1 or 2!"
+GOTO depths
+
+:treasure_room
+CLEAR
+COLOR pink
+PRINT "=================================="
+PRINT "    THE TREASURE CHAMBER"
+PRINT "=================================="
+WAIT 700
+CLEAR
+COLOR white
+PRINT "Golden light fills the chamber."
+PRINT "Shelves of gold and gemstones"
+PRINT "line the walls!"
+WAIT 700
+PRINT ""
+COLOR yellow
+PRINT "But as you reach for the gold,"
+PRINT "the floor begins to rumble..."
+WAIT 600
+PRINT ""
+COLOR red
+PRINT "THE GROTTO IS COLLAPSING!"
+WAIT 500
+PRINT ""
+COLOR yellow
+PRINT "1. Grab gold and run!"
+PRINT "2. Search for the legendary orb"
+INPUT choice "> "
+IFEQ $choice 1 GOTO grabgold
+IFEQ $choice 2 GOTO findorb
+COLOR magenta
+PRINT "Choose 1 or 2!"
+GOTO treasure_room
+
+:grabgold
+COLOR white
+PRINT "You stuff your pockets with gold!"
+WAIT 400
+ADD gold 200
+COLOR yellow
+PRINT "* +200 Gold! Total: $gold *"
+WAIT 500
+GOTO escape
+
+:findorb
+COLOR cyan
+PRINT "You spot a floating orb of"
+PRINT "pure light! The source of the"
+PRINT "grotto's power!"
+WAIT 700
+COLOR green
+PRINT "* The Orb of the Grotto! *"
+PRINT "It burns in your hands with"
+PRINT "immense power!"
+ADD gold 300
+COLOR yellow
+PRINT "* +300 Gold! Total: $gold *"
+WAIT 500
+GOTO escape
+
+:escape
+CLEAR
+COLOR white
+PRINT "You sprint through crumbling"
+PRINT "passages, dodging falling"
+PRINT "rocks!"
+WAIT 700
+COLOR red
+PRINT "A massive boulder blocks"
+PRINT "the main exit!"
+WAIT 500
+PRINT ""
+COLOR yellow
+PRINT "1. Squeeze through a side passage"
+PRINT "2. Try to move the boulder"
+INPUT choice "> "
+IFEQ $choice 1 GOTO squeeze
+IFEQ $choice 2 GOTO moveboulder
+COLOR magenta
+PRINT "Choose 1 or 2!"
+GOTO escape
+
+:squeeze
+COLOR white
+PRINT "You squeeze through a narrow"
+PRINT "gap beside the boulder!"
+ADD health -20
+COLOR red
+PRINT "* Health: $health *"
+WAIT 400
+IF $health <= 0 GOTO gameover
+COLOR green
+PRINT "You burst out into fresh air!"
+WAIT 500
+GOTO victory
+
+:moveboulder
+COLOR white
+PRINT "You heave at the boulder with"
+PRINT "all your might!"
+ADD health -30
+COLOR red
+PRINT "* Health: $health *"
+WAIT 400
+IF $health <= 0 GOTO gameover
+COLOR white
+PRINT "It shifts! You scramble through"
+PRINT "the opening as the cave"
+PRINT "collapses behind you!"
+WAIT 700
+GOTO victory
+
+:victory
+CLEAR
+COLOR green
+PRINT "=================================="
+PRINT "        VICTORY!"
+PRINT "=================================="
+WAIT 500
+PRINT ""
+COLOR white
+PRINT "You stand outside the grotto,"
+PRINT "covered in dust but alive!"
+PRINT "The entrance crumbles and seals"
+PRINT "behind you."
+WAIT 700
+PRINT ""
+COLOR cyan
+PRINT "Your adventure in the Cursed"
+PRINT "Grotto is complete!"
+WAIT 500
+PRINT ""
+COLOR yellow
+PRINT "=============================="
+PRINT "  Final Score:"
+PRINT "  Gold: $gold"
+PRINT "  Health: $health"
+PRINT "  Potions left: $potions"
+PRINT "=============================="
+WAIT 700
+
+IF $gold >= 400 GOTO perfect
+IF $gold >= 200 GOTO great
+IF $gold >= 100 GOTO good
+GOTO okay
+
+:perfect
+COLOR green
+PRINT ""
+PRINT "*** LEGENDARY ADVENTURER! ***"
+PRINT "You explored every corner and"
+PRINT "earned a fortune!"
+WAIT 600
+GOTO final
+
+:great
+COLOR cyan
+PRINT ""
+PRINT "*** EXCELLENT ADVENTURER! ***"
+PRINT "You navigated the grotto with"
+PRINT "skill and wit!"
+WAIT 600
+GOTO final
+
+:good
+COLOR yellow
+PRINT ""
+PRINT "*** BRAVE ADVENTURER! ***"
+PRINT "You survived and found treasure!"
+WAIT 600
+GOTO final
+
+:okay
+COLOR white
+PRINT ""
+PRINT "*** CAUTIOUS ADVENTURER ***"
+PRINT "You survived - some would call"
+PRINT "that victory enough!"
+WAIT 600
+
+:final
+PRINT ""
+COLOR pink
+PRINT "Thanks for playing!"
+PRINT "Run 'apps run adventure'"
+PRINT "to play again!"
+WAIT 750
+EXIT
+
+:gameover
+CLEAR
+COLOR red
+PRINT "=================================="
+PRINT "      GAME OVER"
+PRINT "=================================="
+WAIT 500
+PRINT ""
+COLOR white
+PRINT "Your health has fallen to zero."
+PRINT "The Cursed Grotto claims another"
+PRINT "soul..."
+WAIT 700
+PRINT ""
+COLOR yellow
+PRINT "Gold collected: $gold"
+PRINT "Potions remaining: $potions"
+WAIT 700
+PRINT ""
+COLOR pink
+PRINT "Thanks for playing!"
+PRINT "Run 'apps run adventure'"
+PRINT "to try again!"
+WAIT 750
+EXIT

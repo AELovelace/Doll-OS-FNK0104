@@ -671,18 +671,232 @@ static bool editNextKey(EditKey& key, char& ch) {
 //   cap typing at ~26 keys/sec and fall behind on the bursts a telnet client
 //   delivers. Coalescing is what keeps that from mattering.
 
-//the visible slice of one buffer line, already tab-expanded and horizontally scrolled
-static String editVisibleRow(int line) {
+//   Syntax highlighting
+//
+//   Only .dapp gets colored, and only because the editor already owns both
+//   renderers -- there is no ANSI parser in the path to smuggle color through
+//   (see the file header), so highlighting has to be a property of the render
+//   rather than of the text. The model is deliberately the cheapest one that
+//   works: a per-line pass producing one attribute byte per *display* column,
+//   computed on the tab-expanded line so it slices identically to the text.
+//   No cross-line state, so a line can be re-highlighted in isolation and the
+//   viewport costs editRows passes per frame -- microseconds against a ~38ms
+//   panel push.
+//
+//   .dapp is line-oriented (AppRunner.ino appExecute: opcode, then operands,
+//   no continuations), which is what makes the no-state model exact rather
+//   than an approximation.
+
+static const char ESA_TEXT    = '.';
+static const char ESA_COMMENT = 'c';
+static const char ESA_KEYWORD = 'k';
+static const char ESA_STRING  = 's';
+static const char ESA_VAR     = 'v';
+static const char ESA_NUMBER  = 'n';
+static const char ESA_LABEL   = 'l';
+
+//true while editing a file whose name ends in .dapp
+static bool editSyntaxDapp = false;
+
+//kept in step with the dispatch chain in AppRunner.ino appExecute()
+static const char* const EDIT_DAPP_KEYWORDS[] = {
+    "PRINT", "ECHO", "COLOR", "CLEAR", "CLS", "WAIT", "SLEEP",
+    "SET", "ADD", "SUB", "MUL", "DIV", "MOD", "EXPR", "RAND",
+    "DIM", "SETSTR", "APPEND", "CHR", "SUBSTR", "LEN", "CHARAT", "INPUT", "KEY",
+    "CANVAS", "ENDCANVAS", "PUT", "FLIP",
+    "FOPEN", "FCLOSE", "FREAD", "FWRITE", "FEXISTS", "FDELETE",
+    "LABEL", "GOTO", "GOSUB", "RETURN", "IF", "IFEQ", "IFNE", "EXIT", "END",
+};
+static const int EDIT_DAPP_KEYWORD_COUNT =
+    sizeof(EDIT_DAPP_KEYWORDS) / sizeof(EDIT_DAPP_KEYWORDS[0]);
+
+static bool editPathIsDapp(const String& path) {
+    String p = path;
+    p.toLowerCase();
+    return p.endsWith(".dapp");
+}
+
+static bool editDappIsKeyword(const String& word) {
+    for (int i = 0; i < EDIT_DAPP_KEYWORD_COUNT; i++) {
+        if (word.equalsIgnoreCase(EDIT_DAPP_KEYWORDS[i])) return true;
+    }
+    return false;
+}
+
+static bool editIsWordChar(char c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+        || (c >= '0' && c <= '9') || c == '_';
+}
+
+static void editFill(String& attr, int from, int to, char a) {
+    for (int i = from; i < to && i < (int)attr.length(); i++) {
+        if (i >= 0) attr.setCharAt(i, a);
+    }
+}
+
+//marks `$name` runs inside an already-colored span, so "hi, $name" reads as a
+//string with a live substitution in it rather than one flat green blob
+static void editMarkVarsIn(const String& s, String& attr, int from, int to) {
+    for (int i = from; i < to; i++) {
+        if (s[i] != '$') continue;
+        int j = i + 1;
+        while (j < to && editIsWordChar(s[j])) j++;
+        if (j > i + 1) editFill(attr, i, j, ESA_VAR);
+        i = j - 1;
+    }
+}
+
+//fills `attr` with one attribute char per character of `s` (a tab-expanded line)
+static void editHighlightDapp(const String& s, String& attr) {
+    const int n = s.length();
+    attr = "";
+    if (n == 0) return;
+    attr.reserve(n);
+    for (int i = 0; i < n; i++) attr += ESA_TEXT;
+
+    int i = 0;
+    while (i < n && s[i] == ' ') i++;
+    if (i >= n) return;
+
+    //whole-line comment -- both forms AppRunner.ino's isAppCommentOrBlank accepts
+    if (s[i] == '#' || (s[i] == '/' && i + 1 < n && s[i + 1] == '/')) {
+        editFill(attr, i, n, ESA_COMMENT);
+        return;
+    }
+
+    if (s[i] == ':') {
+        //":name" shorthand label -- the colon and the name are the whole statement
+        int j = i;
+        while (j < n && s[j] != ' ') j++;
+        editFill(attr, i, j, ESA_LABEL);
+        i = j;
+    } else {
+        int j = i;
+        while (j < n && s[j] != ' ') j++;
+        const String op = s.substring(i, j);
+        if (editDappIsKeyword(op)) {
+            editFill(attr, i, j, ESA_KEYWORD);
+            //LABEL/GOTO take a label name as their one operand
+            if (op.equalsIgnoreCase("LABEL") || op.equalsIgnoreCase("GOTO") || op.equalsIgnoreCase("GOSUB")) {
+                int a = j;
+                while (a < n && s[a] == ' ') a++;
+                int b = a;
+                while (b < n && s[b] != ' ') b++;
+                editFill(attr, a, b, ESA_LABEL);
+                j = b;
+            }
+        }
+        //an unrecognized opcode stays plain: that is the tell that `run` will
+        //reject the line, and inventing an error color for it would be noisier
+        i = j;
+    }
+
+    //operands
+    while (i < n) {
+        const char c = s[i];
+        if (c == '"') {
+            int j = i + 1;
+            while (j < n && s[j] != '"') j++;
+            if (j < n) j++;           //include the closing quote; unterminated runs to EOL
+            editFill(attr, i, j, ESA_STRING);
+            editMarkVarsIn(s, attr, i, j);
+            i = j;
+        } else if (c == '$') {
+            int j = i + 1;
+            while (j < n && editIsWordChar(s[j])) j++;
+            //an array reference colors as one variable, subscript included, so
+            //"$board[$i]" doesn't read as a variable followed by something unknown
+            if (j < n && s[j] == '[') {
+                int depth = 0;
+                int k = j;
+                for (; k < n; k++) {
+                    if (s[k] == '[') depth++;
+                    else if (s[k] == ']' && --depth == 0) { k++; break; }
+                }
+                if (depth == 0) j = k;
+            }
+            editFill(attr, i, j, ESA_VAR);
+            i = j;
+        } else if ((c >= '0' && c <= '9')
+                   || (c == '-' && i + 1 < n && s[i + 1] >= '0' && s[i + 1] <= '9')) {
+            //only at a token boundary, so the "2" in "roll2" isn't a number
+            if (i > 0 && s[i - 1] != ' ') { i++; continue; }
+            int j = (c == '-') ? i + 1 : i;
+            while (j < n && s[j] >= '0' && s[j] <= '9') j++;
+            editFill(attr, i, j, ESA_NUMBER);
+            i = j;
+        } else if (i > 0 && s[i - 1] == ' ' && (c == 'G' || c == 'g')) {
+            //the GOTO/GOSUB inside IF/IFEQ/IFNE, plus the label it jumps to
+            int j = i;
+            while (j < n && s[j] != ' ') j++;
+            const String word = s.substring(i, j);
+            if (word.equalsIgnoreCase("GOTO") || word.equalsIgnoreCase("GOSUB")) {
+                editFill(attr, i, j, ESA_KEYWORD);
+                int a = j;
+                while (a < n && s[a] == ' ') a++;
+                int b = a;
+                while (b < n && s[b] != ' ') b++;
+                editFill(attr, a, b, ESA_LABEL);
+                j = b;
+            }
+            i = j;
+        } else {
+            i++;
+        }
+    }
+}
+
+static uint16_t editAttrColor(char a) {
+    switch (a) {
+        case ESA_COMMENT: return TFT_DARKGREY;
+        case ESA_KEYWORD: return TFT_CYAN;
+        case ESA_STRING:  return TFT_GREEN;
+        case ESA_VAR:     return TFT_YELLOW;
+        case ESA_NUMBER:  return TFT_ORANGE;
+        case ESA_LABEL:   return TFT_PINK;
+        default:          return TFT_WHITE;
+    }
+}
+
+static const char* editAttrAnsi(char a) {
+    switch (a) {
+        case ESA_COMMENT: return "\x1b[90m";
+        case ESA_KEYWORD: return "\x1b[36m";
+        case ESA_STRING:  return "\x1b[32m";
+        case ESA_VAR:     return "\x1b[33m";
+        case ESA_NUMBER:  return "\x1b[91m";
+        case ESA_LABEL:   return "\x1b[95m";
+        default:          return "\x1b[0m";
+    }
+}
+
+//the visible slice of one buffer line, already tab-expanded and horizontally
+//scrolled, plus its attribute row. `attr` comes back empty when highlighting is
+//off -- both renderers treat "attr shorter than row" as "draw it plain".
+static void editVisibleRowStyled(int line, String& row, String& attr) {
     String expanded;
     editExpandLine(line, expanded, -1);
+    attr = "";
+    if (editSyntaxDapp) {
+        editHighlightDapp(expanded, attr);
+    }
     if (editLeftCol >= (int)expanded.length()) {
-        return "";
+        row = "";
+        attr = "";
+        return;
     }
-    String slice = expanded.substring(editLeftCol);
-    if ((int)slice.length() > editCols) {
-        slice = slice.substring(0, editCols);
+    row = expanded.substring(editLeftCol);
+    if (attr.length() > 0) attr = attr.substring(editLeftCol);
+    if ((int)row.length() > editCols) {
+        row = row.substring(0, editCols);
+        if (attr.length() > 0) attr = attr.substring(0, editCols);
     }
-    return slice;
+}
+
+static String editVisibleRow(int line) {
+    String row, attr;
+    editVisibleRowStyled(line, row, attr);
+    return row;
 }
 
 static String editTitleText() {
@@ -721,10 +935,26 @@ static void editRenderPanel() {
     for (int r = 0; r < editRows; r++) {
         const int line = editTopLine + r;
         if (line >= editLineCount) break;
-        const String row = editVisibleRow(line);
-        if (row.length() > 0) {
-            frameSprite.drawString(row, DISPLAY_PADDING, textTop + r * editLineH);
+        String row, attr;
+        editVisibleRowStyled(line, row, attr);
+        if (row.length() == 0) continue;
+        const int y = textTop + r * editLineH;
+        if (attr.length() != row.length()) {
+            frameSprite.drawString(row, DISPLAY_PADDING, y);
+            continue;
         }
+        //one drawString per run of same-colored characters; the font is fixed
+        //width, so a run's x is just its column times editCharW
+        int i = 0;
+        while (i < (int)row.length()) {
+            int j = i;
+            while (j < (int)row.length() && attr[j] == attr[i]) j++;
+            frameSprite.setTextColor(editAttrColor(attr[i]), TFT_BLACK);
+            frameSprite.drawString(row.substring(i, j),
+                                   DISPLAY_PADDING + i * editCharW, y);
+            i = j;
+        }
+        frameSprite.setTextColor(TFT_WHITE, TFT_BLACK);
     }
 
     //block cursor, blinking on the same half-period the shell command bar uses
@@ -789,7 +1019,23 @@ static void editRenderTelnet() {
     //text
     for (int r = 0; r < editRows; r++) {
         const int line = editTopLine + r;
-        out += (line < editLineCount) ? editVisibleRow(line) : String("");
+        if (line < editLineCount) {
+            String row, attr;
+            editVisibleRowStyled(line, row, attr);
+            if (attr.length() == row.length() && row.length() > 0) {
+                int i = 0;
+                while (i < (int)row.length()) {
+                    int j = i;
+                    while (j < (int)row.length() && attr[j] == attr[i]) j++;
+                    out += editAttrAnsi(attr[i]);
+                    out += row.substring(i, j);
+                    i = j;
+                }
+                out += "\x1b[0m";   //so ^[K erases in the default background
+            } else {
+                out += row;
+            }
+        }
         out += "\x1b[K\r\n";
     }
 
@@ -928,6 +1174,7 @@ static const char* EDIT_HELP_LINES[] = {
     "",
     "Tabs are kept as tabs. Saves go through a",
     "temp file, so a power loss can't truncate.",
+    ".dapp files are syntax highlighted.",
 };
 static const int EDIT_HELP_COUNT = sizeof(EDIT_HELP_LINES) / sizeof(EDIT_HELP_LINES[0]);
 
@@ -1096,6 +1343,7 @@ static void editDoSave() {
         return;
     }
     editPathLogical = name;
+    editSyntaxDapp = editPathIsDapp(editPathLogical);   //"save as" can change the language
     //the buffer now matches the file, so this is the depth undoing back to
     //"unmodified" has to reach (see editRefreshModified)
     editSavedUndoDepth = editUndoCount;
@@ -1152,6 +1400,7 @@ void handleEditCommand(const String parts[], int partCount) {
         outLine("  Limits: 128KB, 4000 lines, 64 undo steps.", C_CYAN);
         outLine("  Tabs are kept as tabs; the cut buffer survives between", C_CYAN);
         outLine("  files, so ^K in one and ^U in another moves text.", C_CYAN);
+        outLine("  .dapp files get syntax highlighting on both surfaces.", C_CYAN);
         return;
     }
 
@@ -1169,6 +1418,7 @@ void handleEditCommand(const String parts[], int partCount) {
     editRows = max(1, (DISPLAY_HEIGHT - EDIT_TITLE_H - EDIT_HINT_H - 4) / editLineH);
 
     editPathLogical = parts[1];
+    editSyntaxDapp = editPathIsDapp(editPathLogical);
     editTopLine = 0;
     editLeftCol = 0;
     editGoalCol = -1;

@@ -669,6 +669,57 @@ void drawDisplayUsbWarning() {
     frameSprite.setTextDatum(TL_DATUM);
 }
 
+//   paints a running .dapp's CANVAS grid over the terminal area (AppRunner.ino's FLIP).
+//   The grid is scaled to fill the area rather than drawn at a fixed cell size: a script
+//   picks its playfield in cells and gets the biggest version of it the panel can show,
+//   which is the only way a 10x20 well and an 80x24 status screen can both look right.
+void drawDappCanvas() {
+    const int top = displayTerminalY();
+    const int height = displayTerminalHeight();
+    frameSprite.fillRect(0, top, DISPLAY_WIDTH, height, TFT_BLACK);
+    if (!dappCanvasCells || dappCanvasCols <= 0 || dappCanvasRows <= 0) {
+        return;
+    }
+
+    const int cellW = max(1, (DISPLAY_WIDTH - DISPLAY_PADDING * 2) / dappCanvasCols);
+    const int cellH = max(1, (height - DISPLAY_PADDING * 2) / dappCanvasRows);
+
+    //the built-in font is 6x8 at size 1, so this is how many whole multiples of it fit in
+    //a cell -- a small grid gets big glyphs instead of a lot of empty space
+    int textSize = min(cellW / 6, cellH / 8);
+    if (textSize < 1) textSize = 1;
+    if (textSize > 4) textSize = 4;
+
+    //center the grid in the area it didn't divide evenly into
+    const int originX = (DISPLAY_WIDTH - cellW * dappCanvasCols) / 2;
+    const int originY = top + (height - cellH * dappCanvasRows) / 2;
+
+    frameSprite.setTextSize(textSize);
+    frameSprite.setTextDatum(MC_DATUM);
+    //drawString (not drawChar) because only drawString honours the datum, and a 2-byte
+    //stack buffer keeps that from meaning a String allocation per cell per frame
+    char glyph[2] = { ' ', '\0' };
+    for (int row = 0; row < dappCanvasRows; row++) {
+        for (int col = 0; col < dappCanvasCols; col++) {
+            const DappCanvasCell& cell = dappCanvasCells[row * dappCanvasCols + col];
+            if (cell.ch == ' ' || cell.ch == '\0') {
+                continue;   //the area is already black; skipping blanks is most of the frame
+            }
+            //single-argument setTextColor draws no background box, so glyphs can't clip
+            //their neighbours when a cell is narrower than the font
+            glyph[0] = cell.ch;
+            frameSprite.setTextColor(ansiCodeToPixelColor(cell.color));
+            frameSprite.drawString(glyph,
+                                   originX + col * cellW + cellW / 2,
+                                   originY + row * cellH + cellH / 2);
+        }
+    }
+
+    frameSprite.setTextSize(1);
+    frameSprite.setTextDatum(TL_DATUM);
+    frameSprite.setTextColor(TFT_WHITE, TFT_BLACK);
+}
+
 void drawDisplayFrame() {
     unsigned long now = millis();
     bool statusRefreshDue = (now - displayLastStatusRefresh) >= DISPLAY_STATUS_REFRESH_MS;
@@ -684,6 +735,8 @@ void drawDisplayFrame() {
     drawDisplayStatusBar();
     if (usbModeDisplayActive) {
         drawDisplayUsbWarning();
+    } else if (dappCanvasActive) {
+        drawDappCanvas();
     } else {
         drawDisplayHistory();
     }

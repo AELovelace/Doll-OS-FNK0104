@@ -83,3 +83,13 @@ int keyboardReadRawByte() {
     }
     return (uint8_t)KeyboardSerial.read();
 }
+
+//looks at the next keyboard-bridge byte without consuming it, or -1 if none is waiting.
+//Used by the .dapp runtime's abort check (AppRunner.ino appPollAbortChord), which must
+//not steal bytes the app's own KEY/INPUT reads are about to consume.
+int keyboardPeekRawByte() {
+    if (KeyboardSerial.available() <= 0) {
+        return -1;
+    }
+    return (uint8_t)KeyboardSerial.peek();
+}

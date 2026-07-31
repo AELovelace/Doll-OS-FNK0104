@@ -82,6 +82,7 @@ int telnetReadFilteredByte();
 //line-edited prompts; keyboardReadRawByte() feeds the RemoteSession raw passthrough.
 LineInputResult readKeyboardLineEditedInput(String& text);
 int keyboardReadRawByte();
+int keyboardPeekRawByte();
 
 //shared per-byte line editor both input sources push into (TelnetServer.ino). Applies
 //one input byte to `text`, using `st` for escape/CR context; echoCrlfToTelnet controls
@@ -158,6 +159,61 @@ struct DappStringVar {
     String name;
     String value;
     bool used;
+};
+
+//a DIM'd numeric array. `values` doesn't own its memory -- every array is carved out of
+//DappProgram::arrayPool by a bump pointer, so there is one PSRAM block for all of them
+//and nothing to free per-array. See appDimArray in AppRunner.ino.
+struct DappArray {
+    String name;
+    long* values;
+    int size;
+    bool used;
+};
+
+//a loaded .dapp program plus its interpreter state. Every array here is a PSRAM
+//allocation rather than a stack array -- see the storage comment in AppRunner.ino for
+//why. The elements hold Strings, so alloc() placement-news them and the destructor
+//unwinds them; that destructor is what makes the early-return paths in handleRunCommand
+//leak-free, so keep this stack-scoped and never copy it.
+struct DappProgram {
+    DappLine* lines = nullptr;
+    DappLabel* labels = nullptr;
+    DappVar* vars = nullptr;
+    DappStringVar* stringVars = nullptr;
+    DappArray* arrays = nullptr;
+    long* arrayPool = nullptr;      //backing cells every DIM'd array carves from
+    int* callStack = nullptr;       //GOSUB return addresses (line indices)
+    int lineCount = 0;
+    int labelCount = 0;
+    int arrayPoolUsed = 0;
+    int callDepth = 0;
+
+    //out-of-band error channel. Value lookup happens several frames deep inside text
+    //expansion (appExpandText -> appStringValueOf -> appArrayCell), where there is no way
+    //to return a failure -- so a bad array index records itself here and appExecute checks
+    //it after every instruction. Without this, an out-of-range read would quietly evaluate
+    //to 0, which is the one bug a script driving a few hundred array cells cannot find.
+    String fault = "";
+
+    bool alloc();
+    ~DappProgram();
+
+    DappProgram() {}
+    DappProgram(const DappProgram&) = delete;
+    DappProgram& operator=(const DappProgram&) = delete;
+};
+
+//per-input-source escape state for the .dapp runtime's KEY opcode (AppRunner.ino). Here
+//rather than there for the same hoisted-prototype reason as EditKeyState above: the
+//builder lifts a prototype mentioning DappKeyState to the top of the sketch. Two
+//instances exist (telnet, keyboard bridge) so a half-arrived arrow key on one source
+//cannot corrupt the other's parse -- the rule LineEditState follows too.
+enum DappKeyPhase { DKEY_NORMAL, DKEY_ESC, DKEY_CSI };
+struct DappKeyState {
+    DappKeyPhase phase = DKEY_NORMAL;
+    String params = "";
+    unsigned long escAtMs = 0;
 };
 
 //shared helpers used across app/file command tabs
@@ -252,6 +308,25 @@ const int DISPLAY_STATUS_BAR_HEIGHT = 16;
 const int DISPLAY_COMMAND_BAR_HEIGHT = 20;
 const int DISPLAY_PADDING = 4;
 bool usbModeDisplayActive = false;   //true while "usb" mode is active -- swaps the mirrored history area for a warning banner (UsbMsc.ino)
+
+//   .dapp canvas (AppRunner.ino) -- a fixed character grid a script can address by cell
+//   instead of appending scrolling lines, which is what a game needs. Same display
+//   arrangement as usbModeDisplayActive above: while dappCanvasActive is set,
+//   drawDisplayFrame() paints this grid over the terminal area instead of the history.
+//
+//   These live here (rather than as AppRunner.ino file statics) for the same reason
+//   displayHistoryRows does: Display.ino has to read the buffer directly to render it,
+//   and .ino concatenation order makes a file-static invisible to it. The lifetime rule
+//   that keeps that safe is one-way: appCanvasEnd() clears dappCanvasActive *before*
+//   freeing the cells, so the renderer can never see a live flag with a dead pointer.
+struct DappCanvasCell {
+    char ch;
+    uint8_t color;   //ANSI SGR code (C_* in this file), converted at draw time
+};
+DappCanvasCell* dappCanvasCells = nullptr;
+int dappCanvasCols = 0;
+int dappCanvasRows = 0;
+bool dappCanvasActive = false;
 
 //drawDisplayFrame() (Display.ino) skips its redraw + SPI push entirely unless this
 //is set -- every history/command-bar mutation marks it via markDisplayDirty() so a

@@ -59,6 +59,7 @@ void setup() {
     Serial.println("[boot] initStorage()...");
     Serial.flush();
     initStorage();
+    seedBundledApps();
     recordHeapCheckpoint("after storage");
     Serial.println("[boot] storage OK");
     Serial.flush();
