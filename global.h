@@ -74,6 +74,7 @@ struct LineEditState {
 //Motoko.ino and Ssh.ino call it but sort alphabetically before TelnetServer.ino in
 //the concatenated build
 LineInputResult readLineEditedInput(String& text);
+int telnetReadFilteredByte();
 
 //keyboard-bridge counterparts of the two telnet input readers, needed by callers that sort
 //before KeyboardSerial.ino in the concatenated build (RemoteSession.ino, Ssh.ino). See
@@ -88,6 +89,28 @@ int keyboardReadRawByte();
 //terminal advances a line; keyboard bridge: no, there's nothing to echo to).
 LineInputResult processLineEditByte(String& text, uint8_t ch, LineEditState& st, bool echoCrlfToTelnet);
 
+//   Editor (Edit.ino) -- the "edit" app's logical key vocabulary and its per-input-source
+//   escape/CSI parse state. Both are used only inside Edit.ino, but they still have to
+//   live here: the Arduino builder generates hoisted prototypes for that file's `static`
+//   functions too, and a prototype mentioning EditKey/EditKeyState lands above Edit.ino's
+//   own definitions. Same trap, and the same fix, as LineInputResult and RadioState above.
+//
+//   Two EditKeyState instances exist (telnet, keyboard bridge) for the same reason
+//   LineEditState is per-source: a half-finished escape sequence arriving on one input
+//   source must not corrupt the other's parse.
+enum EditKey {
+    EK_NONE, EK_CHAR, EK_ENTER, EK_TAB, EK_BACKSPACE, EK_DELETE,
+    EK_LEFT, EK_RIGHT, EK_UP, EK_DOWN,
+    EK_HOME, EK_END, EK_PGUP, EK_PGDN,
+    EK_SAVE, EK_EXIT, EK_CANCEL,
+    EK_CUT, EK_UNCUT, EK_SEARCH, EK_GOTO, EK_UNDO, EK_HELP
+};
+struct EditKeyState {
+    UserEscState esc = UESC_NONE;
+    String params = "";
+    bool lastByteWasCR = false;
+};
+
 //command history (sent commands, recalled with the Up/Down arrow keys like a real shell)
 const int COMMAND_HISTORY_MAX = 30;
 String commandHistory[COMMAND_HISTORY_MAX];
@@ -101,12 +124,55 @@ bool sdCardMounted = false;
 String cwd = "/";
 const String SD_MOUNT = "/sd";
 
+//Output.ino: the path-aware shell prompt built from cwd ("/sd/roms > ") and the echo of a
+//submitted command. Declared here because nearly every file that prints a prompt or runs a
+//command sorts before Output.ino in the concatenated build.
+String shellPrompt();
+void echoCommandLine(const String& entered);
+
 //result of routing an absolute unified-namespace path onto the physical filesystem that owns it
 struct RoutedPath {
     fs::FS* fs;
     String realPath;
     bool isSd;
 };
+
+//AppRunner.ino: these live here instead of inside AppRunner.ino because the Arduino
+//builder hoists prototypes for static functions above the tab's own type definitions.
+struct DappLine {
+    String text;
+};
+
+struct DappLabel {
+    String name;
+    int lineIndex;
+};
+
+struct DappVar {
+    String name;
+    long value;
+    bool used;
+};
+
+struct DappStringVar {
+    String name;
+    String value;
+    bool used;
+};
+
+//shared helpers used across app/file command tabs
+int splitCommand(const String& input, String parts[], int maxParts);
+String resolvePath(const String& cwd, const String& inputPath);
+RoutedPath routePath(const String& resolvedPath);
+void handleAppsCommand(const String parts[], int partCount);
+void handleRunCommand(const String parts[], int partCount);
+void handleAsukaCommand(const String parts[], int partCount);
+void ftpService();
+void radioService();
+void maintainInternetConnection();
+void drawDisplayFrame();
+int readBatteryPercent();
+int wifiIsConnected();
 
 //heap instrumentation (see SysInfo.ino)
 const int HEAP_CHECKPOINT_MAX = 16;
@@ -228,6 +294,13 @@ int displayScrollOffset = 0;
 //ansi.ino documents: the panel can't render real ANSI, so SGR color is
 //interpreted into a per-row pixel color and everything else is dropped.
 enum AnsiParseState { ANSI_TEXT, ANSI_ESC, ANSI_CSI, ANSI_OSC, ANSI_OSC_ESC };
+
+//which part of the current line a CSI K erase asks to clear. The parameter matters because
+//a remote line editor redrawing its input line picks whichever spelling it likes -- "\rESC[K"
+//(home, then clear forward) and "ESC[2K\r" (clear the whole row, then home) are both common,
+//and treating the second as the first erased nothing at all.
+enum DisplayEraseKind { DISPLAY_ERASE_NONE, DISPLAY_ERASE_TO_END, DISPLAY_ERASE_TO_START, DISPLAY_ERASE_ALL };
+
 struct AnsiFilterState {
     AnsiParseState state = ANSI_TEXT;
     String csiParams = "";
@@ -249,6 +322,10 @@ struct DisplayStreamState {
     //materialized, so that row is counted as a wrap-continuation rather than a fresh line
     //(the wrap and the first char of the new row are two separate displayStreamPutChar calls).
     bool wrapPending = false;
+    //a CR arrived on a line that had wrapped, and it isn't yet known whether it meant "redraw
+    //this line" (collapse the wrap) or was just the CR half of a CRLF (leave it alone). Held
+    //until the next write/erase/newline says which -- see displayStreamCarriageReturn.
+    bool crPending = false;
 };
 
 extern AnsiFilterState sshStdoutAnsi;
@@ -261,6 +338,11 @@ extern DisplayStreamState remoteTelnetDisplayStream;
 //which DisplayStreamState currently "owns" the last row in displayHistoryRows --
 //nullptr = no stream owns an open row right now
 DisplayStreamState* displayOpenRowOwner = nullptr;
+
+void displayStreamReset(DisplayStreamState& st);
+void displayStreamNewline(DisplayStreamState& st);
+void displayStreamPutChar(DisplayStreamState& st, char ch, uint16_t color);
+void displayStreamCarriageReturn(DisplayStreamState& st);
 
 //   Shared modal loop for character-oriented remote sessions (ssh shell, outbound
 //   telnet client). Port of DOLL-OS's RemoteSession: same shape, but both ends of

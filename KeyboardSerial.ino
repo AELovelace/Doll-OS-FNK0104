@@ -51,10 +51,11 @@ void readKeyboardSerial() {
         if (r == LINE_NO_INPUT) {
             continue;
         }
-        setActiveInput("> ", currentCommand, false);
+        setActiveInput(shellPrompt(), currentCommand, false);
         if (r == LINE_SUBMITTED) {
             commandProcessor(currentCommand);
-            setActiveInput("> ", currentCommand, false);   //commandProcessor() clears the buffer -- reflect that
+            setActiveInput(shellPrompt(), currentCommand, false);   //commandProcessor() clears the buffer, and a
+                                                                     //"cd" just moved the prompt -- reflect both
             printPrompt();
         }
     }

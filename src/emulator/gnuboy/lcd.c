@@ -184,20 +184,34 @@ static inline void bg_scan(int U, int V, int *BG)
 
 static inline void wnd_scan(int WV, int *WND)
 {
-	int cnt;
+	int cnt, skip;
 	byte *src, *dest;
 	int *tile;
 
-	cnt = 160 - WX;
-	tile = WND;
-	dest = BUF + WX;
+	if (WX >= 160) return;
 
-	while (cnt >= 0)
+	skip = WX < 0 ? -WX : 0;
+	cnt = 160 - (WX < 0 ? 0 : WX);
+	tile = WND;
+	dest = BUF + (WX < 0 ? 0 : WX);
+
+	if (skip > 0)
+	{
+		src = get_patpix(*(tile++), WV) + skip;
+		int n = 8 - skip;
+		if (n > cnt) n = cnt;
+		memcpy(dest, src, n);
+		dest += n;
+		cnt -= n;
+	}
+
+	while (cnt > 0)
 	{
 		src = get_patpix(*(tile++), WV);
-		memcpy(dest, src, 8);
-		dest += 8;
-		cnt -= 8;
+		int n = cnt < 8 ? cnt : 8;
+		memcpy(dest, src, n);
+		dest += n;
+		cnt -= n;
 	}
 }
 
@@ -236,20 +250,30 @@ static inline void bg_scan_pri(int S, int T, int U, byte *PRI)
 
 static inline void wnd_scan_pri(int WT, byte *PRI)
 {
-	int cnt, i;
+	int cnt, i, skip;
 	byte *src, *dest;
 
 	if (WX >= 160) return;
 
 	i = 0;
-	cnt = 160 - WX;
-	dest = PRI + WX;
+	skip = WX < 0 ? -WX : 0;
+	cnt = 160 - (WX < 0 ? 0 : WX);
+	dest = PRI + (WX < 0 ? 0 : WX);
 	src = VBANKS[1] + ((R_LCDC&0x40)?0x1C00:0x1800) + (WT<<5);
 
 	if (!priused(src))
 	{
 		memset(dest, 0, cnt);
 		return;
+	}
+
+	if (skip > 0)
+	{
+		int n = 8 - skip;
+		if (n > cnt) n = cnt;
+		memset(dest, src[i++]&128, n);
+		dest += n;
+		cnt -= n;
 	}
 
 	while (cnt >= 8)
@@ -259,7 +283,7 @@ static inline void wnd_scan_pri(int WT, byte *PRI)
 		cnt -= 8;
 	}
 
-	memset(dest, src[i]&128, cnt);
+	if (cnt > 0) memset(dest, src[i]&128, cnt);
 }
 
 static inline void bg_scan_color(int U, int V, int *BG)
@@ -290,22 +314,34 @@ static inline void bg_scan_color(int U, int V, int *BG)
 
 static inline void wnd_scan_color(int WV, int *WND)
 {
-	int cnt;
+	int cnt, skip;
 	byte *src, *dest;
 	int *tile;
 
 	if (WX >= 160) return;
 
-	cnt = 160 - WX;
+	skip = WX < 0 ? -WX : 0;
+	cnt = 160 - (WX < 0 ? 0 : WX);
 	tile = WND;
-	dest = BUF + WX;
+	dest = BUF + (WX < 0 ? 0 : WX);
 
-	while (cnt >= 0)
+	if (skip > 0)
+	{
+		src = get_patpix(*(tile++), WV) + skip;
+		int n = 8 - skip;
+		if (n > cnt) n = cnt;
+		blendcpy(dest, src, *(tile++), n);
+		dest += n;
+		cnt -= n;
+	}
+
+	while (cnt > 0)
 	{
 		src = get_patpix(*(tile++), WV);
-		blendcpy(dest, src, *(tile++), 8);
-		dest += 8;
-		cnt -= 8;
+		int n = cnt < 8 ? cnt : 8;
+		blendcpy(dest, src, *(tile++), n);
+		dest += n;
+		cnt -= n;
 	}
 }
 
@@ -676,9 +712,10 @@ static inline void lcd_renderline()
 	}
 	else
 	{
+		int windowX = WX < 0 ? 0 : WX;
 		bg_scan(U, V, BG);
 		wnd_scan(WV, WND);
-		blendcpy(BUF+WX, BUF+WX, 0x04, 160-WX);
+		blendcpy(BUF+windowX, BUF+windowX, 0x04, 160-windowX);
 	}
 
 	spr_scan(VS, NS, PRI);

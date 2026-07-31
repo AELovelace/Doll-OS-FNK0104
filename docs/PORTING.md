@@ -39,6 +39,7 @@ calls changed (`addWrappedHistoryLine(...)` -> `outLine(...)`):
 - `SysInfo.ino`: heap instrumentation (`free`), extended with a real `battery`
   command -- see below
 - `Motoko.ino`: MQTT chat, same Q&A shape
+- `Asuka.ino`: native local LLM text chat command over DS's existing shell
 - `Ssh.ino`: libssh_esp32 client, same dedicated-FreeRTOS-task pattern (mbedtls's
   handshake still needs more stack than the loop task provides, board-independent)
 
@@ -177,6 +178,112 @@ TX); GPIO2's old convenience-ground role in setup() is gone, so that jumper must
 land on a real GND pin. I2S (4-8) and amp-enable (GPIO1) pins are the AB
 variant's; the N/S variants' differ (see Freenove's `Sketch_07.1_Music`) and
 aren't wired up.
+
+### Editor (new, not from DOLL-OS)
+
+`Edit.ino` is a full-screen nano-style text editor (`edit <file>`), written for
+DS rather than ported. GNU nano itself was evaluated and rejected: its structure
+is a conversation with ncurses/terminfo, and DS has no cell-grid terminal layer
+to shim it onto — `Display.ino`'s `ansiFilterByte()` deliberately drops cursor
+addressing (only SGR, `K`, and `G`≤1 survive), so a cursor-addressed app can't
+travel through the normal output path at all. Owning the render is far less work
+than building a curses backend, and nano's remaining POSIX dependencies
+(`fork`/`exec`, POSIX regex, `getpwuid`, wide-char locale, autotools) are absent
+on ESP-IDF newlib anyway. nano is also GPLv3, which would not compose with the
+GPLv2 gnuboy core already vendored under `src/emulator/`.
+
+Structurally it follows `Gameboy.ino`: a full-screen takeover that seizes `loop()`
+and runs its own inner loop until the user quits. Two differences:
+
+- It draws into `frameSprite` and pushes via `pushDisplayFrame()`, both
+  panel-variant-agnostic, so unlike `gb` it works on all three FNK0104 variants
+  instead of being stubbed out on the QSPI one. Borrowing `frameSprite` is free —
+  `drawDisplayFrame()` rebuilds it from scratch whenever `displayDirty` is set.
+- No DS-Slave mode switch. `gb` needs `GAME 1` because it wants held-button state;
+  the editor wants ASCII, which is the slave's normal mode, and DS-Slave already
+  emits true control codes and CSI sequences there (`writeModifiedControl`). So
+  the editor is fully usable with no telnet client attached.
+
+Both surfaces render the same viewport — the panel gets the sprite, a connected
+telnet client gets the identical grid as ANSI. Geometry (~52x21 at the 6x8 GLCD
+font) comes from the panel because `TelnetServer.ino` doesn't negotiate NAWS, so
+there's no way to ask a client its size; a larger terminal shows the grid in its
+top-left corner.
+
+Three things worth knowing:
+
+- **Storage is a flat PSRAM slab plus a rebuilt line index**, not a vector of
+  `String` lines. A per-line `String` array puts every line's character storage on
+  the *internal* heap — `enablePsramHeap()` only routes allocations ≥512 bytes out
+  to PSRAM, and edit lines are far smaller — so a few thousand lines would quietly
+  eat tens of KB of the scarce pool. Caps are 128KB / 4000 lines, both in PSRAM.
+- **Input is drained fully, then rendered once per pass.** A full sprite push is
+  ~38ms, so rendering inside the key handler would cap typing at ~26 keys/sec and
+  fall behind the bursts a telnet client delivers. The coalescing is load-bearing.
+- **`radioService()` is deliberately not called** from the editor loop. It prints
+  through `outLine()`, which would scribble raw lines across both surfaces
+  mid-frame. Stream announcements queue and land after exit, the same as during an
+  ssh/telnet session. The radio itself keeps playing — it's a separate FreeRTOS
+  task, so unlike `gb` no `radioReleaseAudio()` is needed.
+
+Key chords are nano's, and all of them are implemented: `^G` help, `^O` save,
+`^X` exit, `^K`/`^U` cut+paste, `^W` search, `^_` goto line, `^Z` undo, `^A`/`^E`,
+`^Y`/`^V`, `^D`, `^C` position, plus the arrow/Home/End/PgUp/PgDn cluster. DS's
+reserved Ctrl+T (detach) and Ctrl+K (inline command) don't apply here, because a
+takeover doesn't route through `readRawUserBytes()` — which is what leaves `^K`
+free for cut-line. `^Z` is undo rather than suspend (no job control to suspend
+into, and it's far more discoverable than nano's Alt+U, which also works: the
+decoder treats `ESC` + printable as Alt+key, the same spelling DS-Slave's
+`writeModifiedAscii` emits).
+
+Undo records live underneath `editInsertBytes`/`editDeleteBytes`, the two
+functions every mutation funnels through, so cut and paste became undoable
+without either feature knowing undo exists. 64 steps, with runs of typing and of
+backspacing each coalescing into one record so 20 keystrokes are one undo rather
+than 20. Insert records carry no payload (undoing one is a delete of known
+length); delete records keep the removed bytes in PSRAM.
+
+The `editSavedUndoDepth` bookkeeping is what lets undoing back to the last save
+clear the modified flag instead of leaving a false "unsaved changes" prompt. Two
+cases make it subtler than a counter: history evicted from the full ring makes
+the saved state unreachable, and editing *after* undoing past the save point
+discards the records that led to it. Both set the depth to -1 (unreachable). The
+divergence test is `>=` rather than `>` because it runs after the count has
+already been incremented — see the comment at the check.
+
+The cut buffer and last search term deliberately persist across `edit` launches.
+The board has no clipboard, so `^K` in one file and `^U` in another is the only
+way to move text between them.
+
+Saves go through a temp file + rename, never a truncating open on the target —
+this is a battery device, and a power loss partway through an in-place write
+destroys the file being edited rather than just failing. Tabs are stored as real
+tabs and expanded only at render time, so Makefile-style files survive a round
+trip; CRLF input is normalized to LF on load.
+
+### ASUKA (new, not from DOLL-OS)
+
+`Asuka.ino` adds `asuka [host] [port]` as a native shell command for local LLM
+chat. It deliberately uses DS's existing telnet server, BLE-keyboard line editor,
+`outLine()` history, and TFT display stream instead of starting ASUKA's old
+webserver, MQTT listener, or separate telnet console. Defaults live in `config.h`
+as `ASUKA_DEFAULT_LLM_HOST`, `ASUKA_DEFAULT_LLM_PORT`,
+`ASUKA_DEFAULT_LLM_PATH`, `ASUKA_BRAVE_API_KEY`,
+`ASUKA_OPENWEATHER_API_KEY`, `ASUKA_OPENWEATHER_LOCATION_LABEL`,
+`ASUKA_OPENWEATHER_LAT`, `ASUKA_OPENWEATHER_LON`, `ASUKA_SYSTEM_PROMPT`, and
+`ASUKA_CLASSIFIER_PROMPT`. ASUKA seeds missing prompt files into LittleFS when
+the command starts: `/asuka-system.txt` for the chat system prompt and
+`/asuka-classifier.txt` for the tool-selection/classifier prompt. Runtime
+`/system <prompt>` and `/classifier <prompt>` changes are saved back to those
+files; `/system reset` and `/classifier reset` restore the compiled defaults and
+save them back to flash. Weather questions call OpenWeather directly for the
+configured coordinates; `/weather` shows the active location and `/weather <lat>
+<lon> <label>` changes it for the current ASUKA session.
+
+The `.dapp` runner remains separate. It now has interactive string primitives
+(`INPUT`, `SETSTR`, `APPEND`, `IFEQ`, `IFNE`) for small scripts, but LLM sockets
+and streaming stay native so the app format does not become a fragile HTTP/JSON
+runtime.
 
 ## Known constraints worth flagging
 

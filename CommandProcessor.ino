@@ -92,9 +92,9 @@ struct CommandEntry {
 };
 
 void helpCommandHandler(const String parts[], int partCount) {
-    outLine("Commands: battery, calc, cat, cd, clear, dice, free, ftp, gb, help,");
-    outLine("          ip, ls, motoko, ping, pwd, radio, reboot, slave, ssh,");
-    outLine("          status, telnet, uptime, usb, wifi");
+    outLine("Commands: apps, asuka, battery, calc, cat, cd, clear, cp, del, dice, edit,");
+    outLine("          ftp, gb, help, ip, ls, mkdir, motoko, mv, ping, pwd, radio,");
+    outLine("          reboot, rm, run, slave, ssh, status, telnet, uptime, usb, wifi");
 }
 
 void handleRebootCommand(const String parts[], int partCount) {
@@ -135,22 +135,31 @@ void handleStatusCommand(const String parts[], int partCount) {
 
 //sorted alphabetically for readability; lookup is a linear scan since the table is small
 static const CommandEntry commandTable[] = {
+    { "apps",   handleAppsCommand },
+    { "asuka",  handleAsukaCommand },
     { "battery", handleBatteryCommand },
     { "calc",   handleCalcCommand },
     { "cat",    handleCatCommand },
     { "cd",     handleCdCommand },
+    { "cp",     handleCpCommand },
+    { "del",    handleDelCommand },
     { "dice",   handleDiceCommand },
+    { "edit",   handleEditCommand },
     { "free",   handleFreeCommand },
     { "ftp",    handleFtpCommand },
     { "gb",     handleGbCommand },
     { "help",   helpCommandHandler },
     { "ip",     handleIpCommand },
     { "ls",     handleLsCommand },
+    { "mkdir",  handleMkdirCommand },
     { "motoko", handleMotokoCommand },
+    { "mv",     handleMvCommand },
     { "ping",   handlePingCommand },
     { "pwd",    handlePwdCommand },
     { "radio",  handleRadioCommand },
     { "reboot", handleRebootCommand },
+    { "rm",     handleRmCommand },
+    { "run",    handleRunCommand },
     { "slave",  handleSlaveCommand },
     { "ssh",    handleSshCommand },
     { "status", handleStatusCommand },
@@ -165,6 +174,8 @@ static const int commandTableSize = sizeof(commandTable) / sizeof(commandTable[0
 void commandProcessor(String& command) {
     displayScrollOffset = 0;   //submitting anything snaps the mirrored panel back to the live tail
     if (command.length() == 0) {
+        echoCommandLine("");   //bare Enter still advances a line, like any shell -- and on telnet
+                               //this is the newline readTelnetClient() no longer echoes on submit
         return;
     }
 
@@ -174,6 +185,8 @@ void commandProcessor(String& command) {
 
     String trimmedEntered = entered;
     trimmedEntered.trim();
+    echoCommandLine(trimmedEntered);   //echo before dispatch so the command sits above its own
+                                        //output, same order a real shell prints them in
     addCommandHistory(trimmedEntered);
 
     String parts[8];

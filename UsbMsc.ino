@@ -158,7 +158,7 @@ void runUsbModeBlocking() {
 
     msc.mediaPresent(false);
     usbModeDisplayActive = false;
-    setActiveInput("> ", "", false);
+    setActiveInput(shellPrompt(), "", false);   //cwd may have been forced back to "/" above
     drawDisplayFrame();
     outLine("USB mode off");
     //no printPrompt() here -- readTelnetClient()'s loop (TelnetServer.ino) already

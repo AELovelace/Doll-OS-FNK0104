@@ -217,6 +217,7 @@ static void displayStreamCloseRow(DisplayStreamState& st) {
     st.cursorCol = 0;
     st.wrapDepth = 0;
     st.wrapPending = false;
+    st.crPending = false;   //the line ended -- whatever a trailing CR was for, it wasn't a redraw
 }
 
 //removes just the newest history row -- used when displayStreamBackspace merges a wrapped
@@ -254,6 +255,9 @@ void displayStreamPutChar(DisplayStreamState& st, char ch, uint16_t color) {
             st.wrapDepth = 0;
             st.wrapPending = false;
         }
+        st.crPending = false;   //nothing left to unwind: the row this CR homed into is gone
+    } else {
+        displayStreamApplyPendingCarriageReturn(st);   //first write after a CR -- it was a redraw
     }
 
     bool atEnd = st.cursorCol >= (size_t)st.pendingRow.length();
@@ -291,17 +295,86 @@ void displayStreamPutChar(DisplayStreamState& st, char ch, uint16_t color) {
     }
 }
 
-void displayStreamCarriageReturn(DisplayStreamState& st) {
-    if (displayOpenRowOwner == &st) {
-        st.cursorCol = 0;
+//peels wrap-continuation rows off the tail until the logical line is back to its first panel
+//row. Shared by the redraw and erase-line paths below; displayStreamBackspace does the same
+//thing one row at a time as it deletes through a wrap. Only rows this stream created as
+//continuations are popped, so the ring's head is safe (see popLastDisplayHistoryRow) -- the
+//count > 1 guard just keeps the re-adopt read in range.
+static void displayStreamUnwindWrap(DisplayStreamState& st) {
+    while (st.wrapDepth > 0 && displayHistoryCount > 1) {
+        popLastDisplayHistoryRow();
+        st.wrapDepth--;
+        st.pendingRow = String(displayHistoryRowText(displayHistoryCount - 1));
     }
+    st.wrapDepth = 0;   //nonzero here means history ran out from under us (unreachable in
+                        //practice: it needs a logical line longer than the whole ring) -- drop
+                        //the link rather than leave a depth pointing at rows no longer ours
 }
 
-void displayStreamEraseToEnd(DisplayStreamState& st) {
-    if (displayOpenRowOwner != &st || st.cursorCol >= (size_t)st.pendingRow.length()) {
+//a CR that turned out to begin a redraw, resolved at the moment the redraw's first write
+//lands: collapse the panel-side wrap so the new content overwrites the old line instead of
+//piling up underneath it
+static void displayStreamApplyPendingCarriageReturn(DisplayStreamState& st) {
+    if (!st.crPending) {
         return;
     }
-    st.pendingRow.remove(st.cursorCol);
+    st.crPending = false;
+    displayStreamUnwindWrap(st);
+    st.cursorCol = 0;
+}
+
+//CR homes the cursor to the start of the *logical* line. A real terminal only homes within
+//the physical row, but the panel has no notion of the remote's rows: it reflows at its own
+//much narrower pixel width, so one remote row routinely becomes several panel rows, and the
+//continuation rows have to come off for a redraw to land on top of the old text rather than
+//below it. Without that, submitting a message long enough to wrap cleared only the panel row
+//the cursor happened to be on and left the earlier ones standing as a duplicate of the
+//message (the reported "only the last line gets deleted" bug).
+//
+//But the unwind is deferred rather than done here, because a bare CR is not yet evidence of
+//anything: nearly every CR in a remote stream is the front half of a CRLF, where the line is
+//finished and its wrap rows are real content to keep. Unwinding eagerly threw those away and
+//truncated every wrapped line to its first panel row -- wrapping looked broken outright. Only
+//a CR followed by a write or an erase means a redraw, so the flag is set here and cashed in
+//by whichever of those comes first; displayStreamCloseRow (newline/reset) drops it instead.
+void displayStreamCarriageReturn(DisplayStreamState& st) {
+    if (displayOpenRowOwner != &st) {
+        return;
+    }
+    st.cursorCol = 0;
+    st.crPending = (st.wrapDepth > 0);
+}
+
+void displayStreamErase(DisplayStreamState& st, DisplayEraseKind kind) {
+    if (displayOpenRowOwner != &st || kind == DISPLAY_ERASE_NONE) {
+        return;
+    }
+
+    displayStreamApplyPendingCarriageReturn(st);   //an erase after a CR is a redraw too
+
+    if (kind == DISPLAY_ERASE_ALL) {
+        //whole line, wrap included -- same reasoning as the CR above, except an explicit
+        //"erase this line" needs no deferring: it can't be the half of anything else. The
+        //cursor goes to column 0 rather than holding its old column, since with the row's
+        //text gone there's nothing left for a column to index into, and every real emitter
+        //of ESC[2K pairs it with a CR or an absolute cursor move anyway.
+        displayStreamUnwindWrap(st);
+        st.pendingRow = "";
+        st.cursorCol = 0;
+    } else if (kind == DISPLAY_ERASE_TO_START) {
+        //blanked, not removed: erasing backwards leaves the cursor where it was, so the
+        //cleared cells have to keep occupying their columns for the next write to land right
+        size_t upTo = min(st.cursorCol, (size_t)st.pendingRow.length());
+        for (size_t i = 0; i < upTo; i++) {
+            st.pendingRow.setCharAt(i, ' ');
+        }
+    } else {
+        if (st.cursorCol >= (size_t)st.pendingRow.length()) {
+            return;
+        }
+        st.pendingRow.remove(st.cursorCol);
+    }
+
     updateLastDisplayHistoryRow(st.pendingRow, displayHistoryRowColor(displayHistoryCount - 1));
 }
 
@@ -309,6 +382,10 @@ void displayStreamBackspace(DisplayStreamState& st) {
     if (displayOpenRowOwner != &st) {
         return;
     }
+    //an explicit delete settles the question a pending CR left open, and settles it its own
+    //way: the merge-up below already walks back through the wrap one row at a time, so the
+    //bulk unwind must not also fire later and take the rest of the line with it
+    st.crPending = false;
     if (st.cursorCol == 0) {
         //at the left edge of the current panel row. If this logical line wrapped onto an
         //earlier panel row, peel this (now-empty) one off and keep deleting from the end of
@@ -367,10 +444,11 @@ static uint16_t ansiApplySgr(const String& params, uint16_t currentColor, uint16
     return color;
 }
 
-bool ansiFilterByte(AnsiFilterState& st, uint8_t ch, uint16_t defaultColor, uint16_t& color, char& outCh, bool& colorChanged, bool& isBackspace, bool& eraseToEndOfLine) {
+bool ansiFilterByte(AnsiFilterState& st, uint8_t ch, uint16_t defaultColor, uint16_t& color, char& outCh, bool& colorChanged, bool& isBackspace, bool& isCarriageReturn, DisplayEraseKind& erase) {
     colorChanged = false;
     isBackspace = false;
-    eraseToEndOfLine = false;
+    isCarriageReturn = false;
+    erase = DISPLAY_ERASE_NONE;
 
     switch (st.state) {
         case ANSI_TEXT:
@@ -419,7 +497,15 @@ bool ansiFilterByte(AnsiFilterState& st, uint8_t ch, uint16_t defaultColor, uint
                     color = ansiApplySgr(st.csiParams, color, defaultColor);
                     colorChanged = true;
                 } else if (ch == 'K') {
-                    eraseToEndOfLine = true;
+                    int mode = st.csiParams.length() ? st.csiParams.toInt() : 0;
+                    erase = (mode == 1) ? DISPLAY_ERASE_TO_START
+                          : (mode == 2) ? DISPLAY_ERASE_ALL
+                                        : DISPLAY_ERASE_TO_END;
+                } else if (ch == 'G' && (st.csiParams.length() == 0 || st.csiParams.toInt() <= 1)) {
+                    //CHA to column 1 is a CR by another spelling, and line editors reach for it
+                    //about as often. Any other column is a real horizontal move the panel's
+                    //reflowed rows can't honor, so it stays dropped like the rest of CSI.
+                    isCarriageReturn = true;
                 }
                 st.state = ANSI_TEXT;
             } else {

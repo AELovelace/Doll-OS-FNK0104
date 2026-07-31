@@ -308,6 +308,7 @@ void acceptTelnetClient() {
     telnetNegotiateServerMode();
 
     beginShellSession();
+    setActiveInput(shellPrompt(), "", false);
     printPrompt();
 }
 
@@ -325,14 +326,20 @@ void readTelnetClient() {
     }
 
     while (true) {
-        LineInputResult r = readLineEditedInput(currentCommand);
-        if (r == LINE_NO_INPUT) {
+        int raw = telnetReadFilteredByte();
+        if (raw == -1) {
             break;
         }
-        setActiveInput("> ", currentCommand, false);
+        //not readLineEditedInput(): the shell submits with echoCrlfToTelnet=false so the
+        //newline comes from echoCommandLine() (Output.ino) instead, which finishes the
+        //prompt line with the command that was typed. The other line-edited prompts
+        //(motoko, ssh) have nothing to echo and keep the plain CRLF.
+        LineInputResult r = processLineEditByte(currentCommand, (uint8_t)raw, telnetLineState, false);
+        setActiveInput(shellPrompt(), currentCommand, false);
         if (r == LINE_SUBMITTED) {
             commandProcessor(currentCommand);
-            setActiveInput("> ", currentCommand, false);   //commandProcessor() clears the buffer -- reflect that too
+            setActiveInput(shellPrompt(), currentCommand, false);   //commandProcessor() clears the buffer, and
+                                                                     //a "cd" just moved the prompt -- reflect both
             printPrompt();
         }
         //LINE_EDITING: loop again in case more bytes are already buffered this tick
