@@ -92,9 +92,10 @@ struct CommandEntry {
 };
 
 void helpCommandHandler(const String parts[], int partCount) {
-    outLine("Commands: apps, asuka, battery, calc, cat, cd, clear, cp, dapper, del,");
-    outLine("          dice, edit, ftp, gb, help, ip, ls, mkdir, motoko, mv, ping, pwd, radio,");
-    outLine("          reboot, rm, run, slave, ssh, status, telnet, uptime, usb, wifi");
+    outLine("Commands: alias, apps, asuka, battery, calc, cat, cd, clear, cp, dapper,");
+    outLine("          del, dice, edit, free, ftp, gb, help, ip, ls, mkdir, motoko, mv,");
+    outLine("          ping, pwd, radio, reboot, rm, run, slave, ssh, status, telnet,");
+    outLine("          unalias, uptime, usb, wifi");
 }
 
 void handleRebootCommand(const String parts[], int partCount) {
@@ -135,6 +136,7 @@ void handleStatusCommand(const String parts[], int partCount) {
 
 //sorted alphabetically for readability; lookup is a linear scan since the table is small
 static const CommandEntry commandTable[] = {
+    { "alias",  handleAliasCommand },
     { "apps",   handleAppsCommand },
     { "asuka",  handleAsukaCommand },
     { "battery", handleBatteryCommand },
@@ -165,6 +167,7 @@ static const CommandEntry commandTable[] = {
     { "ssh",    handleSshCommand },
     { "status", handleStatusCommand },
     { "telnet", handleTelnetCommand },
+    { "unalias", handleUnaliasCommand },
     { "uptime", handleUptimeCommand },
     { "usb",    handleUsbCommand },
     { "wifi",   handleWifiCommand },
@@ -190,8 +193,13 @@ void commandProcessor(String& command) {
                                         //output, same order a real shell prints them in
     addCommandHistory(trimmedEntered);
 
+    String dispatchCommand = trimmedEntered;
+    String aliasName;
+    String aliasExpansion;
+    expandCommandAlias(dispatchCommand, aliasName, aliasExpansion);
+
     String parts[8];
-    int partCount = splitCommand(entered, parts, 8);
+    int partCount = splitCommand(dispatchCommand, parts, 8);
     if (partCount == 0) {
         return;
     }
@@ -206,5 +214,9 @@ void commandProcessor(String& command) {
             return;
         }
     }
-    outLine("Unknown command: " + entered, C_RED);
+    String unknown = dispatchCommand;
+    if (aliasName.length() > 0) {
+        unknown += " (from alias " + aliasName + ")";
+    }
+    outLine("Unknown command: " + unknown, C_RED);
 }

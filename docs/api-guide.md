@@ -218,8 +218,8 @@ A command is a function plus one line in a dispatch table.
 void handleFooCommand(const String parts[], int partCount);
 ```
 `parts[0]` is the command name itself; `parts[1..7]` are up to seven
-space-delimited arguments. `commandProcessor()` calls
-`splitCommand(entered, parts, 8)` against a `String parts[8]`, so eight tokens
+space-delimited arguments. `commandProcessor()` expands aliases, then calls
+`splitCommand(dispatchCommand, parts, 8)` against a `String parts[8]`, so eight tokens
 is the hard ceiling — a command needing more has to parse them itself out of
 `parts[1]` onward, or that one call site has to change.
 
@@ -233,8 +233,9 @@ static const CommandEntry commandTable[] = {
     ...
 };
 ```
-Lookup is a linear scan (`parts[0] == commandTable[i].name`), exact match,
-case-sensitive, no aliases. `clear` is the one exception — handled inline in
+Before lookup, `commandProcessor()` expands a matching shell alias from
+`/aliases.dsys` (`nano foo` becomes `edit foo`). Lookup is then a linear scan
+(`parts[0] == commandTable[i].name`), exact match, case-sensitive. `clear` is the one exception — handled inline in
 `commandProcessor()` because it clears both surfaces directly rather than going
 through the table. An unmatched word prints `Unknown command: ...` in red.
 
@@ -604,7 +605,7 @@ which is intentional. Only relevant if you're building something that wants
 shell-style recall of its own.
 
 ```cpp
-void commandProcessor(String& command);   // echo, historize, tokenize, dispatch, clear the buffer
+void commandProcessor(String& command);   // echo, historize, expand aliases, tokenize, dispatch, clear the buffer
 ```
 Also snaps `displayScrollOffset` back to the live tail on every submission.
 
@@ -625,8 +626,11 @@ Also snaps `displayScrollOffset` back to the live tail on every submission.
 Not a C++ API — a second way to add an app, as a plain text file in `/apps`
 (LittleFS) or `/sd/apps`, launched with `run <name>`. Full language reference is
 [`DAPP.md`](DAPP.md); `docs/DAPP-BOOK.md` is the long-form version, and
-`apps/*.dapp` are working examples (snake, tetris, 2048, mines, adventure,
-sysmon, notes, decide).
+`apps/*.dapp` are working examples: games (snake, tetris, 2048, mines, simon),
+utilities (sysmon, notes, lamp, beacon, decide), and a text adventure. The last
+three of the utilities are the ones to read for `LED`, which is guarded behind
+`$ledok` in each of them because the opcode stops an app on a build without a
+rear LED.
 
 What matters from the C++ side:
 
@@ -675,10 +679,11 @@ the sketch-local `TFT_eSPI` fork and `PartitionScheme=custom` →
 - **Worker tasks must not print.** Stash and let a `*Service()` function called
   from `loop()` do the printing — the loop task is the single writer of the
   telnet socket and the display history.
-- **8-token command line, hard cap.** `splitCommand(entered, parts, 8)` is called
-  once, in `commandProcessor()`.
+- **8-token command line, hard cap.** `splitCommand(dispatchCommand, parts, 8)`
+  prepares the command handler arguments in `commandProcessor()`.
 - **Command dispatch is exact-match, case-sensitive, linear scan** over a small
-  static table — no aliases, no prefix matching.
+  static table after file-backed shell aliases from `/aliases.dsys` are expanded.
+  There is still no prefix matching.
 - **New cross-file types go in `global.h`**, not their owning `.ino` (§15).
 - **One session at a time.** A second telnet connection is refused with a
   message; `currentCommand`/`commandCursorPos` are shared globals, not

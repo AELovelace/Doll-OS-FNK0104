@@ -117,6 +117,14 @@ struct LineEditState {
     bool lastByteWasCR = false;
 };
 
+//Alias.ino: file-backed shell aliases. The struct lives here because Alias.ino has
+//static helpers with AliasEntry parameters, and Arduino hoists their prototypes above
+//the tab's own declarations.
+struct AliasEntry {
+    String name;
+    String expansion;
+};
+
 //explicit prototype for readLineEditedInput (TelnetServer.ino), needed because
 //Motoko.ino and Ssh.ino call it but sort alphabetically before TelnetServer.ino in
 //the concatenated build
@@ -292,12 +300,16 @@ struct DappKeyState {
 #define DAPP_PACKAGE_FORMAT 1
 
 int splitCommand(const String& input, String parts[], int maxParts);
+void ensureDefaultAliases();
+bool expandCommandAlias(String& command, String& aliasName, String& aliasExpansion);
 String resolvePath(const String& cwd, const String& inputPath);
 RoutedPath routePath(const String& resolvedPath);
+void handleAliasCommand(const String parts[], int partCount);
 void handleAppsCommand(const String parts[], int partCount);
 void handleDapperCommand(const String parts[], int partCount);
 void handleRunCommand(const String parts[], int partCount);
 void handleAsukaCommand(const String parts[], int partCount);
+void handleUnaliasCommand(const String parts[], int partCount);
 void ftpService();
 void radioService();
 void maintainInternetConnection();

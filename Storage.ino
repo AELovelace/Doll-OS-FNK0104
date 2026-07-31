@@ -49,6 +49,7 @@ void initStorage() {
             outLine("LittleFS: mount failed -- settings won't persist", C_RED);
         }
     }
+    ensureDefaultAliases();
 
     //with no card inserted, the SD_MMC driver's internal retry loop (sdmmc_init_ocr) can run
     //long enough without yielding that the default ~5s watchdog timeout trips mid-retry --
