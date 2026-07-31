@@ -30,6 +30,7 @@ void ftpService() {
     if (ftpActive) {
         ftpSrv.handleFTP();
     }
+    ledSetFtpActive(ftpActive);
 }
 
 static void ftpStart() {
@@ -45,6 +46,7 @@ static void ftpStart() {
     //stays mounted exactly as Storage.ino left it
     ftpSrv.begin(FTP_USER, FTP_PASS);
     ftpActive = true;
+    ledSetFtpActive(true);
 
     outLine("FTP server on", C_GREEN);
     if (wifiIsConnected() == 1) {
@@ -63,6 +65,7 @@ static void ftpStop() {
     }
     ftpSrv.end();
     ftpActive = false;
+    ledSetFtpActive(false);
     outLine("FTP server off");
 }
 

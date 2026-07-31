@@ -30,11 +30,13 @@ static void asukaServiceUi() {
     ftpService();
     radioService();
     maintainInternetConnection();
+    ledService();
     drawDisplayFrame();
     delay(1);
 }
 
 static bool asukaWritePromptFile(const char* path, const String& promptText) {
+    ledPulseStorageWrite(false);
     File file = LittleFS.open(path, "w");
     if (!file) {
         return false;
@@ -48,6 +50,7 @@ static bool asukaWritePromptFile(const char* path, const String& promptText) {
 static bool asukaLoadOrSeedPromptFile(const char* path, const char* defaultPrompt, String& promptText, bool& createdFile) {
     createdFile = false;
 
+    ledPulseStorageRead(false);
     File file = LittleFS.open(path, "r");
     if (file && !file.isDirectory()) {
         String savedPrompt = file.readString();
@@ -243,13 +246,16 @@ static bool asukaStreamCompletion(const String& prompt, String& responseOut, boo
     responseOut = "";
 
     WiFiClient client;
+    ledPulseNetwork();
     if (!client.connect(asukaLlmHost.c_str(), asukaLlmPort)) {
+        ledPulseError();
         outLine("asuka: could not connect to " + asukaLlmHost + ":" + String(asukaLlmPort), C_RED);
         return false;
     }
     client.setTimeout(30000);
 
     String body = asukaBuildRequestBody(prompt);
+    ledPulseNetwork();
     client.print(String("POST ") + asukaLlmPath + " HTTP/1.1\r\n" +
                  "Host: " + asukaLlmHost + ":" + String(asukaLlmPort) + "\r\n" +
                  "Content-Type: application/json\r\n" +
@@ -270,6 +276,7 @@ static bool asukaStreamCompletion(const String& prompt, String& responseOut, boo
         asukaServiceUi();
     }
 
+    ledPulseNetwork();
     String statusLine = client.readStringUntil('\n');
     statusLine.trim();
     if (statusLine.indexOf(" 200 ") < 0) {
@@ -281,6 +288,7 @@ static bool asukaStreamCompletion(const String& prompt, String& responseOut, boo
     }
 
     while (client.connected() || client.available()) {
+        ledPulseNetwork();
         String headerLine = client.readStringUntil('\n');
         if (headerLine == "\r" || headerLine.length() == 0) {
             break;
@@ -299,6 +307,7 @@ static bool asukaStreamCompletion(const String& prompt, String& responseOut, boo
             continue;
         }
 
+        ledPulseNetwork();
         String line = client.readStringUntil('\n');
         line.trim();
         if (!line.startsWith("data:")) {

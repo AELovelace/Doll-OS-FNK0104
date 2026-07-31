@@ -73,6 +73,7 @@ static bool asukaReadHttpBodyWithLimit(void* httpPtr, size_t maxBytes, String& r
     while (http.connected() && (remainingBytes > 0 || remainingBytes == -1)) {
         while (stream->available()) {
             int nextByte = stream->read();
+            ledPulseNetwork();
             if (nextByte < 0) {
                 break;
             }
@@ -203,6 +204,7 @@ static bool asukaFetchUrlContent(String requestedUrl, int requestedMaxChars, Str
     http.addHeader("Accept-Encoding", "identity");
     http.addHeader("User-Agent", "ASUKA-DOLL-OS/1.0");
 
+    ledPulseNetwork();
     int httpCode = http.GET();
     if (httpCode <= 0) {
         toolResult = "{\"error\":\"URL fetch request failed.\"}";
@@ -311,8 +313,10 @@ static bool asukaBraveSearch(const String& query, int resultCount, String& toolR
     http.addHeader("Accept-Encoding", "identity");
     http.addHeader("X-Subscription-Token", ASUKA_BRAVE_API_KEY);
 
+    ledPulseNetwork();
     int httpCode = http.GET();
     String body = http.getString();
+    ledPulseNetwork();
     http.end();
 
     if (httpCode != HTTP_CODE_OK) {
@@ -387,8 +391,10 @@ static bool asukaOpenWeatherCurrent(String requestedUnits, String& toolResult) {
     http.addHeader("Accept-Encoding", "identity");
     http.addHeader("User-Agent", "ASUKA-DOLL-OS/1.0");
 
+    ledPulseNetwork();
     int httpCode = http.GET();
     String body = http.getString();
+    ledPulseNetwork();
     http.end();
 
     if (httpCode != HTTP_CODE_OK) {

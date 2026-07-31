@@ -184,6 +184,7 @@ static bool appOpenResolvedFile(const String& resolved, File& outFile) {
         return false;
     }
 
+    ledPulseStorageRead(r.isSd);
     File f = r.fs->open(r.realPath, "r");
     if (!f || f.isDirectory()) {
         if (f) {
@@ -237,22 +238,26 @@ static bool appOpenByName(const String& target, File& outFile, String& resolvedO
 }
 
 static void ensureAppDirectories() {
+    ledPulseStorageRead(false);
     File flashApps = LittleFS.open("/apps");
     if (!flashApps || !flashApps.isDirectory()) {
         if (flashApps) {
             flashApps.close();
         }
+        ledPulseStorageWrite(false);
         LittleFS.mkdir("/apps");
     } else {
         flashApps.close();
     }
 
     if (sdCardMounted) {
+        ledPulseStorageRead(true);
         File sdApps = SD_MMC.open("/apps");
         if (!sdApps || !sdApps.isDirectory()) {
             if (sdApps) {
                 sdApps.close();
             }
+            ledPulseStorageWrite(true);
             SD_MMC.mkdir("/apps");
         } else {
             sdApps.close();
@@ -261,6 +266,8 @@ static void ensureAppDirectories() {
 }
 
 static void listAppsInDir(fs::FS& fs, const String& realPath, const String& label) {
+    bool isSd = label.startsWith("/sd/");
+    ledPulseStorageRead(isSd);
     File dir = fs.open(realPath);
     if (!dir || !dir.isDirectory()) {
         if (dir) {
@@ -274,6 +281,7 @@ static void listAppsInDir(fs::FS& fs, const String& realPath, const String& labe
     File entry = dir.openNextFile();
     int count = 0;
     while (entry) {
+        ledPulseStorageRead(isSd);
         String name = entry.name();
         if (!entry.isDirectory() && endsWithIgnoreCase(name, ".dapp")) {
             outLine("  " + name + "  " + String(entry.size()) + "b");
@@ -842,12 +850,15 @@ static void appCanvasFlip() {
 static File dappFile;
 static bool dappFileOpen = false;
 static bool dappFileWritable = false;
+static bool dappFileIsSd = false;
 
 static void appFileClose() {
     if (dappFileOpen) {
         dappFile.close();
         dappFileOpen = false;
     }
+    dappFileWritable = false;
+    dappFileIsSd = false;
 }
 
 //routes the unified /sd-or-flash namespace the same way `run` and the shell do, so a
@@ -867,6 +878,11 @@ static void appFileOpen(const String& path, const char* fsMode, bool writable) {
         return;
     }
 
+    if (writable) {
+        ledPulseStorageWrite(r.isSd);
+    } else {
+        ledPulseStorageRead(r.isSd);
+    }
     File f = r.fs->open(r.realPath, fsMode);
     if (!f || f.isDirectory()) {
         if (f) {
@@ -878,6 +894,7 @@ static void appFileOpen(const String& path, const char* fsMode, bool writable) {
     dappFile = f;
     dappFileOpen = true;
     dappFileWritable = writable;
+    dappFileIsSd = r.isSd;
     dappFok = 1;
 }
 
@@ -889,6 +906,7 @@ static String appFileReadLine() {
         dappFeof = 1;
         return line;
     }
+    ledPulseStorageRead(dappFileIsSd);
     while (dappFile.available()) {
         char ch = (char)dappFile.read();
         if (ch == '\n') {
@@ -1037,6 +1055,7 @@ static void appDelay(unsigned long waitMs) {
         ftpService();
         radioService();
         maintainInternetConnection();
+        ledService();
         drawDisplayFrame();
         delay(1);
     }
@@ -1066,6 +1085,7 @@ static String appReadInput(const String& prompt) {
         ftpService();
         radioService();
         maintainInternetConnection();
+        ledService();
         drawDisplayFrame();
 
         if (r == LINE_SUBMITTED) {
@@ -1198,9 +1218,9 @@ static bool appExecute(DappProgram& program) {
                 outLine("run: LED unavailable on this build (set REAR_RGB_LED_PIN)", C_RED);
                 return false;
             }
-            rearLedSetRgbLong(appValueOf(parts[0], program),
-                              appValueOf(parts[1], program),
-                              appValueOf(parts[2], program));
+            ledSetAppOverrideRgbLong(appValueOf(parts[0], program),
+                                     appValueOf(parts[1], program),
+                                     appValueOf(parts[2], program));
         } else if (op == "CLEAR" || op == "CLS") {
             //while a canvas is up this means "blank the grid", not "wipe the scrollback the
             //canvas is drawn over" -- the latter would be visible only after ENDCANVAS
@@ -1455,6 +1475,7 @@ static bool appExecute(DappProgram& program) {
                 return false;
             }
             String text = appExpandText(arg, program);
+            ledPulseStorageWrite(dappFileIsSd);
             size_t wrote = dappFile.print(text);
             wrote += dappFile.print("\n");
             if (wrote != text.length() + 1) {
@@ -1470,8 +1491,11 @@ static bool appExecute(DappProgram& program) {
             }
             RoutedPath r;
             long exists = 0;
-            if (appFileRoute(appExpandText(parts[1], program), r) && r.fs->exists(r.realPath)) {
-                exists = 1;
+            if (appFileRoute(appExpandText(parts[1], program), r)) {
+                ledPulseStorageRead(r.isSd);
+                if (r.fs->exists(r.realPath)) {
+                    exists = 1;
+                }
             }
             long* target = appNumericTarget(program, parts[0]);
             if (!target) {
@@ -1485,8 +1509,11 @@ static bool appExecute(DappProgram& program) {
             }
             RoutedPath r;
             dappFok = 0;
-            if (appFileRoute(appExpandText(arg, program), r) && r.fs->remove(r.realPath)) {
-                dappFok = 1;
+            if (appFileRoute(appExpandText(arg, program), r)) {
+                ledPulseStorageWrite(r.isSd);
+                if (r.fs->remove(r.realPath)) {
+                    dappFok = 1;
+                }
             }
         } else if (op == "RAND") {
             String parts[3];
@@ -1630,9 +1657,11 @@ void handleRunCommand(const String parts[], int partCount) {
     }
 
     outLine("Running " + resolved, C_GREEN);
+    ledPulseStorageRead(resolved.startsWith("/sd/"));
     bool loaded = appLoad(file, program);
     file.close();
     if (!loaded) {
+        ledClearAppOverride();
         return;
     }
 
@@ -1647,5 +1676,6 @@ void handleRunCommand(const String parts[], int partCount) {
     //and one that stopped mid-read must not leave a dangling handle
     appCanvasEnd();
     appFileClose();
+    ledClearAppOverride();
     outLine(ok ? "[app exited]" : "[app stopped]", ok ? C_GREEN : C_RED);
 }

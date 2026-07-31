@@ -103,20 +103,28 @@ async function makeFixture(t, packages, packageRoots = ["apps"]) {
 test("current repository sources validate", async () => {
   const result = await buildRepository({ configPath: projectConfig, checkOnly: true });
   assert.equal(result.repo.canonical_url, "https://sadgirlsclub.wtf/dapper/");
-  assert.deepEqual(
-    result.records.map((record) => record.id),
-    ["adventure", "snake", "tetris"],
-  );
+
+  // The published set grows; the invariants do not. Naming every app here
+  // would mean editing this test to add one, so it asserts the catalog order
+  // and the shape of each record instead, plus the apps that must not vanish.
+  const ids = result.records.map((record) => record.id);
+  assert.deepEqual(ids, [...ids].sort((left, right) => left.localeCompare(right, "en")));
+  for (const id of ["2048", "adventure", "decide", "mines", "notes", "snake", "sysmon", "tetris"]) {
+    assert.ok(ids.includes(id), `${id} is published`);
+  }
   for (const record of result.records) {
-    assert.deepEqual(record.boards, ["fnk0104"]);
+    assert.ok(record.boards.includes("fnk0104"), `${record.id} supports this firmware's board`);
     assert.match(record.sha256, /^[a-f0-9]{64}$/);
   }
+
+  const universal = result.records.find((record) => record.id === "decide");
+  assert.deepEqual(universal.boards, ["fnk0104", "m5cardputer"]);
 });
 
 test("FNK0104 compatibility contract matches AppRunner source", async () => {
   const compatibility = JSON.parse(await readFile(projectCompatibility, "utf8"));
   const source = await readFile(path.join(projectRoot, "AppRunner.ino"), "utf8");
-  assert.deepEqual(sourceOpcodes(source), resolvedRuntimeOpcodes(compatibility, "1.2.0"));
+  assert.deepEqual(sourceOpcodes(source), resolvedRuntimeOpcodes(compatibility, "1.3.0"));
   assertLimitsMatch(source, compatibility.boards.fnk0104.limits, {
     DAPP_MAX_LINES: "lines",
     DAPP_MAX_LABELS: "labels",
@@ -192,6 +200,23 @@ test("rejects an opcode newer than the declared runtime minimum", async (t) => {
     buildRepository({ configPath: fixture.configPath, checkOnly: true }),
     (error) =>
       error instanceof RepositoryValidationError && error.message.includes("source requires >=1.1.0"),
+  );
+});
+
+test("rejects LED under a pre-LED runtime contract", async (t) => {
+  const fixture = await makeFixture(t, {
+    "apps/led-demo.dapp": packageText({
+      id: "led-demo",
+      name: "LED Demo",
+      boards: "fnk0104",
+      runtime: ">=1.2.0 <2.0.0",
+      body: "LED 255 0 0",
+    }),
+  });
+  await assert.rejects(
+    buildRepository({ configPath: fixture.configPath, checkOnly: true }),
+    (error) =>
+      error instanceof RepositoryValidationError && error.message.includes("source requires >=1.3.0"),
   );
 });
 

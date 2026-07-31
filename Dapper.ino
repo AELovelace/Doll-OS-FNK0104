@@ -51,6 +51,7 @@ tL4ndQavEi51mI38AjEAi/V3bNTIZargCyzuFJ0nN6T5U6VR5CmD1/iQMVtCnwr1
 static void dapperServiceUi() {
     ftpService();
     radioService();
+    ledService();
     drawDisplayFrame();
     delay(1);
 }
@@ -176,6 +177,7 @@ static bool dapperFetchToFile(const String& url, const char* destination,
     }
     if (!dapperEnsureClock(error)) return false;
 
+    ledPulseNetwork();
     WiFiClientSecure secureClient;
     secureClient.setCACert(DAPPER_ISRG_ROOT_X2);
     HTTPClient http;
@@ -204,6 +206,7 @@ static bool dapperFetchToFile(const String& url, const char* destination,
         return false;
     }
 
+    ledPulseStorageWrite(false);
     LittleFS.remove(destination);
     File output = LittleFS.open(destination, "w");
     if (!output) {
@@ -237,6 +240,7 @@ static bool dapperFetchToFile(const String& url, const char* destination,
         size_t wanted = (size_t)available;
         if (wanted > sizeof(buffer)) wanted = sizeof(buffer);
         int received = stream->read(buffer, wanted);
+        ledPulseNetwork();
         if (received <= 0) {
             dapperServiceUi();
             continue;
@@ -252,6 +256,7 @@ static bool dapperFetchToFile(const String& url, const char* destination,
             failed = true;
             break;
         }
+        ledPulseStorageWrite(false);
         mbedtls_sha256_update(&sha, buffer, (size_t)received);
         lastActivity = millis();
         dapperServiceUi();
@@ -276,12 +281,16 @@ static bool dapperFetchToFile(const String& url, const char* destination,
         error = "SHA-256 does not match the catalog";
         failed = true;
     }
-    if (failed) LittleFS.remove(destination);
+    if (failed) {
+        ledPulseError();
+        LittleFS.remove(destination);
+    }
     return !failed;
 }
 
 static bool dapperAtomicReplace(const char* temporary, const char* destination, String& error) {
     String backup = String(destination) + ".bak";
+    ledPulseStorageWrite(false);
     LittleFS.remove(backup);
     bool hadDestination = LittleFS.exists(destination);
     if (hadDestination && !LittleFS.rename(destination, backup)) {
@@ -356,6 +365,7 @@ static bool dapperParseCatalogRecord(const String& line, DapperRecord& record, S
 }
 
 static bool dapperValidateCatalog(const char* path, int& recordCount, String& error) {
+    ledPulseStorageRead(false);
     File catalog = LittleFS.open(path, "r");
     if (!catalog || catalog.isDirectory()) {
         if (catalog) catalog.close();
@@ -364,6 +374,7 @@ static bool dapperValidateCatalog(const char* path, int& recordCount, String& er
     }
     recordCount = 0;
     while (catalog.available()) {
+        ledPulseStorageRead(false);
         String line = catalog.readStringUntil('\n');
         if (line.endsWith("\r")) line.remove(line.length() - 1);
         line.trim();
@@ -399,10 +410,12 @@ static bool dapperRefreshCatalog(bool verbose, String& error) {
                            DAPPER_MAX_REPO_BYTES, 0, "", ignoredHash, error)) {
         return false;
     }
+    ledPulseStorageRead(false);
     File repoFile = LittleFS.open(DAPPER_REPO_PART_PATH, "r");
     JsonDocument repository;
     DeserializationError repoError = deserializeJson(repository, repoFile);
     repoFile.close();
+    ledPulseStorageWrite(false);
     LittleFS.remove(DAPPER_REPO_PART_PATH);
     if (repoError) {
         error = "invalid repo.json: " + String(repoError.c_str());
@@ -644,6 +657,7 @@ static bool dapperValidateDownloadedPackage(const DapperRecord& record, String& 
 }
 
 static bool dapperHashFile(const String& path, String& hash, size_t& size) {
+    ledPulseStorageRead(false);
     File file = LittleFS.open(path, "r");
     if (!file || file.isDirectory()) {
         if (file) file.close();
@@ -656,6 +670,7 @@ static bool dapperHashFile(const String& path, String& hash, size_t& size) {
     size = 0;
     while (file.available()) {
         int received = file.read(buffer, sizeof(buffer));
+        ledPulseStorageRead(false);
         if (received <= 0) break;
         size += (size_t)received;
         mbedtls_sha256_update(&sha, buffer, (size_t)received);
@@ -700,14 +715,17 @@ static bool dapperInstallRecord(const DapperRecord& record, bool force) {
         return false;
     }
     if (!dapperValidateDownloadedPackage(record, error)) {
+        ledPulseStorageWrite(false);
         LittleFS.remove(DAPPER_PACKAGE_PART_PATH);
         outLine("Dapper: " + error, C_RED);
         return false;
     }
 
+    ledPulseStorageWrite(false);
     LittleFS.remove(DAPPER_PACKAGE_BACKUP_PATH);
     bool hadTarget = LittleFS.exists(target);
     if (hadTarget && !LittleFS.rename(target, DAPPER_PACKAGE_BACKUP_PATH)) {
+        ledPulseStorageWrite(false);
         LittleFS.remove(DAPPER_PACKAGE_PART_PATH);
         outLine("Dapper: cannot back up the installed app", C_RED);
         return false;
@@ -718,11 +736,13 @@ static bool dapperInstallRecord(const DapperRecord& record, bool force) {
         return false;
     }
     if (!dapperRewriteInstalled(record.id, &record, target, error)) {
+        ledPulseStorageWrite(false);
         LittleFS.remove(target);
         if (hadTarget) LittleFS.rename(DAPPER_PACKAGE_BACKUP_PATH, target);
         outLine("Dapper: " + error + "; previous app restored", C_RED);
         return false;
     }
+    ledPulseStorageWrite(false);
     LittleFS.remove(DAPPER_PACKAGE_BACKUP_PATH);
     outLine("Installed " + record.id + " " + record.version, C_GREEN);
     return true;

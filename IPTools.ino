@@ -54,6 +54,7 @@ void ipScanNetwork() {
     String pending = "";
     for (int h = net[3] + 1; h < bcast[3]; h++) {
         IPAddress target(net[0], net[1], net[2], h);
+        ledPulseNetwork();
         if (Ping.ping(target, 1)) {
             found++;
             if (pending.length() == 0) {
@@ -90,6 +91,7 @@ void ipArpScan() {
 
     for (int h = net[3] + 1; h < bcast[3]; h++) {
         IPAddress target(net[0], net[1], net[2], h);
+        ledPulseNetwork();
         arp.sendRequest(target);
         delay(5);
     }

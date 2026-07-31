@@ -40,9 +40,12 @@ void initStorage() {
     //format + clean remount; settings reset to defaults but storage lives again.
     if (!LittleFS.begin(true)) {
         Serial.println("LittleFS: mount failed; forcing format...");
+        ledPulseError();
         if (LittleFS.format() && LittleFS.begin(false)) {
+            ledPulseStorageWrite(false);
             outLine("LittleFS: was corrupt -- reformatted (settings reset)", C_YELLOW);
         } else {
+            ledPulseError();
             outLine("LittleFS: mount failed -- settings won't persist", C_RED);
         }
     }
@@ -53,6 +56,7 @@ void initStorage() {
     SD_MMC.setPins(SD_MMC_CLK_PIN, SD_MMC_CMD_PIN, SD_MMC_D0_PIN, SD_MMC_D1_PIN, SD_MMC_D2_PIN, SD_MMC_D3_PIN);
     setTaskWdtTimeout(20000);
     sdCardMounted = SD_MMC.begin("/sdcard", false, false);
+    ledSetSdMounted(sdCardMounted);
     setTaskWdtTimeout(5000);
     if (!sdCardMounted) {
         Serial.println("SD: not detected");
@@ -61,7 +65,8 @@ void initStorage() {
 
 //lists one directory of a mounted filesystem into the terminal.
 //showSdMount adds a synthetic "sd" entry, used when listing flash root so the mount point is discoverable
-void listDirectory(fs::FS& fs, const String& path, bool showSdMount) {
+void listDirectory(fs::FS& fs, const String& path, bool showSdMount, bool isSd) {
+    ledPulseStorageRead(isSd);
     File dir = fs.open(path);
     if (!dir || !dir.isDirectory()) {
         outLine("ls: " + path + " not found", C_RED);
@@ -71,6 +76,7 @@ void listDirectory(fs::FS& fs, const String& path, bool showSdMount) {
     File entry = dir.openNextFile();
     int entryCount = 0;
     while (entry) {
+        ledPulseStorageRead(isSd);
         String line = entry.isDirectory() ? "  [DIR]  " : ("  " + String(entry.size()) + "b  ");
         line += entry.name();
         outLine(line);
@@ -143,6 +149,7 @@ bool directoryExists(const String& resolvedPath) {
     if (r.isSd && !sdCardMounted) {
         return false;
     }
+    ledPulseStorageRead(r.isSd);
     File dir = r.fs->open(r.realPath);
     bool ok = dir && dir.isDirectory();
     if (dir) dir.close();
@@ -204,6 +211,7 @@ static bool removeResolvedPath(const String& commandName, const String& resolved
         return false;
     }
 
+    ledPulseStorageRead(r.isSd);
     File entry = r.fs->open(r.realPath);
     if (!entry) {
         outLine(commandName + ": " + resolvedPath + " not found", C_RED);
@@ -212,6 +220,7 @@ static bool removeResolvedPath(const String& commandName, const String& resolved
 
     if (!entry.isDirectory()) {
         entry.close();
+        ledPulseStorageWrite(r.isSd);
         if (!r.fs->remove(r.realPath)) {
             outLine(commandName + ": could not remove " + resolvedPath, C_RED);
             return false;
@@ -230,6 +239,7 @@ static bool removeResolvedPath(const String& commandName, const String& resolved
             outLine(commandName + ": " + resolvedPath + " is a directory (use -r)", C_RED);
             return false;
         }
+        ledPulseStorageWrite(r.isSd);
         if (!r.fs->rmdir(r.realPath)) {
             outLine(commandName + ": could not remove directory " + resolvedPath, C_RED);
             return false;
@@ -249,6 +259,7 @@ static bool removeResolvedPath(const String& commandName, const String& resolved
     }
     entry.close();
 
+    ledPulseStorageWrite(r.isSd);
     if (!r.fs->rmdir(r.realPath)) {
         outLine(commandName + ": could not remove directory " + resolvedPath, C_RED);
         return false;
@@ -263,6 +274,7 @@ static bool copyResolvedFile(const String& sourceResolved, const String& destRes
         return false;
     }
 
+    ledPulseStorageRead(source.isSd);
     File in = source.fs->open(source.realPath, "r");
     if (!in) {
         outLine("cp: " + sourceResolved + " not found", C_RED);
@@ -275,6 +287,7 @@ static bool copyResolvedFile(const String& sourceResolved, const String& destRes
     }
 
     String finalDestResolved = destResolved;
+    ledPulseStorageRead(dest.isSd);
     File destProbe = dest.fs->open(dest.realPath);
     if (destProbe && destProbe.isDirectory()) {
         destProbe.close();
@@ -294,6 +307,7 @@ static bool copyResolvedFile(const String& sourceResolved, const String& destRes
         return false;
     }
 
+    ledPulseStorageRead(dest.isSd);
     File existing = dest.fs->open(dest.realPath);
     if (existing) {
         bool isDir = existing.isDirectory();
@@ -318,6 +332,7 @@ static bool copyResolvedFile(const String& sourceResolved, const String& destRes
         return false;
     }
 
+    ledPulseStorageWrite(dest.isSd);
     File out = dest.fs->open(dest.realPath, "w");
     if (!out) {
         in.close();
@@ -328,6 +343,7 @@ static bool copyResolvedFile(const String& sourceResolved, const String& destRes
     uint8_t buffer[256];
     while (in.available()) {
         size_t readCount = in.read(buffer, sizeof(buffer));
+        ledPulseStorageRead(source.isSd);
         if (readCount == 0) {
             break;
         }
@@ -338,6 +354,7 @@ static bool copyResolvedFile(const String& sourceResolved, const String& destRes
             outLine("cp: write failed for " + finalDestResolved, C_RED);
             return false;
         }
+        ledPulseStorageWrite(dest.isSd);
         delay(1);
     }
 
@@ -357,7 +374,7 @@ void handleLsCommand(const String parts[], int partCount) {
     }
 
     outLine(resolved);
-    listDirectory(*r.fs, r.realPath, !r.isSd && resolved == "/" && sdCardMounted);
+    listDirectory(*r.fs, r.realPath, !r.isSd && resolved == "/" && sdCardMounted, r.isSd);
 }
 
 void handleCdCommand(const String parts[], int partCount) {
@@ -391,6 +408,7 @@ void handleCatCommand(const String parts[], int partCount) {
     }
 
     File file = r.fs->open(r.realPath, "r");
+    ledPulseStorageRead(r.isSd);
     if (!file) {
         outLine("cat: " + resolved + " not found", C_RED);
         return;
@@ -410,6 +428,7 @@ void handleCatCommand(const String parts[], int partCount) {
 
     while (file.available()) {
         String line = file.readStringUntil('\n');
+        ledPulseStorageRead(r.isSd);
         if (line.endsWith("\r")) {
             line.remove(line.length() - 1);
         }
@@ -436,6 +455,7 @@ void handleMkdirCommand(const String parts[], int partCount) {
         return;
     }
 
+    ledPulseStorageRead(r.isSd);
     File existing = r.fs->open(r.realPath);
     if (existing) {
         existing.close();
@@ -450,9 +470,11 @@ void handleMkdirCommand(const String parts[], int partCount) {
     }
 
     if (!r.fs->mkdir(r.realPath)) {
+        ledPulseError();
         outLine("mkdir: could not create " + resolved, C_RED);
         return;
     }
+    ledPulseStorageWrite(r.isSd);
     outLine("mkdir: created " + resolved, C_GREEN);
 }
 
@@ -532,6 +554,7 @@ void handleMvCommand(const String parts[], int partCount) {
         return;
     }
 
+    ledPulseStorageRead(source.isSd);
     File sourceFile = source.fs->open(source.realPath, "r");
     if (!sourceFile) {
         outLine("mv: " + sourceResolved + " not found", C_RED);
@@ -546,6 +569,7 @@ void handleMvCommand(const String parts[], int partCount) {
         return;
     }
 
+    ledPulseStorageRead(dest.isSd);
     File destProbe = dest.fs->open(dest.realPath);
     if (destProbe && destProbe.isDirectory()) {
         destProbe.close();
@@ -569,6 +593,7 @@ void handleMvCommand(const String parts[], int partCount) {
         return;
     }
 
+    ledPulseStorageRead(dest.isSd);
     File existing = dest.fs->open(dest.realPath);
     if (existing) {
         existing.close();
@@ -577,6 +602,7 @@ void handleMvCommand(const String parts[], int partCount) {
     }
 
     if (source.fs == dest.fs) {
+        ledPulseStorageWrite(source.isSd);
         if (!source.fs->rename(source.realPath, dest.realPath)) {
             outLine("mv: could not move " + sourceResolved, C_RED);
             return;

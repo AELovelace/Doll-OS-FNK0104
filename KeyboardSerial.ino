@@ -36,6 +36,7 @@ static LineEditState keyboardLineState;
 
 void initKeyboardSerial() {
     KeyboardSerial.begin(KEYBOARD_SERIAL_BAUD, SERIAL_8N1, KEYBOARD_SERIAL_RX_PIN, KEYBOARD_SERIAL_TX_PIN);
+    ledSetKeyboardActive(true);
     Serial.printf("[boot] keyboard UART RX=%d TX=bitbang(GPIO2) baud=%lu\n",
                   KEYBOARD_SERIAL_RX_PIN, (unsigned long)KEYBOARD_SERIAL_BAUD);
 }
@@ -47,6 +48,7 @@ void initKeyboardSerial() {
 void readKeyboardSerial() {
     while (KeyboardSerial.available() > 0) {
         uint8_t ch = (uint8_t)KeyboardSerial.read();
+        ledPulseInput();
         LineInputResult r = processLineEditByte(currentCommand, ch, keyboardLineState, false);
         if (r == LINE_NO_INPUT) {
             continue;
@@ -71,6 +73,7 @@ LineInputResult readKeyboardLineEditedInput(String& text) {
         return LINE_NO_INPUT;
     }
     uint8_t ch = (uint8_t)KeyboardSerial.read();
+    ledPulseInput();
     return processLineEditByte(text, ch, keyboardLineState, false);
 }
 
@@ -81,6 +84,7 @@ int keyboardReadRawByte() {
     if (KeyboardSerial.available() <= 0) {
         return -1;
     }
+    ledPulseInput();
     return (uint8_t)KeyboardSerial.read();
 }
 

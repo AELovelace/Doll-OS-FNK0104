@@ -37,7 +37,11 @@ DIM q 120
 
 GOSUB loadbest
 
+# restart is cleared here, not where it is acted on: the main loop tests it
+# on every pass, including the ones where no key arrived, so leaving it set
+# would send the game back through newgame forever
 :newgame
+SET restart 0
 SET curx 6
 SET cury 5
 SET flags 0

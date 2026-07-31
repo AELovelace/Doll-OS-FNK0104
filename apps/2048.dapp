@@ -35,6 +35,7 @@ GOSUB loadhs
 
 :newgame
 SET score 0
+SET restart 0
 SET quit 0
 SET over 0
 SET won 0

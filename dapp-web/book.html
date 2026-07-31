@@ -1009,6 +1009,7 @@ CHARAT &lt;n&gt; &lt;t&gt; &lt;i&gt;     character code at i, 0 past the end
 ── input ───────────────────────────────────────────────────────────
 INPUT &lt;name&gt; [prompt]  read a line (blocks); result is TEXT, not a number
 KEY &lt;name&gt;             one keypress or 0, never blocks
+LED &lt;r&gt; &lt;g&gt; &lt;b&gt;        set rear RGB LED channels (needs runtime &gt;=1.3.0)
 
 ── files ───────────────────────────────────────────────────────────
 FOPEN &lt;path&gt; &lt;mode&gt;    read | write (truncate) | append; $fok = success
@@ -1040,7 +1041,7 @@ EXIT                   end the app  (alias END)</code></pre>
 120 x 60   largest canvas         1       open file at a time
 1000000    steps between WAITs before the loop guard trips</code></pre>
 <p>Every limit reports on the terminal when hit — including array indexes out of range, which stop the app with the line number.</p>
-<p>Built-ins: <code>$battery</code> <code>$cwd</code> <code>$heap</code> <code>$ip</code> <code>$millis</code> <code>$seconds</code> <code>$wifi</code>, the file status pair <code>$fok</code> (last FOPEN/FDELETE worked) and <code>$feof</code> (last FREAD hit end of file), and the key codes below.</p>
+<p>Built-ins: <code>$battery</code> <code>$cwd</code> <code>$heap</code> <code>$ip</code> <code>$millis</code> <code>$seconds</code> <code>$wifi</code> <code>$ledok</code>, the file status pair <code>$fok</code> (last FOPEN/FDELETE worked) and <code>$feof</code> (last FREAD hit end of file), and the key codes below.</p>
 <h2 id="appendix-c-key-codes">Appendix C — Key Codes</h2>
 <pre><code class="language-text">0    nothing pressed            $kenter  5   enter
 $kup     1   arrow up           $kesc    6   escape (also Ctrl+C, Ctrl+T)

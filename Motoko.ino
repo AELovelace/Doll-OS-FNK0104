@@ -107,6 +107,7 @@ void runMotokoBlocking() {
             r = readKeyboardLineEditedInput(motokoInputBuffer);
         }
         setActiveInput(motokoPrompt(), motokoInputBuffer, false);
+        ledService();
         drawDisplayFrame();   //this loop never returns to DS.ino's loop() until /quit, so the
                                //mirror has to repaint itself here too
         if (r == LINE_SUBMITTED) {

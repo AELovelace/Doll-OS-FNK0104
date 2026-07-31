@@ -1243,6 +1243,7 @@ static bool editLoadFile(const String& logicalPath, String& err) {
         return false;
     }
 
+    ledPulseStorageRead(r.isSd);
     File f = r.fs->open(r.realPath, "r");
     if (!f) {
         editReindex();
@@ -1261,6 +1262,7 @@ static bool editLoadFile(const String& logicalPath, String& err) {
         return false;
     }
 
+    ledPulseStorageRead(r.isSd);
     editLen = f.read((uint8_t*)editBuf, f.size());
     f.close();
 
@@ -1294,6 +1296,7 @@ static bool editSaveFile(const String& logicalPath, String& err) {
     }
 
     const String tmpPath = r.realPath + ".doll-os-tmp";
+    ledPulseStorageWrite(r.isSd);
     File f = r.fs->open(tmpPath, "w");
     if (!f) {
         err = "cannot open " + resolved + " for writing";
@@ -1305,9 +1308,11 @@ static bool editSaveFile(const String& logicalPath, String& err) {
         //chunked so a large buffer doesn't sit in one blocking write; SD_MMC and
         //LittleFS both stream fine, this just keeps each call bounded
         const size_t chunk = min((size_t)4096, editLen - written);
+        ledPulseStorageWrite(r.isSd);
         const size_t n = f.write((const uint8_t*)editBuf + written, chunk);
         if (n != chunk) {
             f.close();
+            ledPulseStorageWrite(r.isSd);
             r.fs->remove(tmpPath);
             err = "short write (out of space?)";
             return false;
@@ -1316,8 +1321,10 @@ static bool editSaveFile(const String& logicalPath, String& err) {
     }
     f.close();
 
+    ledPulseStorageWrite(r.isSd);
     r.fs->remove(r.realPath);   //no-op if it didn't exist
     if (!r.fs->rename(tmpPath, r.realPath)) {
+        ledPulseError();
         r.fs->remove(tmpPath);
         err = "rename failed";
         return false;
@@ -1518,6 +1525,7 @@ void handleEditCommand(const String parts[], int partCount) {
             editNeedsRender = false;
         }
 
+        ledService();
         delay(2);   //yield so CPU idle runs and feeds the task watchdog
     }
 

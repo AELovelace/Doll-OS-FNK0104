@@ -30,6 +30,8 @@ bool connectToInternet() {
     WiFi.setAutoReconnect(false);
 
     Serial.printf("Connecting to router: %s\n", ssid.c_str());
+    ledPulseNetwork();
+    ledSetWifiConnected(false);
     WiFi.begin(ssid.c_str(), password.c_str());
 
     unsigned long startTime = millis();
@@ -40,6 +42,7 @@ bool connectToInternet() {
     Serial.println();
 
     if (WiFi.status() == WL_CONNECTED) {
+        ledSetWifiConnected(true);
         Serial.println("Connected to router.");
         Serial.print("Station IP: ");
         Serial.println(WiFi.localIP());
@@ -47,6 +50,7 @@ bool connectToInternet() {
     }
 
     Serial.println("Could not connect to router.");
+    ledSetWifiConnected(false);
     return false;
 }
 
@@ -55,12 +59,15 @@ const unsigned long reconnectInterval = 10000;
 
 void maintainInternetConnection() {
     if (WiFi.status() == WL_CONNECTED) {
+        ledSetWifiConnected(true);
         return;
     }
+    ledSetWifiConnected(false);
     if (millis() - previousReconnectAttempt < reconnectInterval) {
         return;
     }
     previousReconnectAttempt = millis();
+    ledPulseNetwork();
 
     //Re-associate using the config the last begin() already installed -- do NOT call
     //WiFi.begin() again here. begin() re-runs esp_wifi_set_config(), which the driver
@@ -81,6 +88,7 @@ void scanWifiNetworks() {
     WiFi.scanDelete();
     outLine("Scanning for Wifi Networks");
     telnetClient.flush();   //push this line out before the blocking scan begins
+    ledPulseNetwork();
 
     //A scan can't start while the STA is mid-association: esp_wifi_scan_start() bails
     //out and scanNetworks() fails *immediately* (WIFI_SCAN_FAILED) instead of taking
@@ -146,6 +154,8 @@ void showWifiStatus() {
 void connectWifiNetwork(const String& ssid, const String& password) {
     outLine("Connecting to: " + ssid);
     telnetClient.flush();
+    ledPulseNetwork();
+    ledSetWifiConnected(false);
 
     //Abort any association still in flight before begin(): a stuck/failed join leaves
     //the STA "connecting", and esp_wifi_set_config() (inside begin()) is rejected in
@@ -164,13 +174,17 @@ void connectWifiNetwork(const String& ssid, const String& password) {
     }
 
     if (wifiIsConnected() == 1) {
+        ledSetWifiConnected(true);
         wifiStatus();
     } else {
+        ledSetWifiConnected(false);
+        ledPulseError();
         outLine("WiFi connect failed", C_RED);
     }
 }
 
 bool saveWifiCredentials(const String& ssid, const String& password) {
+    ledPulseStorageWrite(false);
     File file = LittleFS.open(WIFI_CREDS_PATH, "w");
     if (!file) {
         return false;
@@ -182,6 +196,7 @@ bool saveWifiCredentials(const String& ssid, const String& password) {
 }
 
 bool loadWifiCredentials(String& ssid, String& password) {
+    ledPulseStorageRead(false);
     File file = LittleFS.open(WIFI_CREDS_PATH, "r");
     if (!file) {
         return false;

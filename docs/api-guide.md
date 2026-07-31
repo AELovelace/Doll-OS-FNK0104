@@ -625,7 +625,8 @@ Also snaps `displayScrollOffset` back to the live tail on every submission.
 Not a C++ API — a second way to add an app, as a plain text file in `/apps`
 (LittleFS) or `/sd/apps`, launched with `run <name>`. Full language reference is
 [`DAPP.md`](DAPP.md); `docs/DAPP-BOOK.md` is the long-form version, and
-`apps/*.dapp` are working examples (snake, tetris, adventure).
+`apps/*.dapp` are working examples (snake, tetris, 2048, mines, adventure,
+sysmon, notes, decide).
 
 What matters from the C++ side:
 

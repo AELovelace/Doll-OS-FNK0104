@@ -37,10 +37,37 @@
 //   Shared rear-LED API for native modules (.ino/.cpp) and AppRunner opcodes.
 //   These are safe to call on builds without LED support: availability is queryable,
 //   and setters become no-ops when unavailable.
+struct LedRgb {
+    uint8_t red;
+    uint8_t green;
+    uint8_t blue;
+};
+
 bool rearLedAvailable();
 void rearLedSetRgb(uint8_t red, uint8_t green, uint8_t blue);
 void rearLedSetRgbLong(long red, long green, long blue);
 void rearLedOff();
+
+//   OS-level indicator surface layered over the same rear RGB LED. Transient pulses
+//   show activity (storage, network, input) while persistent states show what the
+//   board is doing when idle. App LED effects get an override so the .dapp LED opcode
+//   still behaves like a direct light command while a script is running.
+void ledBegin();
+void ledService();
+void ledPulseStorageRead(bool isSd);
+void ledPulseStorageWrite(bool isSd);
+void ledPulseNetwork();
+void ledPulseInput();
+void ledPulseError();
+void ledSetSdMounted(bool mounted);
+void ledSetWifiConnected(bool connected);
+void ledSetFtpActive(bool active);
+void ledSetTelnetConnected(bool connected);
+void ledSetKeyboardActive(bool active);
+void ledSetUsbActive(bool active);
+void ledSetAppOverrideRgb(uint8_t red, uint8_t green, uint8_t blue);
+void ledSetAppOverrideRgbLong(long red, long green, long blue);
+void ledClearAppOverride();
 
 //   Display panel geometry, keyed off the same FNK0104* board-variant macro
 //   config.h already defines for SD_MMC/battery pins. Native panel resolution is
@@ -261,7 +288,7 @@ struct DappKeyState {
 
 //shared helpers used across app/file command tabs
 #define DOLL_BOARD_ID "fnk0104"
-#define DAPP_RUNTIME_VERSION "1.2.0"
+#define DAPP_RUNTIME_VERSION "1.3.0"
 #define DAPP_PACKAGE_FORMAT 1
 
 int splitCommand(const String& input, String parts[], int maxParts);
@@ -310,6 +337,7 @@ const int C_PINK    = 95;   //bright magenta stands in for DOLL-OS's PINK accent
 //   display pushes. The enum lives here rather than Radio.ino for the same
 //   hoisted-prototype reason as LineInputResult above.
 enum RadioState { RADIO_OFF, RADIO_CONNECTING, RADIO_PLAYING, RADIO_PAUSED, RADIO_STOPPED, RADIO_ERROR };
+void ledSetRadioState(RadioState state);
 
 //ESP32-audioI2S's software volume scale, and the level the Game Boy emulator mixes
 //its APU output at (src/AudioOut.cpp) -- one notion of loudness for the whole board.

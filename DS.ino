@@ -21,6 +21,7 @@ void setup() {
     Serial.println();
     Serial.println("Starting DOLL-OS...");
     Serial.flush();   //force this out over UART now, in case something below hangs before the next line
+    ledBegin();
 
     //report PSRAM up front -- if it's not enabled here, the ~150KB frame sprite and the
     //history ring stay in internal SRAM and everything below is starved for it
@@ -110,6 +111,7 @@ void loop() {
     ftpService();           //drives the FTP server one non-blocking step when active (FtpServer.ino)
     radioService();         //prints whatever the radio task/callbacks stashed (Radio.ino)
     maintainInternetConnection();
+    ledService();
     drawDisplayFrame();   //mirrors whatever changed this tick -- history, status bar, live input line
     delay(1);
 }

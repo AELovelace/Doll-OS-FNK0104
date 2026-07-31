@@ -160,6 +160,7 @@ void runSshBlocking(void* sessionPtr, const String& user) {
             r = readKeyboardLineEditedInput(sshInputBuffer);
         }
         setActiveInput("password> ", sshInputBuffer, true);   //masked on the display too
+        ledService();
         drawDisplayFrame();   //this loop never returns to DS.ino's loop() until auth resolves,
                                //so the mirror has to repaint itself here too
         if (r != LINE_SUBMITTED) {

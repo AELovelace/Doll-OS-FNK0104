@@ -190,10 +190,10 @@ chord that leaves every other DOLL-OS screen also leaves yours. Ctrl+X is never
 delivered to the script: it aborts the running app, from `KEY`, `WAIT`, or a
 blocked `INPUT` alike.
 
-`LED` sets the rear RGB LED. Channel values are clamped into `0..255`, so
-negative values become `0` and values above `255` become `255`. Check `$ledok`
-first when writing portable apps that may run on builds where rear LED control
-is disabled.
+`LED` sets the rear RGB LED and requires AppRunner `>=1.3.0`. Channel values are
+clamped into `0..255`, so negative values become `0` and values above `255`
+become `255`. Check `$ledok` first when writing portable apps that may run on
+builds where rear LED control is disabled.
 
 `CANVAS` replaces the scrolling terminal with a grid you address by cell. `PUT`
 writes into the grid without drawing anything, and `FLIP` shows the result — so a

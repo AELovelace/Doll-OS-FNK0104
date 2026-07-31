@@ -97,10 +97,11 @@ GOSUB graph
 COLOR blue
 PUT 0 8 "+----------------------------------+"
 COLOR white
-PUT 36 8 "18s"
+PUT 37 8 "18s"
 
 GOSUB battline
 GOSUB netline
+GOSUB clockstr
 
 COLOR cyan
 PUT 0 12 "up"

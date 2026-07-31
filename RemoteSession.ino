@@ -108,6 +108,7 @@ void RemoteSession::run() {
         delay(2);
 
         pumpIncoming();
+        ledService();
         drawDisplayFrame();   //this loop never returns to DS.ino's loop() until the
                                //session ends, so the mirror has to repaint itself here too
 
@@ -159,6 +160,7 @@ void RemoteSession::runInlineCommandPrompt() {
     while (true) {
         delay(2);
         pumpIncoming();
+        ledService();
         drawDisplayFrame();
         if (isClosed()) {
             return;   //remote died mid-typing -- discard whatever was half-entered

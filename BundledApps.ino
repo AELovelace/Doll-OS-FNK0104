@@ -12,11 +12,13 @@ struct BundledAsset {
 };
 
 static void ensureBundledDirectory(const char* path) {
+    ledPulseStorageRead(false);
     File dir = LittleFS.open(path);
     if (!dir || !dir.isDirectory()) {
         if (dir) {
             dir.close();
         }
+        ledPulseStorageWrite(false);
         LittleFS.mkdir(path);
     } else {
         dir.close();
@@ -24,6 +26,7 @@ static void ensureBundledDirectory(const char* path) {
 }
 
 static bool bundledAssetMatches(const char* path, const char* contents) {
+    ledPulseStorageRead(false);
     File file = LittleFS.open(path, "r");
     if (!file || file.isDirectory()) {
         if (file) {
@@ -59,6 +62,7 @@ static bool bundledAssetMatches(const char* path, const char* contents) {
 }
 
 static bool writeBundledAsset(const char* path, const char* contents) {
+    ledPulseStorageWrite(false);
     File file = LittleFS.open(path, "w");
     if (!file) {
         return false;
@@ -66,6 +70,7 @@ static bool writeBundledAsset(const char* path, const char* contents) {
 
     size_t len = strlen(contents);
     size_t written = file.write((const uint8_t*)contents, len);
+    ledPulseStorageWrite(false);
     file.close();
     return written == len;
 }
@@ -103,6 +108,7 @@ void seedBundledApps() {
     for (const BundledAsset& legacy : legacyApps) {
         if (bundledAssetMatches(legacy.path, legacy.contents) ||
             bundledAssetMatches(legacy.path, bundledContentWithoutPackageHeader(legacy.contents))) {
+            ledPulseStorageWrite(false);
             LittleFS.remove(legacy.path);
         }
     }

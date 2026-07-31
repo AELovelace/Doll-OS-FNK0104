@@ -1644,7 +1644,7 @@ CHARAT <n> <t> <i>     character code at i, 0 past the end
 ── input ───────────────────────────────────────────────────────────
 INPUT <name> [prompt]  read a line (blocks); result is TEXT, not a number
 KEY <name>             one keypress or 0, never blocks
-LED <r> <g> <b>        set rear RGB LED channels (0..255 each)
+LED <r> <g> <b>        set rear RGB LED channels (needs runtime >=1.3.0)
 
 ── files ───────────────────────────────────────────────────────────
 FOPEN <path> <mode>    read | write (truncate) | append; $fok = success

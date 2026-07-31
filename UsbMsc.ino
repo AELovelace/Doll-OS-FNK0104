@@ -56,6 +56,7 @@ static int32_t onMscRead(uint32_t lba, uint32_t offset, void* buffer, uint32_t b
 
     if (offset == 0 && (bufsize % secSize) == 0) {
         for (uint32_t i = 0; i < bufsize / secSize; i++) {
+            ledPulseStorageRead(true);
             if (!SD_MMC.readRAW((uint8_t*)buffer + (i * secSize), lba + i)) {
                 return -1;
             }
@@ -73,6 +74,7 @@ static int32_t onMscRead(uint32_t lba, uint32_t offset, void* buffer, uint32_t b
     uint32_t currentOffset = offset;
 
     while (remaining > 0) {
+        ledPulseStorageRead(true);
         if (!SD_MMC.readRAW(mscSectorScratch, currentLba)) {
             return -1;
         }
@@ -97,6 +99,7 @@ static int32_t onMscWrite(uint32_t lba, uint32_t offset, uint8_t* buffer, uint32
 
     if (offset == 0 && (bufsize % secSize) == 0) {
         for (uint32_t i = 0; i < bufsize / secSize; i++) {
+            ledPulseStorageWrite(true);
             if (!SD_MMC.writeRAW(buffer + (i * secSize), lba + i)) {
                 return -1;
             }
@@ -116,11 +119,13 @@ static int32_t onMscWrite(uint32_t lba, uint32_t offset, uint8_t* buffer, uint32
     while (remaining > 0) {
         uint32_t chunkSize = min(remaining, secSize - currentOffset);
         if (currentOffset != 0 || chunkSize != secSize) {
+            ledPulseStorageRead(true);
             if (!SD_MMC.readRAW(mscSectorScratch, currentLba)) {
                 return -1;
             }
         }
         memcpy(mscSectorScratch + currentOffset, in, chunkSize);
+        ledPulseStorageWrite(true);
         if (!SD_MMC.writeRAW(mscSectorScratch, currentLba)) {
             return -1;
         }
@@ -140,9 +145,11 @@ static bool onMscStartStop(uint8_t power_condition, bool start, bool load_eject)
 //exposed as a USB drive the whole time
 void runUsbModeBlocking() {
     outLine("USB mode on -- Ctrl+T to exit", C_YELLOW);
+    ledSetUsbActive(true);
 
     while (true) {
         delay(10);
+        ledService();
         //exit on Ctrl+T from either input surface. A dropped/absent telnet client no longer
         //ends USB mode -- otherwise running "usb" from the BLE keyboard alone would exit
         //instantly. The panel keeps showing the USB-mode banner the whole time.
@@ -157,6 +164,7 @@ void runUsbModeBlocking() {
     }
 
     msc.mediaPresent(false);
+    ledSetUsbActive(false);
     usbModeDisplayActive = false;
     setActiveInput(shellPrompt(), "", false);   //cwd may have been forced back to "/" above
     drawDisplayFrame();
@@ -168,6 +176,7 @@ void runUsbModeBlocking() {
 //handles the "usb" command: exposes the SD card over USB MSC and blocks until the user exits
 void handleUsbCommand(const String parts[], int partCount) {
     if (!sdCardMounted) {
+        ledPulseError();
         outLine("usb: SD card not mounted", C_RED);
         return;
     }
@@ -201,6 +210,7 @@ void handleUsbCommand(const String parts[], int partCount) {
 #else /* !USB_MSC_SUPPORTED */
 
 void handleUsbCommand(const String parts[], int partCount) {
+    ledPulseError();
     outLine("usb: not available on this build (needs Tools > USB Mode: USB-OTG / TinyUSB)", C_RED);
 }
 

@@ -1,0 +1,120 @@
+# @dapp-format 1
+# @id todo
+# @name Todo List
+# @version 1.0.0
+# @boards fnk0104
+# @runtime >=1.1.0 <2.0.0
+# @summary Persistent task list manager backed by /apps/todo.txt
+# /apps/todo.dapp
+# Minimal persistent todo list utility.
+# Storage file: /apps/todo.txt
+
+:menu
+CLEAR
+COLOR cyan
+PRINT "TODO"
+PRINT "----"
+COLOR white
+PRINT "1) add task"
+PRINT "2) list tasks"
+PRINT "3) clear all"
+PRINT "4) quit"
+PRINT ""
+INPUT choice "todo> "
+IFEQ $choice 1 GOTO add
+IFEQ $choice 2 GOTO list
+IFEQ $choice 3 GOTO clearall
+IFEQ $choice 4 GOTO done
+IFEQ $choice q GOTO done
+IFEQ $choice Q GOTO done
+COLOR red
+PRINT "choose 1-4"
+WAIT 700
+GOTO menu
+
+:add
+CLEAR
+COLOR cyan
+PRINT "ADD TASK"
+COLOR white
+INPUT task "task> "
+LEN tlen $task
+IF $tlen > 0 GOTO add_ok
+COLOR yellow
+PRINT "empty task ignored"
+WAIT 700
+GOTO menu
+:add_ok
+FOPEN "/apps/todo.txt" append
+IF $fok = 1 GOTO add_write
+COLOR red
+PRINT "could not open /apps/todo.txt"
+WAIT 900
+GOTO menu
+:add_write
+FWRITE "[$seconds] $task"
+FCLOSE
+COLOR green
+PRINT "saved"
+WAIT 500
+GOTO menu
+
+:list
+CLEAR
+COLOR cyan
+PRINT "TASKS"
+PRINT "-----"
+COLOR white
+FOPEN "/apps/todo.txt" read
+IF $fok = 1 GOTO list_read
+COLOR yellow
+PRINT "no task file yet"
+GOTO list_pause
+:list_read
+SET count 0
+:list_loop
+FREAD line
+IF $feof = 1 GOTO list_done
+ADD count 1
+PRINT "$count. $line"
+GOTO list_loop
+:list_done
+FCLOSE
+IF $count > 0 GOTO list_pause
+COLOR yellow
+PRINT "(empty)"
+:list_pause
+PRINT ""
+INPUT _ "enter to return"
+GOTO menu
+
+:clearall
+CLEAR
+COLOR red
+PRINT "clear all tasks?"
+COLOR white
+INPUT yn "type YES to confirm> "
+IFEQ $yn YES GOTO clear_yes
+IFEQ $yn yes GOTO clear_yes
+IFEQ $yn Y GOTO clear_yes
+IFEQ $yn y GOTO clear_yes
+PRINT "cancelled"
+WAIT 700
+GOTO menu
+:clear_yes
+FDELETE "/apps/todo.txt"
+IF $fok = 1 GOTO clear_ok
+COLOR yellow
+PRINT "nothing to delete (already empty?)"
+WAIT 800
+GOTO menu
+:clear_ok
+COLOR green
+PRINT "all tasks cleared"
+WAIT 700
+GOTO menu
+
+:done
+COLOR cyan
+PRINT "todo: bye"
+EXIT

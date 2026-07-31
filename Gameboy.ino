@@ -243,6 +243,7 @@ static void gbInsertRomName(String names[], int& count, const String& name, bool
 
 static void gbCollectRomNamesInDir(fs::FS& fs, const String& realDir, const String& relativeDir,
                                    String names[], int& count, bool& truncated) {
+    ledPulseStorageRead(true);
     File dir = fs.open(realDir);
     if (!dir || !dir.isDirectory()) {
         if (dir) dir.close();
@@ -251,6 +252,7 @@ static void gbCollectRomNamesInDir(fs::FS& fs, const String& realDir, const Stri
 
     File entry = dir.openNextFile();
     while (entry) {
+        ledPulseStorageRead(true);
         String name = gbBaseName(entry.name());
         bool isDir = entry.isDirectory();
         entry.close();
@@ -713,6 +715,7 @@ void handleGbCommand(const String parts[], int partCount) {
         outLine("gb: SD not mounted (insert card and reboot)", C_RED);
         return;
     }
+    ledPulseStorageRead(romLogical.startsWith("/sd/"));
 
     if (!gbHost.begin()) {
         outLine("gb: " + gbHost.status(), C_RED);
@@ -795,6 +798,7 @@ void handleGbCommand(const String parts[], int partCount) {
             skipRun++;
         }
         gbHost.tickSave();
+        ledService();
         framesRun++;
 
         // Pace to ~59.7 fps when we're ahead; if we've fallen more than a few

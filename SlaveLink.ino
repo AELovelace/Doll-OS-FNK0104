@@ -115,6 +115,7 @@ static void IRAM_ATTR slaveLinkWriteByte(uint8_t b) {
 //either CR or LF as end-of-line). Bytes go out back-to-back; the slave resynchronises on
 //each byte's start bit, and any interrupt gap between our bytes just looks like idle line.
 void slaveLinkSendLine(const String& line) {
+    ledPulseInput();
     for (size_t i = 0; i < line.length(); i++) {
         slaveLinkWriteByte((uint8_t)line[i]);
     }

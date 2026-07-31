@@ -76,11 +76,13 @@ int telnetReadFilteredByte() {
                     userIacState = UIAC_GOT_IAC;
                     continue;
                 }
+                ledPulseInput();
                 return b;
 
             case UIAC_GOT_IAC:
                 if (b == IAC) {              //escaped 0xFF data byte
                     userIacState = UIAC_NORMAL;
+                    ledPulseInput();
                     return 0xFF;
                 }
                 if (b == SB) {
@@ -297,6 +299,8 @@ void acceptTelnetClient() {
 
     telnetClient = newClient;
     telnetClient.setNoDelay(true);
+    ledSetTelnetConnected(true);
+    ledPulseNetwork();
 
     currentCommand = "";
     commandCursorPos = 0;
@@ -320,6 +324,7 @@ void readTelnetClient() {
     if (!telnetClient.connected()) {
         Serial.println("Telnet client disconnected.");
         telnetClient.stop();
+        ledSetTelnetConnected(false);
         currentCommand = "";
         commandCursorPos = 0;
         return;

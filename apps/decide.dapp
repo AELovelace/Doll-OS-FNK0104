@@ -1,0 +1,159 @@
+# @dapp-format 1
+# @id decide
+# @name Decide
+# @version 1.0.0
+# @boards m5cardputer,fnk0104
+# @runtime >=1.0.0 <2.0.0
+# @summary Coin, dice, oracle and a shuffler for small decisions
+# /apps/decide.dapp
+# A pocket chooser: coin, dice, an oracle, a number, and a shuffle between
+# options you type in.
+#
+# Written to AppRunner 1.0.0 so it runs on the M5Cardputer build too: no
+# canvas, arrays, GOSUB or CHARAT. Hence answers matched as text with IFEQ
+# instead of parsed, `s` reused as the one input buffer (1.0.0 allows eight
+# string variables), and results falling through a ladder of assignments to
+# one shared print, so six answers cost one label instead of six.
+
+COLOR pink
+PRINT "decide"
+COLOR white
+PRINT "for the choices that are not worth making yourself"
+
+:menu
+PRINT ""
+COLOR yellow
+PRINT "1 coin   2 dice   3 oracle   4 number   5 shuffle   q quit"
+COLOR white
+INPUT c "decide> "
+IFEQ $c "1" GOTO coin
+IFEQ $c "2" GOTO dice
+IFEQ $c "3" GOTO oracle
+IFEQ $c "4" GOTO number
+IFEQ $c "5" GOTO shuffle
+IFEQ $c "q" GOTO bye
+IFEQ $c "" GOTO menu
+COLOR red
+PRINT "type 1 to 5, or q to quit"
+GOTO menu
+
+:coin
+COLOR cyan
+PRINT "the coin is in the air..."
+WAIT 600
+RAND r 2
+SETSTR ans "HEADS"
+IF $r = 0 GOTO csay
+SETSTR ans "TAILS"
+:csay
+COLOR green
+PRINT "$ans"
+GOTO menu
+
+:dice
+COLOR white
+INPUT s "sides? 4 6 8 10 12 20 100 (blank for 6) "
+SET n 6
+IFEQ $s "" GOTO droll
+IFEQ $s "6" GOTO droll
+SET n 4
+IFEQ $s "4" GOTO droll
+SET n 8
+IFEQ $s "8" GOTO droll
+SET n 10
+IFEQ $s "10" GOTO droll
+SET n 12
+IFEQ $s "12" GOTO droll
+SET n 20
+IFEQ $s "20" GOTO droll
+SET n 100
+IFEQ $s "100" GOTO droll
+SET n 6
+COLOR red
+PRINT "no such die here - rolling a d6"
+:droll
+COLOR cyan
+PRINT "rolling a d$n..."
+WAIT 500
+RAND r $n
+ADD r 1
+COLOR green
+PRINT "$r"
+GOTO menu
+
+:oracle
+COLOR white
+INPUT s "ask a yes or no question> "
+IFEQ $s "" GOTO menu
+COLOR cyan
+PRINT "the oracle considers it..."
+WAIT 900
+RAND r 6
+SETSTR ans "yes, obviously"
+IF $r = 0 GOTO osay
+SETSTR ans "no, and you knew that"
+IF $r = 1 GOTO osay
+SETSTR ans "yes, but not yet"
+IF $r = 2 GOTO osay
+SETSTR ans "ask again after a sleep"
+IF $r = 3 GOTO osay
+SETSTR ans "absolutely not"
+IF $r = 4 GOTO osay
+SETSTR ans "do it and find out"
+:osay
+COLOR green
+PRINT "$ans"
+GOTO menu
+
+:number
+COLOR cyan
+PRINT "picking from 1 to 100..."
+WAIT 400
+RAND r 100
+ADD r 1
+COLOR green
+PRINT "$r"
+GOTO menu
+
+:shuffle
+COLOR white
+PRINT "type up to four options, blank line to stop"
+SET n 0
+INPUT a "option 1> "
+IFEQ $a "" GOTO shnone
+SET n 1
+INPUT b "option 2> "
+IFEQ $b "" GOTO shgo
+SET n 2
+INPUT d "option 3> "
+IFEQ $d "" GOTO shgo
+SET n 3
+INPUT e "option 4> "
+IFEQ $e "" GOTO shgo
+SET n 4
+:shgo
+COLOR cyan
+PRINT "choosing between $n of them..."
+WAIT 700
+RAND r $n
+SETSTR ans "$a"
+IF $r = 0 GOTO shsay
+SETSTR ans "$b"
+IF $r = 1 GOTO shsay
+SETSTR ans "$d"
+IF $r = 2 GOTO shsay
+SETSTR ans "$e"
+:shsay
+COLOR green
+PRINT "$ans"
+GOTO menu
+
+:shnone
+COLOR red
+PRINT "nothing to choose between"
+GOTO menu
+
+:bye
+COLOR pink
+PRINT "decide: made up for you"
+EXIT
