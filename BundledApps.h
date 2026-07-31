@@ -1936,7 +1936,7 @@ GOTO chat
 :poll
 SETSTR url "$endpoint/poll?room=$room&since=$since"
 HTTPGET praw $url 4096
-IF $httpok = 0 RETURN
+IF $httpok = 0 GOTO poll_return
 SET pi 0
 :poll_next
 JSONGET ptext $praw "messages[$pi].text"
@@ -1949,10 +1949,11 @@ ADD pi 1
 GOTO poll_next
 :poll_done
 JSONGET newsince $praw "last_id"
-IF $jsonok = 0 RETURN
+IF $jsonok = 0 GOTO poll_return
 SETSTR text $newsince
 GOSUB str2num
 SET since $num
+:poll_return
 RETURN
 
 # in: text (string)   out: num -- digits off the front of a string, since a

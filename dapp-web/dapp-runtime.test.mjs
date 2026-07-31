@@ -219,3 +219,37 @@ test("the shipped LLM chat app masks its key and parses a Chat Completions reply
   assert.equal(JSON.parse(request.options.body).messages[0].content, 'hello "Doll"');
   assert.ok(outputs.includes("llm> Hi from the model"));
 });
+
+test("the shipped DappChat signs in, joins a room, polls, and exits", async (t) => {
+  const previousFetch = globalThis.fetch;
+  const requests = [];
+  t.after(() => { globalThis.fetch = previousFetch; });
+  globalThis.fetch = async (url, options = {}) => {
+    requests.push({ url, options });
+    const response = url.endsWith("/auth")
+      ? { ok: true, created: false, token: "chat-token" }
+      : { ok: true, last_id: 7, messages: [{ id: 7, user: "Asuka", text: "hello Doll" }] };
+    return {
+      status: 200,
+      ok: true,
+      arrayBuffer: async () => new TextEncoder().encode(JSON.stringify(response)).buffer
+    };
+  };
+
+  const answers = ["Doll", "secret", "", "/quit"];
+  const outputs = [];
+  const io = {
+    output(text) { outputs.push(text); }, clear() {}, status() {}, canvas() {}, endCanvas() {}, waveStop() {},
+    input(_prompt, resolve) { resolve(answers.shift()); }
+  };
+  const runtime = new DappRuntime(io, new MemoryFiles());
+  const source = await readFile(new URL("../apps/dappchat.dapp", import.meta.url), "utf8");
+  const result = await runtime.run(source);
+
+  assert.equal(result.ok, true);
+  assert.equal(requests[0].url, "https://sadgirlsclub.wtf/dappchat/auth");
+  assert.equal(requests[1].url, "https://sadgirlsclub.wtf/dappchat/poll?room=lobby&since=0");
+  assert.equal(requests[1].options.headers.Authorization, "Bearer chat-token");
+  assert.ok(outputs.includes("Asuka: hello Doll"));
+  assert.ok(outputs.includes("bye"));
+});
