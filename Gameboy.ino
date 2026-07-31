@@ -208,6 +208,16 @@ static String gbBaseName(String path) {
     return path;
 }
 
+static String gbJoinChildPath(const String& parent, const String& child) {
+    if (parent.length() == 0 || parent == "/") return "/" + child;
+    return parent + "/" + child;
+}
+
+static String gbJoinRelativePath(const String& parent, const String& child) {
+    if (parent.length() == 0) return child;
+    return parent + "/" + child;
+}
+
 static bool gbNameLess(const String& a, const String& b) {
     String al = a;
     String bl = b;
@@ -231,30 +241,40 @@ static void gbInsertRomName(String names[], int& count, const String& name, bool
     count++;
 }
 
+static void gbCollectRomNamesInDir(fs::FS& fs, const String& realDir, const String& relativeDir,
+                                   String names[], int& count, bool& truncated) {
+    File dir = fs.open(realDir);
+    if (!dir || !dir.isDirectory()) {
+        if (dir) dir.close();
+        return;
+    }
+
+    File entry = dir.openNextFile();
+    while (entry) {
+        String name = gbBaseName(entry.name());
+        bool isDir = entry.isDirectory();
+        entry.close();
+        if (name.length() > 0) {
+            if (isDir) {
+                gbCollectRomNamesInDir(fs, gbJoinChildPath(realDir, name),
+                                       gbJoinRelativePath(relativeDir, name),
+                                       names, count, truncated);
+            } else if (gbIsRomFileName(name)) {
+                gbInsertRomName(names, count, gbJoinRelativePath(relativeDir, name), truncated);
+            }
+        }
+        entry = dir.openNextFile();
+    }
+    dir.close();
+}
+
 static int gbCollectRomNames(String names[], bool& truncated) {
     truncated = false;
     int count = 0;
     if (!sdCardMounted) return 0;
 
     RoutedPath r = routePath(kGbRomDir);
-    File dir = r.fs->open(r.realPath);
-    if (!dir || !dir.isDirectory()) {
-        if (dir) dir.close();
-        return 0;
-    }
-
-    File entry = dir.openNextFile();
-    while (entry) {
-        if (!entry.isDirectory()) {
-            String name = gbBaseName(entry.name());
-            if (gbIsRomFileName(name)) {
-                gbInsertRomName(names, count, name, truncated);
-            }
-        }
-        entry.close();
-        entry = dir.openNextFile();
-    }
-    dir.close();
+    gbCollectRomNamesInDir(*r.fs, r.realPath, "", names, count, truncated);
     return count;
 }
 
