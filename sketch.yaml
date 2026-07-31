@@ -14,7 +14,9 @@ profiles:
       - dir: ../libraries/ESP32Ping
       - dir: ../libraries/esp32ARP
       - dir: ../libraries/ESP32-audioI2S-master
-      - dir: ../libraries/Adafruit_NeoPixel
+      # FNK0104B onboard RGB LED. Use Freenove's board-tested driver instead of
+      # silently falling back to whichever NeoPixel implementation is installed.
+      - Freenove WS2812 Lib for ESP32 (2.0.1)
       - PubSubClient (2.8)
       - LibSSH-ESP32 (5.8.0)
       - ArduinoJson (7.4.2)

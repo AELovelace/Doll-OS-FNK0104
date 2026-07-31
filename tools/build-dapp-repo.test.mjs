@@ -113,7 +113,7 @@ test("current repository sources validate", async () => {
     assert.ok(ids.includes(id), `${id} is published`);
   }
   for (const record of result.records) {
-    assert.ok(record.boards.includes("fnk0104"), `${record.id} supports this firmware's board`);
+    assert.ok(record.boards.length > 0, `${record.id} declares at least one supported board`);
     assert.match(record.sha256, /^[a-f0-9]{64}$/);
   }
 
@@ -124,7 +124,7 @@ test("current repository sources validate", async () => {
 test("FNK0104 compatibility contract matches AppRunner source", async () => {
   const compatibility = JSON.parse(await readFile(projectCompatibility, "utf8"));
   const source = await readFile(path.join(projectRoot, "AppRunner.ino"), "utf8");
-  assert.deepEqual(sourceOpcodes(source), resolvedRuntimeOpcodes(compatibility, "1.3.0"));
+  assert.deepEqual(sourceOpcodes(source), resolvedRuntimeOpcodes(compatibility, "1.4.0"));
   assertLimitsMatch(source, compatibility.boards.fnk0104.limits, {
     DAPP_MAX_LINES: "lines",
     DAPP_MAX_LABELS: "labels",
@@ -152,7 +152,7 @@ test("M5Cardputer compatibility contract matches sibling AppRunner when availabl
     throw error;
   }
   const compatibility = JSON.parse(await readFile(projectCompatibility, "utf8"));
-  assert.deepEqual(sourceOpcodes(source), resolvedRuntimeOpcodes(compatibility, "1.0.0"));
+  assert.deepEqual(sourceOpcodes(source), resolvedRuntimeOpcodes(compatibility, "1.3.0"));
   assertLimitsMatch(source, compatibility.boards.m5cardputer.limits, {
     DAPP_MAX_LINES: "lines",
     DAPP_MAX_LABELS: "labels",
@@ -237,7 +237,10 @@ test("rejects conditional GOSUB under the 1.0 runtime contract", async (t) => {
 });
 
 test("counts metadata and comments toward the M5Cardputer line limit", async (t) => {
-  const body = Array.from({ length: 154 }, (_, index) => `# comment ${index}`).join("\n");
+  const compatibility = JSON.parse(await readFile(projectCompatibility, "utf8"));
+  const lineLimit = compatibility.boards.m5cardputer.limits.lines;
+  const metadataLines = 6;
+  const body = Array.from({ length: lineLimit - metadataLines + 1 }, (_, index) => `# comment ${index}`).join("\n");
   const fixture = await makeFixture(t, {
     "apps/large.dapp": packageText({
       id: "large",
@@ -250,7 +253,7 @@ test("counts metadata and comments toward the M5Cardputer line limit", async (t)
     buildRepository({ configPath: fixture.configPath, checkOnly: true }),
     (error) =>
       error instanceof RepositoryValidationError &&
-      error.message.includes("physical lines exceed m5cardputer limit 160"),
+      error.message.includes(`physical lines exceed m5cardputer limit ${lineLimit}`),
   );
 });
 

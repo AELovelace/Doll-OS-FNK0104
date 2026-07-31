@@ -1,0 +1,206 @@
+# @dapp-format 1
+# @id morse
+# @name Morse Trainer
+# @version 1.0.0
+# @boards m5cardputer
+# @runtime >=1.1.0 <2.0.0
+# @summary A pocket Morse-code reference and randomized letter trainer
+# /apps/morse.dapp
+# Encodes A-Z from a compact binary table: dot=0, dash=1. Reference mode
+# shows the whole alphabet; quiz mode accepts answers from the keyboard.
+
+DIM bits 26
+DIM lens 26
+# A .- through Z --..
+SET bits[0] 1
+SET lens[0] 2
+SET bits[1] 8
+SET lens[1] 4
+SET bits[2] 10
+SET lens[2] 4
+SET bits[3] 4
+SET lens[3] 3
+SET bits[4] 0
+SET lens[4] 1
+SET bits[5] 2
+SET lens[5] 4
+SET bits[6] 6
+SET lens[6] 3
+SET bits[7] 0
+SET lens[7] 4
+SET bits[8] 0
+SET lens[8] 2
+SET bits[9] 7
+SET lens[9] 4
+SET bits[10] 5
+SET lens[10] 3
+SET bits[11] 4
+SET lens[11] 4
+SET bits[12] 3
+SET lens[12] 2
+SET bits[13] 2
+SET lens[13] 2
+SET bits[14] 7
+SET lens[14] 3
+SET bits[15] 6
+SET lens[15] 4
+SET bits[16] 13
+SET lens[16] 4
+SET bits[17] 2
+SET lens[17] 3
+SET bits[18] 0
+SET lens[18] 3
+SET bits[19] 1
+SET lens[19] 1
+SET bits[20] 1
+SET lens[20] 3
+SET bits[21] 1
+SET lens[21] 4
+SET bits[22] 3
+SET lens[22] 3
+SET bits[23] 9
+SET lens[23] 4
+SET bits[24] 11
+SET lens[24] 4
+SET bits[25] 12
+SET lens[25] 4
+
+:menu
+CLEAR
+COLOR pink
+PRINT "MORSE TRAINER"
+COLOR white
+PRINT "1) alphabet reference"
+PRINT "2) read the code"
+PRINT "3) type the code"
+PRINT "q) quit"
+INPUT mode "morse> "
+IFEQ $mode "1" GOTO reference
+IFEQ $mode "2" GOTO readquiz
+IFEQ $mode "3" GOTO typequiz
+IFEQ $mode "q" GOTO leave
+IFEQ $mode "Q" GOTO leave
+GOTO menu
+
+:reference
+CLEAR
+COLOR cyan
+PRINT "A-Z MORSE"
+COLOR white
+SET idx 0
+:refloop
+GOSUB makecode
+EXPR ascii $idx + 65
+CHR letter $ascii
+PRINT "$letter  $code"
+ADD idx 1
+IF $idx < 26 GOTO refloop
+INPUT wait "enter to return> "
+GOTO menu
+
+:readquiz
+SET score 0
+SET asked 0
+:readnext
+RAND idx 26
+GOSUB makecode
+CLEAR
+COLOR cyan
+PRINT "WHAT LETTER?"
+COLOR yellow
+PRINT $code
+COLOR white
+INPUT answer "letter (q quits)> "
+IFEQ $answer "q" GOTO quizdone
+IFEQ $answer "Q" GOTO quizdone
+LEN n $answer
+IF $n = 0 GOTO readnext
+CHARAT got $answer 0
+IF $got >= 97 GOTO readlower
+GOTO readcheck
+:readlower
+SUB got 32
+:readcheck
+EXPR want $idx + 65
+ADD asked 1
+IF $got = $want GOTO correct
+CHR letter $want
+COLOR red
+PRINT "not quite - it was $letter"
+WAIT 700
+GOTO readnext
+:correct
+ADD score 1
+COLOR green
+PRINT "correct!  $score / $asked"
+WAIT 450
+GOTO readnext
+
+:typequiz
+SET score 0
+SET asked 0
+:typenext
+RAND idx 26
+EXPR ascii $idx + 65
+CHR letter $ascii
+GOSUB makecode
+CLEAR
+COLOR cyan
+PRINT "TYPE THE MORSE FOR $letter"
+COLOR white
+INPUT answer "dots/dashes (q quits)> "
+IFEQ $answer "q" GOTO quizdone
+IFEQ $answer "Q" GOTO quizdone
+ADD asked 1
+IFEQ $answer $code GOTO typecorrect
+COLOR red
+PRINT "$letter is $code"
+WAIT 700
+GOTO typenext
+:typecorrect
+ADD score 1
+COLOR green
+PRINT "correct!  $score / $asked"
+WAIT 450
+GOTO typenext
+
+:quizdone
+COLOR pink
+PRINT "score: $score / $asked"
+INPUT wait "enter to return> "
+GOTO menu
+
+# in: idx; out: code
+:makecode
+SETSTR code ""
+SET value $bits[$idx]
+SET n $lens[$idx]
+SET pos 0
+:codeloop
+IF $pos >= $n GOTO codedone
+EXPR shift $n - $pos - 1
+SET divisor 1
+:powloop
+IF $shift <= 0 GOTO powdone
+MUL divisor 2
+SUB shift 1
+GOTO powloop
+:powdone
+SET digit $value
+DIV digit $divisor
+MOD digit 2
+IF $digit = 1 GOTO dash
+APPEND code "."
+GOTO codenext
+:dash
+APPEND code "-"
+:codenext
+ADD pos 1
+GOTO codeloop
+:codedone
+RETURN
+
+:leave
+COLOR pink
+PRINT "... --- ..."
+EXIT

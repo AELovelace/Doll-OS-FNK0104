@@ -389,6 +389,23 @@ select {
   padding: 0 28px 0 8px;
 }
 
+.filename-input {
+  width: 150px;
+  min-height: 30px;
+  padding: 0 8px;
+  border: 1px solid #9b3a70;
+  border-radius: 0;
+  background: #090709;
+  color: #eee4ea;
+  font: 900 10px/1 monospace;
+  box-shadow: inset 2px 2px 0 #250d1c;
+}
+
+.filename-input:focus {
+  outline: 2px solid var(--pink);
+  outline-offset: 1px;
+}
+
 .tool-button {
   padding: 0 10px;
 }
@@ -968,6 +985,11 @@ footer {
     grid-column: 1 / -1;
     width: 100%;
     min-width: 0;
+  }
+
+  .filename-input {
+    grid-column: 1 / -1;
+    width: 100%;
   }
 
   #download-button {

@@ -23,7 +23,7 @@ Three versions are independent and must not be substituted for one another.
 | --- | --- | --- |
 | Package format | `1` | Syntax and required fields of the metadata header and repository records |
 | App version | `1.3.0` | Version of one app, assigned by its publisher |
-| AppRunner API | `1.3.0` | Language behavior, opcodes, built-ins, and runtime contract implemented by the firmware |
+| AppRunner API | `1.4.0` | Language behavior, opcodes, built-ins, and runtime contract implemented by the firmware |
 
 Firmware versions are deliberately not package compatibility versions. A
 firmware release may change Wi-Fi, display, or shell code without changing the
@@ -72,7 +72,7 @@ Each firmware exposes these compile-time values:
 
 ```cpp
 #define DOLL_BOARD_ID "m5cardputer"
-#define DAPP_RUNTIME_VERSION "1.0.0"
+#define DAPP_RUNTIME_VERSION "1.3.0"
 #define DAPP_PACKAGE_FORMAT 1
 ```
 
@@ -84,12 +84,12 @@ The initial version assignments are:
 
 | Firmware family | Board ID | Initial AppRunner API |
 | --- | --- | --- |
-| M5Cardputer DOLL-OS | `m5cardputer` | `1.0.0` |
-| Freenove FNK0104 DOLL-OS | `fnk0104` | `1.3.0` |
+| M5Cardputer DOLL-OS | `m5cardputer` | `1.3.0` |
+| Freenove FNK0104 DOLL-OS | `fnk0104` | `1.4.0` |
 
 These assignments describe the checked-in implementations summarized in
 section 4. The FNK0104 implementation contains the complete `1.0.0` command set
-plus the `1.1.0`, `1.2.0`, and `1.3.0` extensions.
+plus the `1.1.0`, `1.2.0`, `1.3.0`, and `1.4.0` extensions.
 
 ## 2. Board identity
 
@@ -192,9 +192,10 @@ information from source so it cannot quietly drift.
 | `1.1.0` | `CANVAS`, `CHARAT`, `CHR`, `DIM`, `DIV`, `ENDCANVAS`, `EXPR`, `FCLOSE`, `FDELETE`, `FEXISTS`, `FLIP`, `FOPEN`, `FREAD`, `FWRITE`, `GOSUB`, `KEY`, `LEN`, `MOD`, `MUL`, `PUT`, `RETURN`, `SUB`, `SUBSTR` |
 | `1.2.0` | *(no new opcodes; pre-LED package boundary)* |
 | `1.3.0` | `LED` |
+| `1.4.0` | `FREADB`, `FWRITEB`, `FSEEK`, `FTELL`, `FSIZE`, `HEX`, `INPUTSECRET`, `HTTPGET`, `HTTPPOST`, `HTTPHEADER`, `HTTPCLEAR`, `JSONESC`, `JSONGET`, `WAVE`, `WAVESTOP` |
 
 Aliases are included as opcodes because they are accepted directly by the
-interpreter. AppRunner 1.3.0 is a strict opcode superset of 1.2.0.
+interpreter. AppRunner 1.4.0 is a strict opcode superset of 1.3.0.
 
 AppRunner 1.1.0 also extends `IF`, `IFEQ`, and `IFNE` so their taken branch may
 use `GOSUB` as well as `GOTO`. A validator must check opcode syntax and not only
@@ -207,6 +208,7 @@ the first word of each line.
 | `1.0.0` | `$battery`, `$heap`, `$millis`, `$seconds`, `$wifi` | `$battery`, `$cwd`, `$heap`, `$ip`, `$millis`, `$seconds`, `$wifi` |
 | `1.1.0` additions | `$feof`, `$fok`, `$kup`, `$kdown`, `$kleft`, `$kright`, `$kenter`, `$kesc`, `$kback`, `$ktab`, `$kspace` | `$feof`, `$fok` |
 | `1.3.0` additions | `$ledok` | `$ledok` |
+| `1.4.0` additions | `$audiook`, `$httpok`, `$httpcode`, `$httplen`, `$httptruncated`, `$jsonok` | `$audiook`, `$httpok`, `$httpcode`, `$httplen`, `$httptruncated`, `$jsonok` |
 
 The named key values are numeric-only and deliberately expand to empty text when
 printed as strings.

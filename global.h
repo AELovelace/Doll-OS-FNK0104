@@ -299,7 +299,20 @@ struct DappKeyState {
 
 //shared helpers used across app/file command tabs
 #define DOLL_BOARD_ID "fnk0104"
-#define DAPP_RUNTIME_VERSION "1.3.0"
+#define DAPP_RUNTIME_VERSION "1.4.0"
+
+//Runtime-owned PCM synth used by the .dapp WAVE/WAVESTOP opcodes. It borrows
+//the same ES8311/I2S output surface as Game Boy and releases it on app exit.
+enum DappWaveType : uint8_t {
+  DAPP_WAVE_OFF = 0,
+  DAPP_WAVE_SINE,
+  DAPP_WAVE_TRIANGLE,
+  DAPP_WAVE_SQUARE,
+  DAPP_WAVE_NOISE
+};
+bool dappSynthSetChannel(int channelNumber, String waveform, long frequency, long level);
+void dappSynthEnd();
+bool dappSynthLastOk();
 #define DAPP_PACKAGE_FORMAT 1
 
 int splitCommand(const String& input, String parts[], int maxParts);

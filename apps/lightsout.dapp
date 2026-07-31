@@ -1,0 +1,223 @@
+# @dapp-format 1
+# @id lightsout
+# @name Lights Out
+# @version 1.0.0
+# @boards fnk0104
+# @runtime >=1.1.0 <2.0.0
+# @summary A solvable 7x7 light-switching puzzle with a spacious DS board
+# /apps/lightsout.dapp
+# Arrows move, space or enter flips a light and its four neighbours,
+# r restores the puzzle, n makes a new solvable puzzle, escape quits.
+
+CANVAS 60 25
+DIM board 49
+DIM start 49
+SET quit 0
+GOSUB newgame
+GOSUB draw
+
+:loop
+KEY k
+IF $k = 0 GOTO idle
+GOSUB handlekey
+IF $quit = 1 GOTO leave
+GOSUB draw
+:idle
+WAIT 18
+GOTO loop
+
+:handlekey
+IF $k = $kesc GOTO hkquit
+IF $k = $kleft GOTO hkleft
+IF $k = $kright GOTO hkright
+IF $k = $kup GOTO hkup
+IF $k = $kdown GOTO hkdown
+IF $k = $kspace GOTO hkpress
+IF $k = $kenter GOTO hkpress
+IF $k = 114 GOTO hkreset
+IF $k = 82 GOTO hkreset
+IF $k = 110 GOTO hknew
+IF $k = 78 GOTO hknew
+RETURN
+:hkleft
+IF $cx <= 0 GOTO hknone
+SUB cx 1
+RETURN
+:hkright
+IF $cx >= 6 GOTO hknone
+ADD cx 1
+RETURN
+:hkup
+IF $cy <= 0 GOTO hknone
+SUB cy 1
+RETURN
+:hkdown
+IF $cy >= 6 GOTO hknone
+ADD cy 1
+RETURN
+:hkpress
+IF $won = 1 GOTO hknone
+SET tx $cx
+SET ty $cy
+GOSUB press
+ADD moves 1
+GOSUB checkwin
+RETURN
+:hkreset
+GOSUB resetboard
+SETSTR msg "puzzle restored"
+RETURN
+:hknew
+GOSUB newgame
+RETURN
+:hkquit
+SET quit 1
+:hknone
+RETURN
+
+:newgame
+SET i 0
+:newclear
+SET board[$i] 0
+ADD i 1
+IF $i < 49 GOTO newclear
+SET generated 0
+:scramble
+RAND tx 7
+RAND ty 7
+GOSUB press
+ADD generated 1
+IF $generated < 22 GOTO scramble
+GOSUB checkalloff
+IF $off = 0 GOTO newcopy
+SET tx 3
+SET ty 3
+GOSUB press
+:newcopy
+SET i 0
+:copyloop
+SET start[$i] $board[$i]
+ADD i 1
+IF $i < 49 GOTO copyloop
+SET cx 3
+SET cy 3
+SET moves 0
+SET won 0
+SETSTR msg "turn every light off"
+RETURN
+
+:resetboard
+SET i 0
+:resetloop
+SET board[$i] $start[$i]
+ADD i 1
+IF $i < 49 GOTO resetloop
+SET moves 0
+SET won 0
+RETURN
+
+# in tx,ty
+:press
+GOSUB toggle
+SUB ty 1
+GOSUB toggle
+ADD ty 2
+GOSUB toggle
+SUB ty 1
+SUB tx 1
+GOSUB toggle
+ADD tx 2
+GOSUB toggle
+SUB tx 1
+RETURN
+
+:toggle
+IF $tx < 0 GOTO toggledone
+IF $tx > 6 GOTO toggledone
+IF $ty < 0 GOTO toggledone
+IF $ty > 6 GOTO toggledone
+EXPR idx $ty * 7 + $tx
+IF $board[$idx] = 1 GOTO toggleoff
+SET board[$idx] 1
+RETURN
+:toggleoff
+SET board[$idx] 0
+:toggledone
+RETURN
+
+:checkwin
+GOSUB checkalloff
+IF $off = 0 GOTO checkdone
+SET won 1
+SETSTR msg "ALL DARK in $moves moves! n = new"
+:checkdone
+RETURN
+
+:checkalloff
+SET off 1
+SET i 0
+:offloop
+IF $i >= 49 GOTO offdone
+IF $board[$i] = 1 GOTO notoff
+ADD i 1
+GOTO offloop
+:notoff
+SET off 0
+:offdone
+RETURN
+
+:draw
+CLS
+COLOR pink
+PUT 4 1 "L I G H T S   O U T"
+COLOR cyan
+PUT 39 1 "moves: $moves"
+SET y 0
+:drawrow
+IF $y >= 7 GOTO drawfooter
+SET x 0
+:drawcell
+IF $x >= 7 GOTO drawnextr
+EXPR idx $y * 7 + $x
+EXPR px 10 + $x * 7
+EXPR py 5 + $y * 2
+IF $x = $cx GOTO maybecursor
+GOTO normalcell
+:maybecursor
+IF $y = $cy GOTO cursorcell
+:normalcell
+IF $board[$idx] = 1 GOTO lighton
+COLOR blue
+PUT $px $py "[ ]"
+GOTO cellnext
+:lighton
+COLOR yellow
+PUT $px $py "[*]"
+GOTO cellnext
+:cursorcell
+IF $board[$idx] = 1 GOTO cursoron
+COLOR cyan
+PUT $px $py "< >"
+GOTO cellnext
+:cursoron
+COLOR green
+PUT $px $py "<*>"
+:cellnext
+ADD x 1
+GOTO drawcell
+:drawnextr
+ADD y 1
+GOTO drawrow
+:drawfooter
+COLOR pink
+PUT 4 21 "$msg"
+COLOR white
+PUT 4 23 "arrows move   space/enter flip   r reset   n new   esc quit"
+FLIP
+RETURN
+
+:leave
+ENDCANVAS
+COLOR pink
+PRINT "lights out closed"
+EXIT

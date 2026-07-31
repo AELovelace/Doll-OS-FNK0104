@@ -14,10 +14,10 @@ nothing is hiding anywhere.
 **How to use this book.** Each chapter teaches a handful of commands, shows
 them working, and ends with practice problems. Type the examples in — really
 type them; that is where the learning happens. Answers to the practice problems
-are in Appendix D, but wrestle with them first. The last two chapters are the
-payoff: a full walkthrough of the Tetris that ships on this device as
-`/apps/tetris.dapp`, and then teaching that Tetris to remember its high score
-after the power goes out.
+are in Appendix D, but wrestle with them first. The last three chapters are the
+payoff: a full walkthrough of the Tetris that ships on this device, a real app
+that talks to an LLM over `/v1/chat/completions`, and then teaching Tetris to
+remember its high score after the power goes out.
 
 ---
 
@@ -1429,19 +1429,19 @@ Extensions, in rough order of difficulty — the honest way to own this code:
    discipline suddenly matters.)
 4. **Hold slot.** Swap the current piece into storage, once per drop.
 5. **A high score that survives the power switch.** That one needs a whole
-   new power — files — and it is exactly what Chapter 11 builds.
+   new power — files — and it is exactly what Chapter 12 builds.
 6. **Two-player.** There is a second set of... no. Some things need a bigger
    language. Everything above fits in this one.
 
 ---
 
-## Chapter 11 — Files
+## Chapter 12 — Files
 
 Everything so far vanishes when the app ends. Every variable, every array,
 the high score you just fought for — gone. Files are how a program leaves a
 note for its future self, and they are the last commands in the language.
 
-### 11.1 One file at a time
+### 12.1 One file at a time
 
 ```text
 FOPEN <path> <mode>    open a file: read, write, or append
@@ -1475,7 +1475,7 @@ don't exist yet, so `FOPEN` reports through `$fok` and lets the script decide.
 But **misusing the handle is a bug** — `FREAD` with nothing open, or against a
 file opened for `write` — and stops the app with an error like any other.
 
-### 11.2 Writing
+### 12.2 Writing
 
 `FWRITE` writes one line, `$variables` expanded, newline supplied:
 
@@ -1499,7 +1499,7 @@ each time, leaving only the newest entry. Choosing between them *is* the
 design decision most file code comes down to: a log appends, a save file
 overwrites.
 
-### 11.3 Reading
+### 12.3 Reading
 
 `FREAD` reads one line into a string variable. The built-in `$feof` ("end of
 file") becomes 1 when a read finds nothing left — and that, not the empty
@@ -1530,7 +1530,7 @@ That `:rl` loop is the file-reading pattern, and it is worth reading twice:
 phantom empty line at the end; reading after testing skips the first line.
 Read, test, use.
 
-### 11.4 FEXISTS and FDELETE
+### 12.4 FEXISTS and FDELETE
 
 ```text
 FEXISTS <numvar> <path>     1 if the path exists, else 0
@@ -1542,7 +1542,7 @@ makes it the polite first move before an `FOPEN read`. `FDELETE` is the reset
 button — a "clear high score" menu option is one line. Deleting a file that
 isn't there just leaves `$fok` at 0; nothing stops.
 
-### 11.5 Numbers come back as text
+### 12.5 Numbers come back as text
 
 Here is the trap the chapter has been building toward. You `FWRITE $score`
 and the file now holds `3300` — as **four characters**. When `FREAD` brings
@@ -1554,7 +1554,7 @@ the front of a string. Write number → text is free (`FWRITE` expands `$score`
 for you); text → number is `str2num`. Every save-file scheme in this language
 is those two moves.
 
-### 11.6 Tetris remembers
+### 12.6 Tetris remembers
 
 Now the real thing — the code that makes `run tetris` greet you with your
 best score. Two additions to the shipped game, both short. Loading, called
@@ -1604,13 +1604,13 @@ theoretical. One more detail worth stealing: the banner shows even when the
 *saving* failed (`go_nosave`) — the player still earned it; only the
 bookkeeping fell short.
 
-### Practice 11
+### Practice 12
 
 1. Extend the captain's log with a run counter: the first line of
    `/apps/log.txt` holds how many times the app has run, and each run
    rewrites the file with the incremented count plus a fresh entry line.
    (Read-modify-write — you will need `str2num`.)
-2. Point the 11.3 reader at any file and report the number of lines and the
+2. Point the 12.3 reader at any file and report the number of lines and the
    length of the longest one.
 3. Give the Chapter 9 bouncing ball a settings file: if `/apps/ball.cfg`
    exists, its first line is the `WAIT` delay; otherwise use 50.
@@ -1637,6 +1637,7 @@ DIM <name> <size>      make an array; $name[i] reads, name[i] writes
 ── strings ─────────────────────────────────────────────────────────
 SETSTR <name> <text>   assign            APPEND <name> <text>  concatenate
 CHR <name> <code>      one character from its code (32..126)
+HEX <name> <value> [w] uppercase hexadecimal text, width 1..8
 SUBSTR <n> <t> <s> <c> slice: from position s, c characters
 LEN <n> <text>         length → numeric variable
 CHARAT <n> <t> <i>     character code at i, 0 past the end
@@ -1645,12 +1646,20 @@ CHARAT <n> <t> <i>     character code at i, 0 past the end
 INPUT <name> [prompt]  read a line (blocks); result is TEXT, not a number
 KEY <name>             one keypress or 0, never blocks
 LED <r> <g> <b>        set rear RGB LED channels (needs runtime >=1.3.0)
+WAVE <ch> <kind> <hz> <level>  three-channel PCM synth (runtime >=1.4.0)
+WAVESTOP               silence and release the synth
+HTTPGET <n> <url> [max] bounded text GET; inspect $httpok/$httpcode
 
 ── files ───────────────────────────────────────────────────────────
-FOPEN <path> <mode>    read | write (truncate) | append; $fok = success
+FOPEN <path> <mode>    read | write | append | update; $fok = success
 FCLOSE                 close (automatic at app end; FOPEN closes the previous)
 FREAD <name>           one line → string variable; $feof = 1 at end of file
 FWRITE <text>          write one line, $variables expanded
+FREADB <name>          read one raw byte; $feof distinguishes NUL from EOF
+FWRITEB <value>        write one raw byte (0..255)
+FSEEK <offset>         absolute byte seek; $fok = success
+FTELL <name>           current byte offset
+FSIZE <name>           open file size
 FEXISTS <n> <path>     1 → numeric variable if the path exists
 FDELETE <path>         delete; $fok = success
 
@@ -1685,7 +1694,8 @@ Every limit reports on the terminal when hit — including array indexes out of
 range, which stop the app with the line number.
 
 Built-ins: `$battery` `$cwd` `$heap` `$ip` `$millis` `$seconds` `$wifi`
-`$ledok`, the file status pair `$fok` (last FOPEN/FDELETE worked) and `$feof`
+`$ledok` `$audiook` `$httpok` `$httpcode` `$httplen` `$httptruncated`, the
+file status pair `$fok` (last FOPEN/FDELETE/FSEEK worked) and `$feof`
 (last FREAD hit end of file), and the key codes below.
 
 ## Appendix C — Key Codes

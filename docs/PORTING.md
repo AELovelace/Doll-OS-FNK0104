@@ -281,10 +281,12 @@ save them back to flash. Weather questions call OpenWeather directly for the
 configured coordinates; `/weather` shows the active location and `/weather <lat>
 <lon> <label>` changes it for the current ASUKA session.
 
-The `.dapp` runner remains separate. It now has interactive string primitives
-(`INPUT`, `SETSTR`, `APPEND`, `IFEQ`, `IFNE`) for small scripts, but LLM sockets
-and streaming stay native so the app format does not become a fragile HTTP/JSON
-runtime.
+The `.dapp` runner remains separate from ASUKA. AppRunner 1.4 adds bounded
+`HTTPGET`/`HTTPPOST`, scoped request headers, and small JSON escape/path helpers
+for ordinary request/response apps. Persistent LLM sockets, SSE streaming, and
+tool routing remain native. It also adds raw byte file I/O and the three-channel
+`WAVE` synthesizer; those reuse the existing filesystem, network, ES8311, and
+I2S ownership surfaces rather than creating parallel ones.
 
 ## Known constraints worth flagging
 

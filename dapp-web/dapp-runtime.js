@@ -277,6 +277,7 @@ export class DappRuntime {
       this.inputCancel = null;
       this.delayCancel = null;
       this.closeFile();
+      this.io.waveStop?.();
       this.endCanvas();
     }
   }
@@ -298,6 +299,12 @@ export class DappRuntime {
     this.steps = 0;
     this.fok = 0;
     this.feof = 0;
+    this.httpcode = 0;
+    this.httplen = 0;
+    this.httptruncated = 0;
+    this.httpok = 0;
+    this.jsonok = 0;
+    this.httpHeaders = new Map();
     this.openFile = null;
     this.canvas = null;
     this.stopRequested = false;
@@ -419,6 +426,49 @@ export class DappRuntime {
       this.setString(parts[0], code >= 32 && code < 127 ? String.fromCharCode(code) : " ");
       return;
     }
+    if (op === "HEX") {
+      const parts = splitArgs(arg, 3);
+      if (parts.length < 2) throw this.error("HEX needs <name> <value> [width]");
+      const width = parts.length >= 3 ? this.valueOf(parts[2]) : 2;
+      if (width < 1 || width > 8) throw this.error("HEX width must be 1..8");
+      const value = this.valueOf(parts[1]) >>> 0;
+      this.setString(parts[0], value.toString(16).toUpperCase().padStart(width, "0"));
+      return;
+    }
+    if (op === "JSONESC") {
+      const parts = splitArgs(arg, 2);
+      if (parts.length < 2) throw this.error("JSONESC needs <name> <text>");
+      const escaped = JSON.stringify(this.stringOperand(parts[1])).slice(1, -1);
+      this.jsonok = escaped.length <= LIMITS.stringLength ? 1 : 0;
+      this.setString(parts[0], this.jsonok ? escaped : "");
+      return;
+    }
+    if (op === "JSONGET") {
+      const parts = splitArgs(arg, 3);
+      if (parts.length < 3) throw this.error("JSONGET needs <name> <json> <path>");
+      let value;
+      try {
+        value = JSON.parse(this.stringOperand(parts[1]));
+        const path = this.stringOperand(parts[2]);
+        const segments = [...path.matchAll(/(?:^|\.)([^.\[]+)|\[(\d+)\]/g)];
+        if (!segments.length && path) throw new Error("bad path");
+        let consumed = "";
+        for (const match of segments) {
+          consumed += match[0];
+          value = value[match[1] ?? Number(match[2])];
+          if (value === undefined || value === null) throw new Error("missing path");
+        }
+        if (consumed !== path) throw new Error("bad path");
+        const result = typeof value === "string" ? value : JSON.stringify(value);
+        if (result.length > LIMITS.stringLength) throw new Error("too long");
+        this.setString(parts[0], result);
+        this.jsonok = 1;
+      } catch {
+        this.setString(parts[0], "");
+        this.jsonok = 0;
+      }
+      return;
+    }
     if (op === "SUBSTR") {
       const parts = splitArgs(arg, 4);
       if (parts.length < 4) throw this.error("SUBSTR needs <name> <text> <start> <count>");
@@ -439,14 +489,14 @@ export class DappRuntime {
       this.writeTarget(parts[0], value);
       return;
     }
-    if (op === "INPUT") {
+    if (op === "INPUT" || op === "INPUTSECRET") {
       const parts = splitArgs(arg, 2);
-      if (!parts.length) throw this.error("INPUT needs <name> [prompt]");
+      if (!parts.length) throw this.error(`${op} needs <name> [prompt]`);
       this.ensureString(parts[0]);
       const prompt = parts.length > 1 ? this.expandText(parts[1]) : `${parts[0]}> `;
       const value = await new Promise((resolve, reject) => {
         this.inputCancel = () => reject(new DappStop());
-        this.io.input(prompt, resolve);
+        this.io.input(prompt, resolve, op === "INPUTSECRET");
       });
       this.inputCancel = null;
       this.setString(parts[0], value);
@@ -467,6 +517,24 @@ export class DappRuntime {
         blue: clampByte(this.valueOf(parts[2]))
       };
       this.io.led?.(this.led);
+      return;
+    }
+    if (op === "WAVE") {
+      const parts = splitArgs(arg, 4);
+      if (parts.length < 4) throw this.error("WAVE needs <channel> sine|triangle|square|noise|off <hz> <level>");
+      const channel = this.valueOf(parts[0]);
+      const waveform = this.stringOperand(parts[1]).toLowerCase();
+      const frequency = this.valueOf(parts[2]);
+      const level = this.valueOf(parts[3]);
+      if (channel < 1 || channel > 3 || !["off", "sine", "sin", "triangle", "tri", "square", "sq", "noise"].includes(waveform)
+          || frequency < 1 || frequency > 12000 || level < 0 || level > 100) {
+        throw this.error("WAVE needs channel 1..3, hz 1..12000, level 0..100, and a valid waveform");
+      }
+      this.io.wave?.({ channel, waveform, frequency, level });
+      return;
+    }
+    if (op === "WAVESTOP") {
+      this.io.waveStop?.();
       return;
     }
     if (op === "CANVAS") {
@@ -493,7 +561,7 @@ export class DappRuntime {
     }
     if (op === "FOPEN") {
       const parts = splitArgs(arg, 2);
-      if (parts.length < 2) throw this.error("FOPEN needs <path> read|write|append");
+      if (parts.length < 2) throw this.error("FOPEN needs <path> read|write|append|update");
       this.open(parts[0], parts[1]);
       return;
     }
@@ -503,23 +571,109 @@ export class DappRuntime {
     }
     if (op === "FREAD") {
       if (!arg) throw this.error("FREAD needs <name>");
-      if (!this.openFile || this.openFile.writable) throw this.error("FREAD needs a file FOPENed for read");
-      const lines = this.openFile.content.split("\n");
-      if (this.openFile.content.length === 0 || this.openFile.position >= lines.length || (
-        this.openFile.position === lines.length - 1 && lines[this.openFile.position] === "" && this.openFile.content.endsWith("\n")
-      )) {
+      if (!this.openFile || !this.openFile.readable) throw this.error("FREAD needs a file FOPENed for read");
+      if (this.openFile.position >= this.openFile.content.length) {
         this.feof = 1;
         this.setString(arg, "");
       } else {
-        this.setString(arg, lines[this.openFile.position].replace(/\r$/, ""));
+        this.feof = 0;
+        const newline = this.openFile.content.indexOf("\n", this.openFile.position);
+        const end = newline < 0 ? this.openFile.content.length : newline;
+        this.setString(arg, this.openFile.content.slice(this.openFile.position, end).replace(/\r$/, ""));
+        this.openFile.position = newline < 0 ? end : end + 1;
+      }
+      return;
+    }
+    if (op === "FREADB") {
+      if (!arg) throw this.error("FREADB needs <name>");
+      if (!this.openFile || !this.openFile.readable) throw this.error("FREADB needs a file FOPENed for read or update");
+      if (this.openFile.position >= this.openFile.content.length) {
+        this.feof = 1;
+        this.writeTarget(arg, 0);
+      } else {
+        this.feof = 0;
+        this.writeTarget(arg, this.openFile.content.charCodeAt(this.openFile.position) & 255);
         this.openFile.position += 1;
       }
       return;
     }
     if (op === "FWRITE") {
       if (!this.openFile || !this.openFile.writable) throw this.error("FWRITE needs a file FOPENed for write or append");
-      this.openFile.content += `${this.expandText(arg)}\n`;
-      this.fileSystem.write(this.openFile.path, this.openFile.content);
+      this.writeOpenFile(`${this.expandText(arg)}\n`);
+      return;
+    }
+    if (op === "FWRITEB") {
+      if (!this.openFile || !this.openFile.writable) throw this.error("FWRITEB needs a file FOPENed for write, append, or update");
+      const value = this.valueOf(arg);
+      if (!arg || value < 0 || value > 255) throw this.error("FWRITEB needs one byte value (0..255)");
+      this.writeOpenFile(String.fromCharCode(value));
+      return;
+    }
+    if (op === "FSEEK") {
+      if (!this.openFile) throw this.error("FSEEK needs an open file");
+      const offset = this.valueOf(arg);
+      if (!arg || offset < 0) throw this.error("FSEEK needs an absolute offset >= 0");
+      this.openFile.position = Math.min(Math.trunc(offset), this.openFile.content.length);
+      this.fok = offset <= this.openFile.content.length ? 1 : 0;
+      this.feof = 0;
+      return;
+    }
+    if (op === "FTELL" || op === "FSIZE") {
+      if (!this.openFile) throw this.error(`${op} needs an open file`);
+      if (!arg) throw this.error(`${op} needs <name>`);
+      this.writeTarget(arg, op === "FTELL" ? this.openFile.position : this.openFile.content.length);
+      return;
+    }
+    if (op === "HTTPCLEAR") {
+      this.httpHeaders.clear();
+      return;
+    }
+    if (op === "HTTPHEADER") {
+      const parts = splitArgs(arg, 2);
+      if (parts.length < 2) throw this.error("HTTPHEADER needs <name> <value>");
+      const name = this.stringOperand(parts[0]).trim();
+      const value = this.stringOperand(parts[1]);
+      if (!name || /[\r\n]/.test(name) || /[\r\n]/.test(value)) {
+        throw this.error("HTTPHEADER needs a safe <name> <value>");
+      }
+      const prior = [...this.httpHeaders.keys()].find(key => key.toLowerCase() === name.toLowerCase());
+      if (!prior && this.httpHeaders.size >= 8) throw this.error("HTTPHEADER supports at most 8 headers");
+      if (prior) this.httpHeaders.delete(prior);
+      this.httpHeaders.set(name, value);
+      return;
+    }
+    if (op === "HTTPGET" || op === "HTTPPOST") {
+      const parts = splitArgs(arg, 4);
+      const needed = op === "HTTPGET" ? 2 : 3;
+      if (parts.length < needed) throw this.error(op === "HTTPGET"
+        ? "HTTPGET needs <name> <http-or-https-url> [max-bytes]"
+        : "HTTPPOST needs <name> <http-or-https-url> <body> [max-bytes]");
+      const maxIndex = op === "HTTPGET" ? 2 : 3;
+      const maximum = parts.length > maxIndex ? this.valueOf(parts[maxIndex]) : LIMITS.stringLength;
+      if (maximum < 1 || maximum > LIMITS.stringLength) throw this.error(`${op} max-bytes must be 1..${LIMITS.stringLength}`);
+      this.ensureString(parts[0]);
+      this.httpcode = 0;
+      this.httplen = 0;
+      this.httptruncated = 0;
+      this.httpok = 0;
+      try {
+        const response = await fetch(this.stringOperand(parts[1]), {
+          method: op === "HTTPPOST" ? "POST" : "GET",
+          headers: Object.fromEntries(this.httpHeaders),
+          body: op === "HTTPPOST" ? this.stringOperand(parts[2]) : undefined
+        });
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        const accepted = bytes.slice(0, maximum);
+        this.setString(parts[0], new TextDecoder().decode(accepted));
+        this.httpcode = response.status;
+        this.httplen = accepted.length;
+        this.httptruncated = bytes.length > maximum ? 1 : 0;
+        this.httpok = response.ok ? 1 : 0;
+      } catch {
+        this.setString(parts[0], "");
+        this.httpcode = -1;
+      }
+      this.steps = 0;
       return;
     }
     if (op === "FEXISTS") {
@@ -619,8 +773,14 @@ export class DappRuntime {
       seconds: Math.floor(elapsed / 1000),
       wifi: 1,
       ledok: 1,
+      audiook: this.io.wave ? 1 : 0,
       fok: this.fok,
       feof: this.feof,
+      httpcode: this.httpcode,
+      httplen: this.httplen,
+      httptruncated: this.httptruncated,
+      httpok: this.httpok,
+      jsonok: this.jsonok,
       kup: 1,
       kdown: 2,
       kleft: 3,
@@ -865,10 +1025,12 @@ export class DappRuntime {
     this.feof = 0;
     const path = normalizePath(this.expandText(pathToken));
     const mode = stripQuotes(modeToken).toLowerCase();
-    if (!["read", "r", "write", "w", "append", "a"].includes(mode)) {
-      throw this.error("FOPEN mode must be read, write, or append");
+    if (!["read", "r", "write", "w", "append", "a", "update", "rw", "r+"].includes(mode)) {
+      throw this.error("FOPEN mode must be read, write, append, or update");
     }
-    if ((mode === "read" || mode === "r") && !this.fileSystem.exists(path)) return;
+    const readable = ["read", "r", "update", "rw", "r+"].includes(mode);
+    const writable = !["read", "r"].includes(mode);
+    if (readable && !this.fileSystem.exists(path)) return;
     let content = this.fileSystem.read(path) || "";
     if (mode === "write" || mode === "w") {
       content = "";
@@ -877,10 +1039,20 @@ export class DappRuntime {
     this.openFile = {
       path,
       content,
-      position: 0,
-      writable: !["read", "r"].includes(mode)
+      position: ["append", "a"].includes(mode) ? content.length : 0,
+      readable,
+      writable
     };
     this.fok = 1;
+  }
+
+  writeOpenFile(bytes) {
+    const text = String(bytes);
+    const start = this.openFile.position;
+    const end = start + text.length;
+    this.openFile.content = this.openFile.content.slice(0, start) + text + this.openFile.content.slice(end);
+    this.openFile.position = end;
+    this.fileSystem.write(this.openFile.path, this.openFile.content);
   }
 
   closeFile() {

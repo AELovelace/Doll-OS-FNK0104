@@ -3,26 +3,23 @@
 //   availability, clamping, priority, and hardware writes so native modules and
 //   .dapp opcodes behave identically.
 
-#if __has_include("Freenove_WS2812_Lib_for_ESP32.h")
-    #include "Freenove_WS2812_Lib_for_ESP32.h"
-    #define REAR_LED_DRIVER_FREENOVE 1
-#elif __has_include(<Adafruit_NeoPixel.h>)
-    #include <Adafruit_NeoPixel.h>
-    #define REAR_LED_DRIVER_NEOPIXEL 1
+#if REAR_RGB_LED_PIN >= 0
+    // FNK0104 boards use Freenove's onboard WS2812 implementation. Keep this
+    // dependency explicit: silently selecting another installed LED library made
+    // the previous fix compile without ever exercising the vendor-tested path.
+    #include <Freenove_WS2812_Lib_for_ESP32.h>
 #endif
 
 static const uint8_t REAR_RGB_LED_COUNT = 1;
 static const uint8_t REAR_RGB_LED_CHANNEL = 0;
 
-#if (REAR_RGB_LED_PIN >= 0) && defined(REAR_LED_DRIVER_FREENOVE)
+#if REAR_RGB_LED_PIN >= 0
 static Freenove_ESP32_WS2812 rearLedStrip =
     Freenove_ESP32_WS2812(REAR_RGB_LED_COUNT, REAR_RGB_LED_PIN, REAR_RGB_LED_CHANNEL, TYPE_GRB);
-#elif (REAR_RGB_LED_PIN >= 0) && defined(REAR_LED_DRIVER_NEOPIXEL)
-static Adafruit_NeoPixel rearLedStrip =
-    Adafruit_NeoPixel(REAR_RGB_LED_COUNT, REAR_RGB_LED_PIN, NEO_GRB + NEO_KHZ800);
 #endif
 
 static bool rearLedInitialized = false;
+static bool rearLedBeginAttempted = false;
 
 static uint8_t rearLedClampByte(long value) {
     if (value < 0) return 0;
@@ -31,7 +28,7 @@ static uint8_t rearLedClampByte(long value) {
 }
 
 bool rearLedAvailable() {
-#if (REAR_RGB_LED_PIN >= 0) && (defined(REAR_LED_DRIVER_FREENOVE) || defined(REAR_LED_DRIVER_NEOPIXEL))
+#if REAR_RGB_LED_PIN >= 0
     return true;
 #else
     return false;
@@ -39,32 +36,29 @@ bool rearLedAvailable() {
 }
 
 static void rearLedHardwareBegin() {
-    if (rearLedInitialized) {
+    if (rearLedBeginAttempted) {
         return;
     }
-#if (REAR_RGB_LED_PIN >= 0) && defined(REAR_LED_DRIVER_FREENOVE)
-    rearLedStrip.begin();
+    rearLedBeginAttempted = true;
+#if REAR_RGB_LED_PIN >= 0
+    rearLedInitialized = rearLedStrip.begin();
+    if (!rearLedInitialized) {
+        Serial.printf("[boot] rear RGB LED init failed on GPIO %d\n", REAR_RGB_LED_PIN);
+        return;
+    }
     rearLedStrip.setBrightness(REAR_RGB_LED_BRIGHTNESS);
     rearLedStrip.setLedColorData(0, 0, 0, 0);
     rearLedStrip.show();
-    rearLedInitialized = true;
-#elif (REAR_RGB_LED_PIN >= 0) && defined(REAR_LED_DRIVER_NEOPIXEL)
-    rearLedStrip.begin();
-    rearLedStrip.setBrightness(REAR_RGB_LED_BRIGHTNESS);
-    rearLedStrip.setPixelColor(0, rearLedStrip.Color(0, 0, 0));
-    rearLedStrip.show();
-    rearLedInitialized = true;
 #endif
 }
 
 void rearLedSetRgb(uint8_t red, uint8_t green, uint8_t blue) {
-#if (REAR_RGB_LED_PIN >= 0) && defined(REAR_LED_DRIVER_FREENOVE)
+#if REAR_RGB_LED_PIN >= 0
     rearLedHardwareBegin();
+    if (!rearLedInitialized) {
+        return;
+    }
     rearLedStrip.setLedColorData(0, red, green, blue);
-    rearLedStrip.show();
-#elif (REAR_RGB_LED_PIN >= 0) && defined(REAR_LED_DRIVER_NEOPIXEL)
-    rearLedHardwareBegin();
-    rearLedStrip.setPixelColor(0, rearLedStrip.Color(red, green, blue));
     rearLedStrip.show();
 #else
     (void)red;
@@ -179,6 +173,19 @@ static LedRgb ledPersistentColor(unsigned long now, bool sdMounted, bool wifiCon
 void ledBegin() {
     ledLastColor = { 255, 255, 255 };
     rearLedHardwareBegin();
+#if REAR_RGB_LED_PIN >= 0
+    if (rearLedInitialized) {
+        Serial.printf("[boot] rear RGB LED ready: GPIO %d, Freenove WS2812\n", REAR_RGB_LED_PIN);
+        // A brief, deterministic hardware self-test before the status mixer takes
+        // ownership. This also makes it obvious that the newly flashed image ran.
+        rearLedSetRgb(96, 0, 0);
+        delay(120);
+        rearLedSetRgb(0, 96, 0);
+        delay(120);
+        rearLedSetRgb(0, 0, 96);
+        delay(120);
+    }
+#endif
     ledWriteIfChanged({ 0, 0, 0 });
 }
 

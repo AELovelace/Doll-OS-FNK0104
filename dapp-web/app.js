@@ -17,8 +17,11 @@ const inputPrompt = $("#input-prompt");
 const saveState = $("#save-state");
 const exampleSelect = $("#example-select");
 const editorStats = $("#editor-stats");
+const filenameInput = $("#filename-input");
+const editorTitle = $("#editor-title");
 const STORAGE_KEY = "dapp-playground-source-v1";
 const FILES_KEY = "dapp-playground-files-v1";
+const FILENAME_KEY = "dapp-playground-filename-v1";
 
 class BrowserFileSystem {
   constructor() {
@@ -129,17 +132,19 @@ function setStatus(state, label) {
   runStatus.textContent = label;
 }
 
-function showInput(prompt, resolve) {
+function showInput(prompt, resolve, masked = false) {
   inputPrompt.textContent = prompt;
   inputForm.hidden = false;
+  programInput.type = masked ? "password" : "text";
   programInput.value = "";
   programInput.focus();
 
   inputForm.onsubmit = event => {
     event.preventDefault();
     const value = programInput.value;
-    appendOutput(`${prompt}${value}`, "white");
+    appendOutput(`${prompt}${masked ? "[hidden]" : value}`, "white");
     inputForm.hidden = true;
+    programInput.type = "text";
     inputForm.onsubmit = null;
     resolve(value);
   };
@@ -173,13 +178,80 @@ function endCanvas() {
   terminal.hidden = false;
 }
 
+function downloadFilename() {
+  const leaf = filenameInput.value.trim().replaceAll("\\", "/").split("/").pop() || "untitled";
+  const base = leaf.replace(/\.dapp$/i, "").replace(/[^a-z0-9._-]+/gi, "-").replace(/^[.-]+|[.-]+$/g, "");
+  return `${base || "untitled"}.dapp`;
+}
+
+function updateFilename(value, persist = true) {
+  filenameInput.value = value;
+  const filename = downloadFilename();
+  editorTitle.textContent = `EDIT://${filename}`;
+  if (persist) localStorage.setItem(FILENAME_KEY, filename);
+}
+
+let synthContext;
+const synthChannels = new Map();
+
+function stopWaveChannel(channel) {
+  const voice = synthChannels.get(channel);
+  if (!voice) return;
+  try { voice.source.stop(); } catch {}
+  voice.source.disconnect();
+  voice.gain.disconnect();
+  voice.filter?.disconnect();
+  synthChannels.delete(channel);
+}
+
+function setWave({ channel, waveform, frequency, level }) {
+  stopWaveChannel(channel);
+  if (waveform === "off" || level === 0) return;
+
+  synthContext ||= new AudioContext();
+  synthContext.resume();
+  const gain = synthContext.createGain();
+  gain.gain.value = (level / 100) * 0.08;
+  gain.connect(synthContext.destination);
+
+  let source;
+  let filter;
+  if (waveform === "noise") {
+    const length = synthContext.sampleRate;
+    const buffer = synthContext.createBuffer(1, length, synthContext.sampleRate);
+    const samples = buffer.getChannelData(0);
+    for (let i = 0; i < length; i += 1) samples[i] = Math.random() * 2 - 1;
+    source = synthContext.createBufferSource();
+    source.buffer = buffer;
+    source.loop = true;
+    filter = synthContext.createBiquadFilter();
+    filter.type = "lowpass";
+    filter.frequency.value = frequency;
+    source.connect(filter);
+    filter.connect(gain);
+  } else {
+    source = synthContext.createOscillator();
+    source.type = { sin: "sine", tri: "triangle", sq: "square" }[waveform] || waveform;
+    source.frequency.value = frequency;
+    source.connect(gain);
+  }
+  source.start();
+  synthChannels.set(channel, { source, gain, filter });
+}
+
+function stopAllWaves() {
+  for (const channel of [...synthChannels.keys()]) stopWaveChannel(channel);
+}
+
 const io = {
   output: appendOutput,
   clear: clearOutput,
   status: setStatus,
   input: showInput,
   canvas: renderCanvas,
-  endCanvas
+  endCanvas,
+  wave: setWave,
+  waveStop: stopAllWaves
 };
 
 const runtime = new DappRuntime(io, new BrowserFileSystem());
@@ -188,7 +260,7 @@ async function runSource() {
   if (runtime.running) return;
   clearOutput();
   endCanvas();
-  appendOutput("Running /apps/untitled.dapp", "green");
+  appendOutput(`Running /apps/${downloadFilename()}`, "green");
   runButton.disabled = true;
   stopButton.disabled = false;
   screen.focus();
@@ -203,7 +275,7 @@ function downloadSource() {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
-  anchor.download = "untitled.dapp";
+  anchor.download = downloadFilename();
   anchor.click();
   URL.revokeObjectURL(url);
 }
@@ -285,14 +357,20 @@ runButton.addEventListener("click", runSource);
 stopButton.addEventListener("click", () => runtime.stop());
 $("#clear-button").addEventListener("click", clearOutput);
 $("#download-button").addEventListener("click", downloadSource);
+filenameInput.addEventListener("input", () => updateFilename(filenameInput.value));
+filenameInput.addEventListener("blur", () => updateFilename(downloadFilename()));
 $("#new-button").addEventListener("click", () => {
   exampleSelect.value = "";
+  updateFilename("untitled.dapp");
   setSource(`# untitled.dapp\nCOLOR pink\nPRINT "hello, tiny world"\nEND`);
   editor.focus();
 });
 exampleSelect.addEventListener("change", () => {
   const example = examples[exampleSelect.value];
-  if (example) setSource(example.source);
+  if (example) {
+    setSource(example.source);
+    updateFilename(`${exampleSelect.value}.dapp`);
+  }
 });
 $("#help-button").addEventListener("click", () => openHelp(true));
 $("#help-close").addEventListener("click", () => openHelp(false));
@@ -300,4 +378,5 @@ $("#drawer-scrim").addEventListener("click", () => openHelp(false));
 
 buildExamples();
 buildHelp();
+updateFilename(localStorage.getItem(FILENAME_KEY) || "untitled.dapp", false);
 setSource(localStorage.getItem(STORAGE_KEY) || examples.hello.source, false);

@@ -627,7 +627,8 @@ Not a C++ API — a second way to add an app, as a plain text file in `/apps`
 (LittleFS) or `/sd/apps`, launched with `run <name>`. Full language reference is
 [`DAPP.md`](DAPP.md); `docs/DAPP-BOOK.md` is the long-form version, and
 `apps/*.dapp` are working examples: games (snake, tetris, 2048, mines, simon),
-utilities (sysmon, notes, sheet, lamp, beacon, decide), and a text adventure.
+utilities (sysmon, notes, sheet, lamp, beacon, decide, fetch, hex, synth,
+llm-chat), and a text adventure.
 `lamp`, `beacon` and `simon` are the ones to read for `LED`, which is guarded
 behind `$ledok` in each of them because the opcode stops an app on a build
 without a rear LED. `sheet` is the largest one — a spreadsheet, with a
@@ -648,6 +649,17 @@ What matters from the C++ side:
   ordering if you touch it.
 - `EXPR` hands arithmetic to the same tinyexpr evaluator the `calc` command
   uses. Don't grow a second expression grammar.
+- `FREADB`/`FWRITEB` keep binary bytes numeric, while `FSEEK`/`FTELL`/`FSIZE`
+  provide the positioning needed by `apps/hex.dapp`; do not route binary data
+  through `String` or the line-oriented `FREAD` path.
+- `HTTPGET`/`HTTPPOST` are capped at `DAPP_MAX_STRING_LEN`; `HTTPHEADER` state is
+  scoped to one app run. `JSONESC` and `JSONGET` keep request construction and
+  response extraction out of fragile hand-written parsers. Generic HTTPS uses
+  the same unauthenticated TLS posture as ASUKA URL fetches, while Dapper keeps
+  its separate CA-verified download path.
+- `WAVE` delegates continuous PCM generation to `DappSynth.ino`, which borrows
+  `AudioOut` after `radioReleaseAudio()` and is unconditionally stopped during
+  AppRunner cleanup.
 - Long compute loops yield every `DAPP_STEPS_PER_YIELD` steps to feed the
   watchdog, and `appPollAbortChord()` uses `keyboardPeekRawByte()` specifically
   so it doesn't steal bytes a script's own `KEY`/`INPUT` is about to read.

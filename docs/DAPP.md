@@ -78,16 +78,31 @@ DIM <name> <size>   create a numeric array of `size` cells, all zero
 SETSTR <name> <txt> set a string variable
 APPEND <name> <txt> append to a string variable
 CHR <name> <code>   set a string variable to one character by code
+HEX <name> <value> [width]  uppercase hexadecimal text, width 1..8
 SUBSTR <n> <txt> <start> <count>   slice a string into a string variable
 LEN <name> <text>   character count into a numeric variable
 CHARAT <n> <txt> <i> character code at index i, or 0 past the end
 INPUT <name> [p]    read a line into a string variable (blocks until Enter)
+INPUTSECRET <name> [p]  read a masked line into a string variable
 KEY <name>          read one keypress into a numeric variable, 0 if none
 LED <r> <g> <b>     set the rear RGB LED (0..255 per channel)
-FOPEN <path> <mode> open a file: read, write (truncate), or append
+WAVE <ch> <kind> <hz> <level>  set synth channel 1..3; level is 0..100
+WAVESTOP            silence all synth channels and release audio hardware
+HTTPGET <name> <url> [max]  bounded HTTP/HTTPS GET into a string
+HTTPPOST <name> <url> <body> [max]  bounded POST response into a string
+HTTPHEADER <name> <value>  set/replace one of up to eight request headers
+HTTPCLEAR           clear request headers
+JSONESC <name> <text>  escape text for insertion inside a JSON string
+JSONGET <name> <json> <path>  extract a JSON value; $jsonok reports success
+FOPEN <path> <mode> open a file: read, write, append, or update
 FCLOSE              close it (automatic when the app ends)
 FREAD <name>        read one line into a string variable; $feof goes 1 at end
+FREADB <name>       read one raw byte (0..255) into a numeric variable
 FWRITE <text>       write a line, with $variables expanded
+FWRITEB <value>     write one raw byte (0..255)
+FSEEK <offset>      move to an absolute byte offset; $fok reports success
+FTELL <name>        current byte offset into a numeric variable
+FSIZE <name>        open file size into a numeric variable
 FEXISTS <n> <path>  1 into numeric variable n if the path exists
 FDELETE <path>      delete a file; $fok reports success
 CANVAS <cols> <rows> switch the display to a character grid
@@ -195,6 +210,24 @@ clamped into `0..255`, so negative values become `0` and values above `255`
 become `255`. Check `$ledok` first when writing portable apps that may run on
 builds where rear LED control is disabled.
 
+`WAVE` is the three-channel PCM synthesizer added in AppRunner `>=1.4.0`:
+
+```text
+WAVE 1 sine 220 25
+WAVE 2 triangle 330 20
+WAVE 3 noise 4000 10
+WAIT 2000
+WAVESTOP
+```
+
+Kinds are `sine`, `triangle`, `square`, `noise`, and `off`; frequency is
+`1..12000` Hz and level is `0..100` per channel. Noise frequency controls its
+sample-and-hold rate. The three voices are mixed and clamped before reaching the
+onboard ES8311 speaker. Starting the synth stops/relinquishes internet radio,
+and leaving the app always silences and releases the synth. `$audiook` reports
+whether the most recent hardware start succeeded. `run synth` is the interactive
+three-channel mixer and waveform display.
+
 `CANVAS` replaces the scrolling terminal with a grid you address by cell. `PUT`
 writes into the grid without drawing anything, and `FLIP` shows the result — so a
 frame is assembled off-screen and appears at once. On the panel the grid is
@@ -220,7 +253,8 @@ every frame drawn cell by cell.
 One file can be open at a time — `FOPEN` closes any previous one, and the app
 ending closes the last. Paths work exactly like shell paths: `/sd/...` is the
 card, everything else is flash, relative paths resolve against the shell's
-`cwd`, and `$variables` expand inside them.
+`cwd`, and `$variables` expand inside them. `update` (also `rw` or `r+`) opens
+an existing file without truncating it and permits both reads and writes.
 
 ```text
 FOPEN "/apps/scores.txt" append
@@ -249,6 +283,35 @@ on a file opened for read, stops the app like any other bug. One more thing to
 remember: numbers written with `FWRITE` come back as *text* — parse digits with
 `CHARAT` (the book's `str2num` routine) before doing math on them. `run tetris`
 does exactly this for its persistent high score in `/apps/tetris.hs`.
+
+Binary access does not pass bytes through a `String`: `FREADB` returns `0..255`
+in a numeric variable and `$feof` distinguishes a real `0x00` byte from end of
+file. `FWRITEB`, `FSEEK`, `FTELL`, and `FSIZE` make in-place editors possible.
+`HEX` formats values without a hand-written conversion table. `run hex` uses all
+of these to edit NULs, newlines, and every other byte without altering them.
+
+## HTTP and HTTPS
+
+`HTTPGET result "https://example.com/data.json" 2048` performs a GET and stores
+at most the requested number of bytes (maximum 4096) in a string. `HTTPPOST`
+does the same with a request body. `HTTPHEADER` sets or replaces one of eight
+headers for later requests, and `HTTPCLEAR` removes them. Headers are reset when
+an app starts and ends. The request
+does not stop the app when the network or server fails; inspect `$httpok`,
+`$httpcode`, `$httplen`, and `$httptruncated`. Redirects are followed and
+compressed responses are declined. This is a text response surface, not a
+binary downloader.
+
+`JSONESC safe $prompt` protects quotes, backslashes, and control characters
+before text is inserted between JSON quotes. `JSONGET answer $response
+"choices[0].message.content"` walks object keys and array indexes. Both report
+through `$jsonok` instead of stopping on malformed external data. `INPUTSECRET`
+masks tokens on both the device and browser runner, but a secret still lives in
+RAM until the app clears it or exits.
+
+HTTPS traffic is encrypted, but arbitrary script URLs use the same insecure
+certificate mode as ASUKA's generic URL fetch: the server certificate is not
+authenticated. Dapper downloads remain on their separate CA-verified path.
 
 ## Limits
 
@@ -286,6 +349,12 @@ $millis
 $seconds
 $wifi
 $ledok
+$audiook
+$httpok
+$httpcode
+$httplen
+$httptruncated
+$jsonok
 ```
 
 Numeric only (see Keys and games): `$kup`, `$kdown`, `$kleft`, `$kright`,

@@ -203,13 +203,15 @@ void commandProcessor(String& command) {
     if (partCount == 0) {
         return;
     }
-    if (parts[0] == "clear") {
+    String verb = parts[0];
+    verb.toLowerCase();
+    if (verb == "clear") {
         outClearScreen();
         return;
     }
 
     for (int i = 0; i < commandTableSize; i++) {
-        if (parts[0] == commandTable[i].name) {
+        if (verb == commandTable[i].name) {
             commandTable[i].handler(parts, partCount);
             return;
         }

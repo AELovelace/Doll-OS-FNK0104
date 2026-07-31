@@ -6,6 +6,8 @@
 #include <LittleFS.h>
 #include <FS.h>
 #include <SD_MMC.h>
+#include <HTTPClient.h>
+#include <WiFiClientSecure.h>
 #include <esp_heap_caps.h>
 #include <esp_system.h>
 #include <new>
@@ -521,6 +523,15 @@ const long DAPP_KEY_SPACE = 32;
 //itself and the routines live in the Files section further down
 static long dappFok = 0;    //result of the last FOPEN/FDELETE, read as $fok
 static long dappFeof = 0;   //set by FREAD at end of file, read as $feof
+static long dappHttpCode = 0;
+static long dappHttpLength = 0;
+static long dappHttpTruncated = 0;
+static long dappHttpOk = 0;
+static long dappJsonOk = 0;
+static const int DAPP_HTTP_MAX_HEADERS = 8;
+static String dappHttpHeaderNames[DAPP_HTTP_MAX_HEADERS];
+static String dappHttpHeaderValues[DAPP_HTTP_MAX_HEADERS];
+static int dappHttpHeaderCount = 0;
 
 static long appBuiltinValue(String name) {
     name.trim();
@@ -533,6 +544,12 @@ static long appBuiltinValue(String name) {
     if (name == "fok") return dappFok;
     if (name == "feof") return dappFeof;
     if (name == "ledok") return rearLedAvailable() ? 1 : 0;
+    if (name == "httpcode") return dappHttpCode;
+    if (name == "httplen") return dappHttpLength;
+    if (name == "httptruncated") return dappHttpTruncated;
+    if (name == "httpok") return dappHttpOk;
+    if (name == "jsonok") return dappJsonOk;
+    if (name == "audiook") return dappSynthLastOk() ? 1 : 0;
 
     //KEY's vocabulary, so scripts compare against a name instead of a magic number.
     //Numeric only -- these are not defined for string expansion (PRINT "$kup" is empty),
@@ -607,6 +624,12 @@ static String appStringValueOf(String token, DappProgram& program) {
     if (lowered == "fok") return String(dappFok);
     if (lowered == "feof") return String(dappFeof);
     if (lowered == "ledok") return rearLedAvailable() ? "1" : "0";
+    if (lowered == "httpcode") return String(dappHttpCode);
+    if (lowered == "httplen") return String(dappHttpLength);
+    if (lowered == "httptruncated") return String(dappHttpTruncated);
+    if (lowered == "httpok") return String(dappHttpOk);
+    if (lowered == "jsonok") return String(dappJsonOk);
+    if (lowered == "audiook") return dappSynthLastOk() ? "1" : "0";
     return "";
 }
 
@@ -849,6 +872,7 @@ static void appCanvasFlip() {
 //   programming bug and stops it like any other.
 static File dappFile;
 static bool dappFileOpen = false;
+static bool dappFileReadable = false;
 static bool dappFileWritable = false;
 static bool dappFileIsSd = false;
 
@@ -857,6 +881,7 @@ static void appFileClose() {
         dappFile.close();
         dappFileOpen = false;
     }
+    dappFileReadable = false;
     dappFileWritable = false;
     dappFileIsSd = false;
 }
@@ -868,7 +893,7 @@ static bool appFileRoute(const String& path, RoutedPath& out) {
     return !(out.isSd && !sdCardMounted);
 }
 
-static void appFileOpen(const String& path, const char* fsMode, bool writable) {
+static void appFileOpen(const String& path, const char* fsMode, bool readable, bool writable) {
     appFileClose();
     dappFok = 0;
     dappFeof = 0;
@@ -893,6 +918,7 @@ static void appFileOpen(const String& path, const char* fsMode, bool writable) {
 
     dappFile = f;
     dappFileOpen = true;
+    dappFileReadable = readable;
     dappFileWritable = writable;
     dappFileIsSd = r.isSd;
     dappFok = 1;
@@ -906,6 +932,7 @@ static String appFileReadLine() {
         dappFeof = 1;
         return line;
     }
+    dappFeof = 0;
     ledPulseStorageRead(dappFileIsSd);
     while (dappFile.available()) {
         char ch = (char)dappFile.read();
@@ -920,6 +947,217 @@ static String appFileReadLine() {
         line.remove(line.length() - 1);
     }
     return line;
+}
+
+//Raw byte I/O is deliberately numeric: Arduino String text can contain an embedded
+//NUL, but every print/expansion surface eventually treats it as a C string. Returning
+//0..255 plus a separate $feof is unambiguous for all 256 byte values.
+static long appFileReadByte() {
+    if (!dappFile.available()) {
+        dappFeof = 1;
+        return 0;
+    }
+    dappFeof = 0;
+    ledPulseStorageRead(dappFileIsSd);
+    return (long)(uint8_t)dappFile.read();
+}
+
+//A bounded sink lets HTTPClient do its own Content-Length/chunked decoding without
+//ever allowing a response to grow a script String past the runtime's 4096-byte cap.
+class DappHttpBodySink : public Stream {
+public:
+    explicit DappHttpBodySink(size_t maximum) : maximumBytes(maximum) {
+        body.reserve(maximum);
+    }
+
+    size_t write(uint8_t value) override {
+        return write(&value, 1);
+    }
+
+    size_t write(const uint8_t* buffer, size_t size) override {
+        size_t room = body.length() < maximumBytes ? maximumBytes - body.length() : 0;
+        size_t accepted = size < room ? size : room;
+        for (size_t i = 0; i < accepted; i++) body += (char)buffer[i];
+        if (accepted < size) truncated = true;
+        return accepted;
+    }
+
+    int available() override { return 0; }
+    int read() override { return -1; }
+    int peek() override { return -1; }
+    void flush() override {}
+
+    String body;
+    bool truncated = false;
+
+private:
+    size_t maximumBytes;
+};
+
+static void appHttpClearHeaders() {
+    for (int i = 0; i < dappHttpHeaderCount; i++) {
+        dappHttpHeaderNames[i] = "";
+        dappHttpHeaderValues[i] = "";
+    }
+    dappHttpHeaderCount = 0;
+}
+
+static bool appHttpSetHeader(const String& requestedName, const String& value) {
+    String name = requestedName;
+    name.trim();
+    if (name.length() == 0 || name.indexOf('\r') >= 0 || name.indexOf('\n') >= 0 ||
+        value.indexOf('\r') >= 0 || value.indexOf('\n') >= 0) return false;
+    for (int i = 0; i < dappHttpHeaderCount; i++) {
+        if (dappHttpHeaderNames[i].equalsIgnoreCase(name)) {
+            dappHttpHeaderValues[i] = value;
+            return true;
+        }
+    }
+    if (dappHttpHeaderCount >= DAPP_HTTP_MAX_HEADERS) return false;
+    dappHttpHeaderNames[dappHttpHeaderCount] = name;
+    dappHttpHeaderValues[dappHttpHeaderCount] = value;
+    dappHttpHeaderCount++;
+    return true;
+}
+
+static bool appJsonEscape(const String& input, String& output) {
+    static const char hex[] = "0123456789ABCDEF";
+    output = "";
+    output.reserve(input.length());
+    for (size_t i = 0; i < input.length(); i++) {
+        uint8_t ch = (uint8_t)input[i];
+        String addition;
+        if (ch == '"') addition = "\\\"";
+        else if (ch == '\\') addition = "\\\\";
+        else if (ch == '\b') addition = "\\b";
+        else if (ch == '\f') addition = "\\f";
+        else if (ch == '\n') addition = "\\n";
+        else if (ch == '\r') addition = "\\r";
+        else if (ch == '\t') addition = "\\t";
+        else if (ch < 0x20) {
+            addition = "\\u00";
+            addition += hex[ch >> 4];
+            addition += hex[ch & 0x0f];
+        } else {
+            addition += (char)ch;
+        }
+        if (output.length() + addition.length() > DAPP_MAX_STRING_LEN) {
+            output = "";
+            return false;
+        }
+        output += addition;
+    }
+    return true;
+}
+
+static bool appJsonGetPath(const String& json, const String& requestedPath, String& output) {
+    JsonDocument document;
+    if (deserializeJson(document, json)) return false;
+
+    String path = requestedPath;
+    path.trim();
+    JsonVariantConst current = document.as<JsonVariantConst>();
+    int position = 0;
+    while (position < (int)path.length()) {
+        if (path[position] == '.') {
+            position++;
+            continue;
+        }
+        if (path[position] == '[') {
+            int close = path.indexOf(']', position + 1);
+            if (close < 0 || !current.is<JsonArrayConst>()) return false;
+            String indexText = path.substring(position + 1, close);
+            if (indexText.length() == 0) return false;
+            for (size_t i = 0; i < indexText.length(); i++) {
+                if (!isDigit(indexText[i])) return false;
+            }
+            current = current[(size_t)indexText.toInt()];
+            if (current.isNull()) return false;
+            position = close + 1;
+            continue;
+        }
+
+        int end = position;
+        while (end < (int)path.length() && path[end] != '.' && path[end] != '[') end++;
+        if (end == position || !current.is<JsonObjectConst>()) return false;
+        String key = path.substring(position, end);
+        current = current[key.c_str()];
+        if (current.isNull()) return false;
+        position = end;
+    }
+
+    output = "";
+    if (current.is<const char*>()) {
+        output = current.as<const char*>();
+    } else {
+        serializeJson(current, output);
+    }
+    if (output.length() > DAPP_MAX_STRING_LEN) {
+        output = "";
+        return false;
+    }
+    return true;
+}
+
+static void appHttpRequest(const String& method, const String& requestedUrl,
+                           const String& requestBody, size_t maximumBytes,
+                           String& response) {
+    dappHttpCode = 0;
+    dappHttpLength = 0;
+    dappHttpTruncated = 0;
+    dappHttpOk = 0;
+    response = "";
+
+    String url = requestedUrl;
+    url.trim();
+    bool secure = url.startsWith("https://");
+    if ((!secure && !url.startsWith("http://")) || wifiIsConnected() != 1) {
+        dappHttpCode = -1;
+        return;
+    }
+
+    HTTPClient http;
+    WiFiClient plainClient;
+    WiFiClientSecure secureClient;
+    http.setConnectTimeout(5000);
+    http.setTimeout(10000);
+    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+    http.useHTTP10(true);  //prefer a length/close-delimited body over chunk framing
+
+    bool started;
+    if (secure) {
+        //General .dapp URLs cannot be pinned to Dapper's one repository CA. This
+        //matches ASUKA's generic fetch behavior: encrypted, but not authenticated.
+        secureClient.setInsecure();
+        started = http.begin(secureClient, url);
+    } else {
+        started = http.begin(plainClient, url);
+    }
+    if (!started) {
+        dappHttpCode = -2;
+        return;
+    }
+
+    http.addHeader("Accept-Encoding", "identity");
+    http.addHeader("User-Agent", "DOLL-OS-dapp/1.4");
+    for (int i = 0; i < dappHttpHeaderCount; i++) {
+        http.addHeader(dappHttpHeaderNames[i], dappHttpHeaderValues[i]);
+    }
+    ledPulseNetwork();
+    int status = method == "POST"
+        ? http.POST((uint8_t*)requestBody.c_str(), requestBody.length())
+        : http.GET();
+    dappHttpCode = status;
+    if (status > 0) {
+        DappHttpBodySink sink(maximumBytes);
+        int copied = http.writeToStream(&sink);
+        response = sink.body;
+        dappHttpLength = response.length();
+        dappHttpTruncated = sink.truncated ? 1 : 0;
+        bool bodyRead = copied >= 0 || sink.truncated;
+        dappHttpOk = (status >= 200 && status < 300 && bodyRead) ? 1 : 0;
+    }
+    http.end();
 }
 
 //   KEY -- non-blocking key polling
@@ -1061,7 +1299,7 @@ static void appDelay(unsigned long waitMs) {
     }
 }
 
-static String appReadInput(const String& prompt) {
+static String appReadInput(const String& prompt, bool masked) {
     String input = "";
     commandCursorPos = 0;
 
@@ -1081,7 +1319,7 @@ static String appReadInput(const String& prompt) {
         if (r == LINE_NO_INPUT) {
             r = readKeyboardLineEditedInput(input);
         }
-        setActiveInput(prompt, input, false);
+        setActiveInput(prompt, input, masked);
         ftpService();
         radioService();
         maintainInternetConnection();
@@ -1092,7 +1330,7 @@ static String appReadInput(const String& prompt) {
             String submitted = input;
             submitted.trim();
             commandCursorPos = 0;
-            outLine(prompt + submitted, C_CYAN);
+            outLine(prompt + (masked ? "[hidden]" : submitted), C_CYAN);
             return submitted;
         }
 
@@ -1221,6 +1459,31 @@ static bool appExecute(DappProgram& program) {
             ledSetAppOverrideRgbLong(appValueOf(parts[0], program),
                                      appValueOf(parts[1], program),
                                      appValueOf(parts[2], program));
+        } else if (op == "WAVE") {
+            String parts[4];
+            int count = splitCommand(arg, parts, 4);
+            if (count < 4) {
+                outLine("run: WAVE needs <channel> sine|triangle|square|noise|off <hz> <level>", C_RED);
+                return false;
+            }
+            int channel = (int)appValueOf(parts[0], program);
+            String waveform = appStringOperand(parts[1], program);
+            long frequency = appValueOf(parts[2], program);
+            long level = appValueOf(parts[3], program);
+            String loweredWaveform = waveform;
+            loweredWaveform.toLowerCase();
+            bool validWaveform = loweredWaveform == "off" || loweredWaveform == "sine" ||
+                loweredWaveform == "sin" || loweredWaveform == "triangle" ||
+                loweredWaveform == "tri" || loweredWaveform == "square" ||
+                loweredWaveform == "sq" || loweredWaveform == "noise";
+            if (channel < 1 || channel > 3 || !validWaveform ||
+                frequency < 1 || frequency > 12000 || level < 0 || level > 100) {
+                outLine("run: WAVE needs channel 1..3, hz 1..12000, level 0..100, and a valid waveform", C_RED);
+                return false;
+            }
+            dappSynthSetChannel(channel, waveform, frequency, level);
+        } else if (op == "WAVESTOP") {
+            dappSynthEnd();
         } else if (op == "CLEAR" || op == "CLS") {
             //while a canvas is up this means "blank the grid", not "wipe the scrollback the
             //canvas is drawn over" -- the latter would be visible only after ENDCANVAS
@@ -1332,6 +1595,46 @@ static bool appExecute(DappProgram& program) {
             }
             long code = appValueOf(parts[1], program);
             appSetStringValue(stringVars, slot, (code >= 32 && code < 127) ? String((char)code) : String(" "));
+        } else if (op == "HEX") {
+            String parts[3];
+            int count = splitCommand(arg, parts, 3);
+            if (count < 2) {
+                outLine("run: HEX needs <name> <value> [width]", C_RED);
+                return false;
+            }
+            int slot = appEnsureStringVar(stringVars, parts[0]);
+            if (slot < 0) {
+                outLine("run: too many string variables", C_RED);
+                return false;
+            }
+            long width = count >= 3 ? appValueOf(parts[2], program) : 2;
+            if (width < 1 || width > 8) {
+                outLine("run: HEX width must be 1..8", C_RED);
+                return false;
+            }
+            char formatted[9];
+            snprintf(formatted, sizeof(formatted), "%0*lX", (int)width,
+                     (unsigned long)(uint32_t)appValueOf(parts[1], program));
+            appSetStringValue(stringVars, slot, String(formatted));
+        } else if (op == "JSONESC" || op == "JSONGET") {
+            String parts[3];
+            int count = splitCommand(arg, parts, 3);
+            if (count < (op == "JSONESC" ? 2 : 3)) {
+                outLine("run: " + op + (op == "JSONESC"
+                    ? " needs <name> <text>" : " needs <name> <json> <path>"), C_RED);
+                return false;
+            }
+            int slot = appEnsureStringVar(stringVars, parts[0]);
+            if (slot < 0) {
+                outLine("run: too many string variables", C_RED);
+                return false;
+            }
+            String result;
+            dappJsonOk = op == "JSONESC"
+                ? (appJsonEscape(appStringOperand(parts[1], program), result) ? 1 : 0)
+                : (appJsonGetPath(appStringOperand(parts[1], program),
+                                  appStringOperand(parts[2], program), result) ? 1 : 0);
+            appSetStringValue(stringVars, slot, result);
         } else if (op == "SUBSTR") {
             String parts[4];
             int count = splitCommand(arg, parts, 4);
@@ -1374,11 +1677,11 @@ static bool appExecute(DappProgram& program) {
                 continue;
             }
             *target = value;
-        } else if (op == "INPUT") {
+        } else if (op == "INPUT" || op == "INPUTSECRET") {
             String parts[2];
             int count = splitCommand(arg, parts, 2);
             if (count < 1) {
-                outLine("run: INPUT needs <name> [prompt]", C_RED);
+                outLine("run: " + op + " needs <name> [prompt]", C_RED);
                 return false;
             }
             int slot = appEnsureStringVar(stringVars, parts[0]);
@@ -1387,7 +1690,7 @@ static bool appExecute(DappProgram& program) {
                 return false;
             }
             String prompt = count >= 2 ? appExpandText(parts[1], program) : parts[0] + "> ";
-            appSetStringValue(stringVars, slot, appReadInput(prompt));
+            appSetStringValue(stringVars, slot, appReadInput(prompt, op == "INPUTSECRET"));
             steps = 0;   //waiting on a human is not a runaway loop
         } else if (op == "KEY") {
             if (arg.length() == 0) {
@@ -1437,21 +1740,23 @@ static bool appExecute(DappProgram& program) {
             String parts[2];
             int count = splitCommand(arg, parts, 2);
             if (count < 2) {
-                outLine("run: FOPEN needs <path> read|write|append", C_RED);
+                outLine("run: FOPEN needs <path> read|write|append|update", C_RED);
                 return false;
             }
             String mode = parts[1];
             mode.toLowerCase();
             const char* fsMode;
+            bool readable;
             bool writable;
-            if (mode == "read" || mode == "r") { fsMode = "r"; writable = false; }
-            else if (mode == "write" || mode == "w") { fsMode = "w"; writable = true; }
-            else if (mode == "append" || mode == "a") { fsMode = "a"; writable = true; }
+            if (mode == "read" || mode == "r") { fsMode = "r"; readable = true; writable = false; }
+            else if (mode == "write" || mode == "w") { fsMode = "w"; readable = false; writable = true; }
+            else if (mode == "append" || mode == "a") { fsMode = "a"; readable = false; writable = true; }
+            else if (mode == "update" || mode == "rw" || mode == "r+") { fsMode = "r+"; readable = true; writable = true; }
             else {
-                outLine("run: FOPEN mode must be read, write, or append", C_RED);
+                outLine("run: FOPEN mode must be read, write, append, or update", C_RED);
                 return false;
             }
-            appFileOpen(appExpandText(parts[0], program), fsMode, writable);
+            appFileOpen(appExpandText(parts[0], program), fsMode, readable, writable);
         } else if (op == "FCLOSE") {
             appFileClose();
         } else if (op == "FREAD") {
@@ -1459,7 +1764,7 @@ static bool appExecute(DappProgram& program) {
                 outLine("run: FREAD needs <name>", C_RED);
                 return false;
             }
-            if (!dappFileOpen || dappFileWritable) {
+            if (!dappFileOpen || !dappFileReadable) {
                 outLine("run: FREAD needs a file FOPENed for read", C_RED);
                 return false;
             }
@@ -1469,6 +1774,18 @@ static bool appExecute(DappProgram& program) {
                 return false;
             }
             appSetStringValue(stringVars, slot, appFileReadLine());
+        } else if (op == "FREADB") {
+            if (arg.length() == 0) {
+                outLine("run: FREADB needs <name>", C_RED);
+                return false;
+            }
+            if (!dappFileOpen || !dappFileReadable) {
+                outLine("run: FREADB needs a file FOPENed for read or update", C_RED);
+                return false;
+            }
+            long* target = appNumericTarget(program, arg);
+            if (!target) continue;
+            *target = appFileReadByte();
         } else if (op == "FWRITE") {
             if (!dappFileOpen || !dappFileWritable) {
                 outLine("run: FWRITE needs a file FOPENed for write or append", C_RED);
@@ -1482,6 +1799,45 @@ static bool appExecute(DappProgram& program) {
                 outLine("run: FWRITE failed (filesystem full?)", C_RED);
                 return false;
             }
+        } else if (op == "FWRITEB") {
+            if (!dappFileOpen || !dappFileWritable) {
+                outLine("run: FWRITEB needs a file FOPENed for write, append, or update", C_RED);
+                return false;
+            }
+            long value = appValueOf(arg, program);
+            if (arg.length() == 0 || value < 0 || value > 255) {
+                outLine("run: FWRITEB needs one byte value (0..255)", C_RED);
+                return false;
+            }
+            ledPulseStorageWrite(dappFileIsSd);
+            if (dappFile.write((uint8_t)value) != 1) {
+                outLine("run: FWRITEB failed (filesystem full?)", C_RED);
+                return false;
+            }
+        } else if (op == "FSEEK") {
+            if (!dappFileOpen) {
+                outLine("run: FSEEK needs an open file", C_RED);
+                return false;
+            }
+            long offset = appValueOf(arg, program);
+            if (arg.length() == 0 || offset < 0) {
+                outLine("run: FSEEK needs an absolute offset >= 0", C_RED);
+                return false;
+            }
+            dappFok = dappFile.seek((uint32_t)offset, SeekSet) ? 1 : 0;
+            dappFeof = 0;
+        } else if (op == "FTELL" || op == "FSIZE") {
+            if (!dappFileOpen) {
+                outLine("run: " + op + " needs an open file", C_RED);
+                return false;
+            }
+            if (arg.length() == 0) {
+                outLine("run: " + op + " needs <name>", C_RED);
+                return false;
+            }
+            long* target = appNumericTarget(program, arg);
+            if (!target) continue;
+            *target = (op == "FTELL") ? (long)dappFile.position() : (long)dappFile.size();
         } else if (op == "FEXISTS") {
             String parts[2];
             int count = splitCommand(arg, parts, 2);
@@ -1515,6 +1871,45 @@ static bool appExecute(DappProgram& program) {
                     dappFok = 1;
                 }
             }
+        } else if (op == "HTTPCLEAR") {
+            appHttpClearHeaders();
+        } else if (op == "HTTPHEADER") {
+            String parts[2];
+            int count = splitCommand(arg, parts, 2);
+            if (count < 2 || !appHttpSetHeader(appStringOperand(parts[0], program),
+                                                appStringOperand(parts[1], program))) {
+                outLine("run: HTTPHEADER needs a safe <name> <value> (max 8 headers)", C_RED);
+                return false;
+            }
+        } else if (op == "HTTPGET" || op == "HTTPPOST") {
+            String parts[4];
+            int count = splitCommand(arg, parts, 4);
+            int needed = op == "HTTPGET" ? 2 : 3;
+            if (count < needed) {
+                outLine("run: " + op + (op == "HTTPGET"
+                    ? " needs <name> <http-or-https-url> [max-bytes]"
+                    : " needs <name> <http-or-https-url> <body> [max-bytes]"), C_RED);
+                return false;
+            }
+            int slot = appEnsureStringVar(stringVars, parts[0]);
+            if (slot < 0) {
+                outLine("run: too many string variables", C_RED);
+                return false;
+            }
+            int maximumIndex = op == "HTTPGET" ? 2 : 3;
+            long maximum = count > maximumIndex
+                ? appValueOf(parts[maximumIndex], program) : DAPP_MAX_STRING_LEN;
+            if (maximum < 1 || maximum > DAPP_MAX_STRING_LEN) {
+                outLine("run: " + op + " max-bytes must be 1.." + String(DAPP_MAX_STRING_LEN), C_RED);
+                return false;
+            }
+            String response;
+            String body = op == "HTTPPOST" ? appStringOperand(parts[2], program) : String("");
+            appHttpRequest(op == "HTTPPOST" ? "POST" : "GET",
+                           appStringOperand(parts[1], program), body,
+                           (size_t)maximum, response);
+            appSetStringValue(stringVars, slot, response);
+            steps = 0;  //the network wait is a real yield, not a runaway loop
         } else if (op == "RAND") {
             String parts[3];
             int count = splitCommand(arg, parts, 3);
@@ -1669,6 +2064,12 @@ void handleRunCommand(const String parts[], int partCount) {
     appResetKeyState();
     dappFok = 0;
     dappFeof = 0;
+    dappHttpCode = 0;
+    dappHttpLength = 0;
+    dappHttpTruncated = 0;
+    dappHttpOk = 0;
+    dappJsonOk = 0;
+    appHttpClearHeaders();
 
     bool ok = appExecute(program);
 
@@ -1676,6 +2077,8 @@ void handleRunCommand(const String parts[], int partCount) {
     //and one that stopped mid-read must not leave a dangling handle
     appCanvasEnd();
     appFileClose();
+    dappSynthEnd();
+    appHttpClearHeaders();
     ledClearAppOverride();
     outLine(ok ? "[app exited]" : "[app stopped]", ok ? C_GREEN : C_RED);
 }

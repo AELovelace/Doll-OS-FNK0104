@@ -1,0 +1,315 @@
+# @dapp-format 1
+# @id contacts
+# @name Contacts
+# @version 1.0.0
+# @boards fnk0104
+# @runtime >=1.1.0 <2.0.0
+# @summary A persistent 36-entry address book using DS's larger memory budget
+# /apps/contacts.dapp
+# Each contact has a 40-character name and an 80-character detail line for
+# phone, email, room, or anything else. Stored in /apps/contacts.dat.
+
+SET slots 36
+SET namewidth 40
+SET detailwidth 80
+DIM namelen 36
+DIM detaillen 36
+DIM names 1440
+DIM details 2880
+GOSUB load
+
+:menu
+CLEAR
+COLOR pink
+PRINT "DS CONTACTS"
+COLOR cyan
+PRINT "$count / $slots contacts"
+COLOR white
+PRINT ""
+PRINT "a) add        l) list"
+PRINT "v) view       d) delete"
+PRINT "x) clear all  q) quit"
+INPUT cmd "contacts> "
+IFEQ $cmd "a" GOTO addcontact
+IFEQ $cmd "l" GOTO list
+IFEQ $cmd "v" GOTO view
+IFEQ $cmd "d" GOTO delete
+IFEQ $cmd "x" GOTO clearall
+IFEQ $cmd "q" GOTO leave
+IFEQ $cmd "Q" GOTO leave
+GOTO menu
+
+:addcontact
+IF $count >= $slots GOTO full
+CLEAR
+COLOR cyan
+PRINT "NEW CONTACT"
+COLOR white
+INPUT line "name> "
+LEN n $line
+IF $n = 0 GOTO menu
+SET idx $count
+SET side 0
+GOSUB store
+INPUT line "phone/email/details> "
+LEN n $line
+IF $n = 0 GOTO menu
+SET side 1
+GOSUB store
+ADD count 1
+GOSUB save
+COLOR green
+PRINT "contact saved"
+WAIT 600
+GOTO menu
+:full
+COLOR yellow
+PRINT "address book is full"
+WAIT 750
+GOTO menu
+
+:list
+CLEAR
+COLOR cyan
+PRINT "CONTACTS"
+COLOR white
+IF $count = 0 GOTO empty
+SET idx 0
+:listloop
+SET side 0
+GOSUB fetch
+EXPR shown $idx + 1
+PRINT "$shown. $line"
+ADD idx 1
+IF $idx < $count GOTO listloop
+GOTO pause
+:empty
+PRINT "(empty)"
+GOTO pause
+
+:view
+IF $count = 0 GOTO menu
+GOSUB asknumber
+IF $valid = 0 GOTO menu
+EXPR idx $num - 1
+CLEAR
+SET side 0
+GOSUB fetch
+COLOR pink
+PRINT $line
+SET side 1
+GOSUB fetch
+COLOR white
+PRINT ""
+PRINT $line
+GOTO pause
+
+:delete
+IF $count = 0 GOTO menu
+GOSUB asknumber
+IF $valid = 0 GOTO menu
+EXPR idx $num - 1
+SET side 0
+GOSUB fetch
+COLOR yellow
+INPUT yn "delete '$line'? y/n> "
+IFNE $yn "y" GOTO menu
+:shiftloop
+EXPR src $idx + 1
+IF $src >= $count GOTO shiftdone
+SET namelen[$idx] $namelen[$src]
+SET detaillen[$idx] $detaillen[$src]
+SET side 0
+SET copywidth $namewidth
+GOSUB copyslot
+SET side 1
+SET copywidth $detailwidth
+GOSUB copyslot
+SET idx $src
+GOTO shiftloop
+:shiftdone
+SUB count 1
+GOSUB save
+COLOR green
+PRINT "contact deleted"
+WAIT 600
+GOTO menu
+
+:clearall
+IF $count = 0 GOTO menu
+COLOR red
+INPUT yn "type YES to erase address book> "
+IFNE $yn "YES" GOTO menu
+SET count 0
+GOSUB save
+COLOR green
+PRINT "address book cleared"
+WAIT 650
+GOTO menu
+
+:asknumber
+INPUT text "contact number> "
+GOSUB str2num
+SET valid 0
+IF $num < 1 GOTO askbad
+IF $num > $count GOTO askbad
+SET valid 1
+RETURN
+:askbad
+COLOR red
+PRINT "pick 1-$count"
+WAIT 650
+RETURN
+
+:pause
+PRINT ""
+INPUT wait "enter to return> "
+GOTO menu
+
+# in: idx, side, line
+:store
+LEN n $line
+IF $side = 1 GOTO storedetail
+SET width $namewidth
+IF $n <= $width GOTO storenamefit
+SET n $width
+:storenamefit
+SET namelen[$idx] $n
+GOTO storebase
+:storedetail
+SET width $detailwidth
+IF $n <= $width GOTO storedetailfit
+SET n $width
+:storedetailfit
+SET detaillen[$idx] $n
+:storebase
+EXPR base $idx * $width
+SET j 0
+:storeloop
+IF $j >= $n GOTO storedone
+CHARAT code $line $j
+EXPR cell $base + $j
+IF $side = 1 GOTO storedetailchar
+SET names[$cell] $code
+GOTO storenext
+:storedetailchar
+SET details[$cell] $code
+:storenext
+ADD j 1
+GOTO storeloop
+:storedone
+RETURN
+
+# in: idx, side; out: line
+:fetch
+SETSTR line ""
+IF $side = 1 GOTO fetchdetail
+SET width $namewidth
+SET n $namelen[$idx]
+GOTO fetchbase
+:fetchdetail
+SET width $detailwidth
+SET n $detaillen[$idx]
+:fetchbase
+EXPR base $idx * $width
+SET j 0
+:fetchloop
+IF $j >= $n GOTO fetchdone
+EXPR cell $base + $j
+IF $side = 1 GOTO getdetail
+SET code $names[$cell]
+GOTO fetchchar
+:getdetail
+SET code $details[$cell]
+:fetchchar
+CHR one $code
+APPEND line $one
+ADD j 1
+GOTO fetchloop
+:fetchdone
+RETURN
+
+# in: idx destination, src source, side and copywidth
+:copyslot
+EXPR dstbase $idx * $copywidth
+EXPR srcbase $src * $copywidth
+SET j 0
+:copyloop
+IF $j >= $copywidth GOTO copydone
+EXPR dst $dstbase + $j
+EXPR source $srcbase + $j
+IF $side = 1 GOTO copydetail
+SET names[$dst] $names[$source]
+GOTO copynext
+:copydetail
+SET details[$dst] $details[$source]
+:copynext
+ADD j 1
+GOTO copyloop
+:copydone
+RETURN
+
+:load
+SET count 0
+FEXISTS have "/apps/contacts.dat"
+IF $have = 0 GOTO loaddone
+FOPEN "/apps/contacts.dat" read
+IF $fok = 0 GOTO loaddone
+:loadloop
+IF $count >= $slots GOTO loadclose
+FREAD line
+IF $feof = 1 GOTO loadclose
+SET idx $count
+SET side 0
+GOSUB store
+FREAD line
+IF $feof = 1 GOTO loadclose
+SET side 1
+GOSUB store
+ADD count 1
+GOTO loadloop
+:loadclose
+FCLOSE
+:loaddone
+RETURN
+
+:save
+FOPEN "/apps/contacts.dat" write
+IF $fok = 0 GOTO savedone
+SET idx 0
+:saveloop
+IF $idx >= $count GOTO saveclose
+SET side 0
+GOSUB fetch
+FWRITE $line
+SET side 1
+GOSUB fetch
+FWRITE $line
+ADD idx 1
+GOTO saveloop
+:saveclose
+FCLOSE
+:savedone
+RETURN
+
+:str2num
+SET num 0
+SET i 0
+LEN n $text
+:numloop
+IF $i >= $n GOTO numdone
+CHARAT digit $text $i
+IF $digit < 48 GOTO numdone
+IF $digit > 57 GOTO numdone
+SUB digit 48
+MUL num 10
+ADD num $digit
+ADD i 1
+GOTO numloop
+:numdone
+RETURN
+
+:leave
+COLOR pink
+PRINT "$count contact(s) saved"
+EXIT

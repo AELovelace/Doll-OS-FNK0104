@@ -1,0 +1,443 @@
+# @dapp-format 1
+# @id drill
+# @name Drill
+# @version 1.0.0
+# @boards fnk0104
+# @runtime >=1.1.0 <2.0.0
+# @summary Leitner-box flashcard reviewer backed by /apps/drill.deck
+# /apps/drill.dapp
+# Flashcards with a Leitner box system: get a card right and it moves up
+# a box (reviewed less often), get it wrong and it drops back to box 1
+# (reviewed most often). Commands: r review, a add a card, l list all,
+# d delete one, s show box counts, q quit.
+#
+# There is no array of strings, so each card's question and answer are
+# character codes packed into one shared array per field -- the same
+# technique notes.dapp uses for its lines, just twice over. The deck file
+# is one line per card, "level|question|answer", read whole into these
+# packed arrays on start and rewritten whole on every change; a review
+# session is short enough that resaving after each card is not worth
+# avoiding for the sake of one fewer file write.
+#
+# Review picks a card by weight rather than evenly at random: a box-1
+# card is five times as likely to come up as a mastered box-5 card. That
+# is the entire Leitner system -- weighted sampling over five boxes needs
+# no scheduling clock or per-card due date, just RAND against a running
+# total.
+
+SET maxcards 30
+SET qwidth 48
+SET awidth 48
+DIM qtext 1440
+DIM atext 1440
+DIM qlen 30
+DIM alen 30
+DIM level 30
+SET count 0
+
+COLOR pink
+PRINT "drill"
+GOSUB loaddeck
+COLOR cyan
+PRINT "$count card(s) loaded from /apps/drill.deck"
+
+:menu
+PRINT ""
+COLOR yellow
+PRINT "r review   a add   l list   d delete   s stats   q quit"
+COLOR white
+INPUT cmd "drill> "
+IFEQ $cmd "r" GOTO doreview
+IFEQ $cmd "a" GOTO doadd
+IFEQ $cmd "l" GOTO dolist
+IFEQ $cmd "d" GOTO dodelete
+IFEQ $cmd "s" GOTO dostats
+IFEQ $cmd "q" GOTO leave
+IFEQ $cmd "quit" GOTO leave
+IFEQ $cmd "" GOTO menu
+COLOR red
+PRINT "r a l d s or q"
+GOTO menu
+
+# ---------------------------------------------------------------- review
+
+:doreview
+IF $count = 0 GOTO nonecards
+:rv_again
+GOSUB pickcard
+SET idx $picked
+GOSUB getq
+GOSUB geta
+COLOR cyan
+PRINT ""
+PRINT "Q: $q"
+COLOR white
+INPUT dummy "press enter to reveal> "
+COLOR green
+PRINT "A: $a"
+:rv_ask
+COLOR yellow
+INPUT judge "correct? y/n/q> "
+IFEQ $judge "y" GOTO rv_right
+IFEQ $judge "n" GOTO rv_wrong
+IFEQ $judge "q" GOTO menu
+GOTO rv_ask
+:rv_right
+ADD level[$idx] 1
+IF $level[$idx] <= 5 GOTO rv_save
+SET level[$idx] 5
+:rv_save
+GOSUB savedeck
+COLOR green
+PRINT "promoted to box $level[$idx]"
+GOTO rv_again
+:rv_wrong
+SET level[$idx] 1
+GOSUB savedeck
+COLOR red
+PRINT "back to box 1"
+GOTO rv_again
+
+# picks a card weighted toward low boxes: box 1 has weight 5, box 5 has
+# weight 1, so a fresh card comes up five times as often as a mastered one
+:pickcard
+SET totalw 0
+SET wi 0
+:pc_sum
+EXPR w 6 - $level[$wi]
+ADD totalw $w
+ADD wi 1
+IF $wi < $count GOTO pc_sum
+RAND r $totalw
+SET wi 0
+SET acc 0
+:pc_walk
+EXPR w 6 - $level[$wi]
+ADD acc $w
+IF $r < $acc GOTO pc_found
+ADD wi 1
+IF $wi < $count GOTO pc_walk
+EXPR wi $count - 1
+:pc_found
+SET picked $wi
+RETURN
+
+# ---------------------------------------------------------------- editing
+
+:doadd
+IF $count >= $maxcards GOTO add_full
+COLOR white
+INPUT q "question> "
+LEN ql $q
+IF $ql = 0 GOTO menu
+INPUT a "answer> "
+LEN al $a
+IF $al = 0 GOTO menu
+SET idx $count
+GOSUB storeq
+GOSUB storea
+SET level[$idx] 1
+ADD count 1
+GOSUB savedeck
+COLOR green
+PRINT "added card $count"
+GOTO menu
+:add_full
+COLOR red
+PRINT "deck is full at $maxcards cards"
+GOTO menu
+
+:dolist
+IF $count = 0 GOTO nonecards
+SET idx 0
+:ls_loop
+GOSUB getq
+GOSUB geta
+EXPR n $idx + 1
+COLOR cyan
+PRINT "$n [box $level[$idx]] $q -> $a"
+ADD idx 1
+IF $idx < $count GOTO ls_loop
+GOTO menu
+
+:dodelete
+IF $count = 0 GOTO nonecards
+COLOR white
+INPUT text "delete which number> "
+GOSUB str2num
+IF $num < 1 GOTO menu
+IF $num > $count GOTO menu
+EXPR idx $num - 1
+GOSUB removecard
+GOSUB savedeck
+COLOR green
+PRINT "deleted card $num"
+GOTO menu
+
+# in: idx -- closes the gap by shifting every later card down one
+:removecard
+SET s $idx
+:rm_loop
+EXPR s1 $s + 1
+IF $s1 >= $count GOTO rm_last
+SET copysrc $s1
+SET copydst $s
+GOSUB copycard
+SET s $s1
+GOTO rm_loop
+:rm_last
+SUB count 1
+RETURN
+
+# in: copysrc, copydst
+:copycard
+SET idx $copysrc
+GOSUB getq
+SETSTR savedq $q
+GOSUB geta
+SETSTR saveda $a
+SET savedlevel $level[$copysrc]
+SET idx $copydst
+SETSTR q $savedq
+GOSUB storeq
+SETSTR a $saveda
+GOSUB storea
+SET level[$copydst] $savedlevel
+RETURN
+
+:dostats
+IF $count = 0 GOTO nonecards
+SET b1 0
+SET b2 0
+SET b3 0
+SET b4 0
+SET b5 0
+SET si 0
+:st_loop
+SET lv $level[$si]
+IF $lv = 1 GOSUB st_b1
+IF $lv = 2 GOSUB st_b2
+IF $lv = 3 GOSUB st_b3
+IF $lv = 4 GOSUB st_b4
+IF $lv = 5 GOSUB st_b5
+ADD si 1
+IF $si < $count GOTO st_loop
+COLOR cyan
+PRINT "box1=$b1 box2=$b2 box3=$b3 box4=$b4 box5=$b5"
+GOTO menu
+:st_b1
+ADD b1 1
+RETURN
+:st_b2
+ADD b2 1
+RETURN
+:st_b3
+ADD b3 1
+RETURN
+:st_b4
+ADD b4 1
+RETURN
+:st_b5
+ADD b5 1
+RETURN
+
+:nonecards
+COLOR yellow
+PRINT "no cards yet - use a to add one"
+GOTO menu
+
+# ---------------------------------------------------------------- packed text
+
+# in: idx, q -- packs the question into qtext, truncated to qwidth
+:storeq
+LEN l $q
+IF $l <= $qwidth GOTO sq_fit
+SET l $qwidth
+:sq_fit
+SET qlen[$idx] $l
+EXPR base $idx * $qwidth
+SET j 0
+:sq_ch
+IF $j >= $l GOTO sq_done
+CHARAT code $q $j
+EXPR cell $base + $j
+SET qtext[$cell] $code
+ADD j 1
+GOTO sq_ch
+:sq_done
+RETURN
+
+# in: idx -- out: q, rebuilt from qtext
+:getq
+SETSTR q ""
+SET l $qlen[$idx]
+EXPR base $idx * $qwidth
+SET j 0
+:gq_ch
+IF $j >= $l GOTO gq_done
+EXPR cell $base + $j
+CHR one $qtext[$cell]
+APPEND q $one
+ADD j 1
+GOTO gq_ch
+:gq_done
+RETURN
+
+:storea
+LEN l $a
+IF $l <= $awidth GOTO sa_fit
+SET l $awidth
+:sa_fit
+SET alen[$idx] $l
+EXPR base $idx * $awidth
+SET j 0
+:sa_ch
+IF $j >= $l GOTO sa_done
+CHARAT code $a $j
+EXPR cell $base + $j
+SET atext[$cell] $code
+ADD j 1
+GOTO sa_ch
+:sa_done
+RETURN
+
+:geta
+SETSTR a ""
+SET l $alen[$idx]
+EXPR base $idx * $awidth
+SET j 0
+:ga_ch
+IF $j >= $l GOTO ga_done
+EXPR cell $base + $j
+CHR one $atext[$cell]
+APPEND a $one
+ADD j 1
+GOTO ga_ch
+:ga_done
+RETURN
+
+# ---------------------------------------------------------------- the file
+
+:loaddeck
+SET count 0
+FEXISTS have "/apps/drill.deck"
+IF $have = 0 GOTO ld_done
+FOPEN "/apps/drill.deck" read
+IF $fok = 0 GOTO ld_done
+:ld_line
+IF $count >= $maxcards GOTO ld_close
+FREAD raw
+IF $feof = 1 GOTO ld_close
+GOSUB parseline
+IF $parseok = 0 GOTO ld_line
+SET idx $count
+SETSTR q $pq
+GOSUB storeq
+SETSTR a $pa
+GOSUB storea
+SET level[$idx] $plevel
+ADD count 1
+GOTO ld_line
+:ld_close
+FCLOSE
+:ld_done
+RETURN
+
+:savedeck
+FOPEN "/apps/drill.deck" write
+IF $fok = 0 GOTO sv_failed
+SET idx 0
+:sv_loop
+IF $idx >= $count GOTO sv_done
+GOSUB getq
+GOSUB geta
+SETSTR outline $level[$idx]
+APPEND outline "|"
+APPEND outline $q
+APPEND outline "|"
+APPEND outline $a
+FWRITE $outline
+ADD idx 1
+GOTO sv_loop
+:sv_done
+FCLOSE
+RETURN
+:sv_failed
+COLOR red
+PRINT "could not write /apps/drill.deck"
+RETURN
+
+# in: raw ("level|question|answer") -- out: parseok, plevel, pq, pa
+:parseline
+SET parseok 0
+LEN rlen $raw
+IF $rlen = 0 GOTO pl_done
+SET p1 -1
+SET ri 0
+:pl_find1
+IF $ri >= $rlen GOTO pl_find1done
+CHARAT rc $raw $ri
+IF $rc = 124 GOTO pl_got1
+ADD ri 1
+GOTO pl_find1
+:pl_got1
+SET p1 $ri
+:pl_find1done
+IF $p1 < 0 GOTO pl_done
+SET p2 -1
+ADD ri 1
+:pl_find2
+IF $ri >= $rlen GOTO pl_find2done
+CHARAT rc $raw $ri
+IF $rc = 124 GOTO pl_got2
+ADD ri 1
+GOTO pl_find2
+:pl_got2
+SET p2 $ri
+:pl_find2done
+IF $p2 < 0 GOTO pl_done
+SUBSTR levtext $raw 0 $p1
+SETSTR text $levtext
+GOSUB str2num
+SET plevel $num
+IF $plevel < 1 GOTO pl_clamplow
+IF $plevel > 5 GOTO pl_clamphigh
+GOTO pl_lvok
+:pl_clamplow
+SET plevel 1
+GOTO pl_lvok
+:pl_clamphigh
+SET plevel 5
+:pl_lvok
+EXPR qstart $p1 + 1
+EXPR qcount $p2 - $qstart
+SUBSTR pq $raw $qstart $qcount
+EXPR astart $p2 + 1
+EXPR acount $rlen - $astart
+SUBSTR pa $raw $astart $acount
+SET parseok 1
+:pl_done
+RETURN
+
+# in: text (string)   out: num -- a number read back from a file is text
+:str2num
+SET num 0
+SET s2i 0
+LEN s2len $text
+:s2n_loop
+IF $s2i >= $s2len GOTO s2n_done
+CHARAT s2d $text $s2i
+IF $s2d < 48 GOTO s2n_done
+IF $s2d > 57 GOTO s2n_done
+SUB s2d 48
+MUL num 10
+ADD num $s2d
+ADD s2i 1
+GOTO s2n_loop
+:s2n_done
+RETURN
+
+:leave
+COLOR pink
+PRINT "drill: $count card(s) in /apps/drill.deck"
+EXIT

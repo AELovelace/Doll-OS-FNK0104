@@ -1,0 +1,389 @@
+# @dapp-format 1
+# @id expenses
+# @name Expense Ledger
+# @version 1.0.0
+# @boards fnk0104
+# @runtime >=1.1.0 <2.0.0
+# @summary A persistent categorized expense ledger and totals dashboard for DS
+# /apps/expenses.dapp
+# Stores up to 40 entries in /apps/expenses.dat. Amounts are kept as integer
+# cents so totals do not drift through floating-point rounding.
+
+SET slots 40
+SET width 88
+DIM amount 40
+DIM category 40
+DIM nlen 40
+DIM note 3520
+GOSUB load
+
+:menu
+CLEAR
+COLOR pink
+PRINT "DS EXPENSE LEDGER"
+COLOR cyan
+PRINT "$count / $slots entries"
+COLOR white
+PRINT ""
+PRINT "a) add expense       l) list entries"
+PRINT "s) category summary  d) delete entry"
+PRINT "x) clear ledger      q) quit"
+INPUT cmd "ledger> "
+IFEQ $cmd "a" GOTO addentry
+IFEQ $cmd "l" GOTO list
+IFEQ $cmd "s" GOTO summary
+IFEQ $cmd "d" GOTO delete
+IFEQ $cmd "x" GOTO clearall
+IFEQ $cmd "q" GOTO leave
+IFEQ $cmd "Q" GOTO leave
+GOTO menu
+
+:addentry
+IF $count >= $slots GOTO full
+CLEAR
+COLOR cyan
+PRINT "NEW EXPENSE"
+COLOR white
+PRINT "1 food  2 travel  3 supplies  4 fun  5 other"
+INPUT text "category> "
+GOSUB str2num
+IF $num < 1 GOTO badcategory
+IF $num > 5 GOTO badcategory
+SET newcat $num
+INPUT text "amount (12.34)> "
+GOSUB parsemoney
+IF $valid = 0 GOTO badamount
+SET newamount $cents
+INPUT line "note> "
+LEN n $line
+IF $n = 0 GOTO cancelled
+SET idx $count
+SET amount[$idx] $newamount
+SET category[$idx] $newcat
+GOSUB storenote
+ADD count 1
+GOSUB save
+COLOR green
+PRINT "expense saved"
+WAIT 650
+GOTO menu
+:badcategory
+COLOR red
+PRINT "choose category 1-5"
+WAIT 700
+GOTO addentry
+:badamount
+COLOR red
+PRINT "enter a positive amount like 12 or 12.34"
+WAIT 900
+GOTO addentry
+:cancelled
+COLOR yellow
+PRINT "empty note - cancelled"
+WAIT 600
+GOTO menu
+:full
+COLOR yellow
+PRINT "ledger is full; delete an entry first"
+WAIT 900
+GOTO menu
+
+:list
+CLEAR
+COLOR cyan
+PRINT "EXPENSES"
+COLOR white
+IF $count = 0 GOTO listempty
+SET idx 0
+:listloop
+GOSUB fetchcategory
+SET cents $amount[$idx]
+GOSUB formatmoney
+GOSUB fetchnote
+EXPR shown $idx + 1
+PRINT "$shown. [$catname] $$money  $line"
+ADD idx 1
+IF $idx < $count GOTO listloop
+GOTO pause
+:listempty
+PRINT "(empty)"
+GOTO pause
+
+:summary
+DIM totals 5
+SET grand 0
+SET idx 0
+:sumloop
+IF $idx >= $count GOTO sumshow
+EXPR ci $category[$idx] - 1
+SET old $totals[$ci]
+ADD old $amount[$idx]
+SET totals[$ci] $old
+ADD grand $amount[$idx]
+ADD idx 1
+GOTO sumloop
+:sumshow
+CLEAR
+COLOR pink
+PRINT "CATEGORY TOTALS"
+SET ci 0
+:sumrows
+IF $ci >= 5 GOTO sumgrand
+EXPR categoryvalue $ci + 1
+GOSUB categorybyvalue
+SET cents $totals[$ci]
+GOSUB formatmoney
+COLOR white
+PRINT "$catname: $$money"
+ADD ci 1
+GOTO sumrows
+:sumgrand
+SET cents $grand
+GOSUB formatmoney
+COLOR green
+PRINT ""
+PRINT "TOTAL: $$money"
+GOTO pause
+
+:delete
+IF $count = 0 GOTO menu
+INPUT text "entry number> "
+GOSUB str2num
+IF $num < 1 GOTO badnumber
+IF $num > $count GOTO badnumber
+EXPR idx $num - 1
+GOSUB fetchnote
+COLOR yellow
+INPUT yn "delete '$line'? y/n> "
+IFNE $yn "y" GOTO menu
+:shiftloop
+EXPR src $idx + 1
+IF $src >= $count GOTO shiftdone
+SET amount[$idx] $amount[$src]
+SET category[$idx] $category[$src]
+SET nlen[$idx] $nlen[$src]
+EXPR dstbase $idx * $width
+EXPR srcbase $src * $width
+SET j 0
+:shiftchars
+IF $j >= $width GOTO shiftnext
+EXPR dst $dstbase + $j
+EXPR source $srcbase + $j
+SET note[$dst] $note[$source]
+ADD j 1
+GOTO shiftchars
+:shiftnext
+SET idx $src
+GOTO shiftloop
+:shiftdone
+SUB count 1
+GOSUB save
+COLOR green
+PRINT "deleted"
+WAIT 550
+GOTO menu
+:badnumber
+COLOR red
+PRINT "pick 1-$count"
+WAIT 650
+GOTO menu
+
+:clearall
+IF $count = 0 GOTO menu
+COLOR red
+INPUT yn "type YES to erase all entries> "
+IFNE $yn "YES" GOTO menu
+SET count 0
+GOSUB save
+COLOR green
+PRINT "ledger cleared"
+WAIT 600
+GOTO menu
+
+:pause
+PRINT ""
+INPUT wait "enter to return> "
+GOTO menu
+
+:fetchcategory
+SET categoryvalue $category[$idx]
+:categorybyvalue
+IFEQ $categoryvalue 1 GOTO catfood
+IFEQ $categoryvalue 2 GOTO cattravel
+IFEQ $categoryvalue 3 GOTO catsupplies
+IFEQ $categoryvalue 4 GOTO catfun
+SETSTR catname "other"
+RETURN
+:catfood
+SETSTR catname "food"
+RETURN
+:cattravel
+SETSTR catname "travel"
+RETURN
+:catsupplies
+SETSTR catname "supplies"
+RETURN
+:catfun
+SETSTR catname "fun"
+RETURN
+
+:parsemoney
+SET cents 0
+SET dollars 0
+SET pennies 0
+SET seen 0
+SET decimals 0
+SET valid 0
+SET i 0
+LEN n $text
+IF $n = 0 GOTO moneydone
+:moneyloop
+IF $i >= $n GOTO moneyfinish
+CHARAT digit $text $i
+IF $digit = 46 GOTO decimalpoint
+IF $digit < 48 GOTO moneydone
+IF $digit > 57 GOTO moneydone
+SUB digit 48
+IF $seen = 1 GOTO moneydecimal
+MUL dollars 10
+ADD dollars $digit
+GOTO moneynext
+:moneydecimal
+IF $decimals >= 2 GOTO moneydone
+MUL pennies 10
+ADD pennies $digit
+ADD decimals 1
+GOTO moneynext
+:decimalpoint
+IF $seen = 1 GOTO moneydone
+SET seen 1
+:moneynext
+ADD i 1
+GOTO moneyloop
+:moneyfinish
+IF $seen = 0 GOTO moneycombine
+IF $decimals = 0 GOTO moneypad2
+IF $decimals = 1 GOTO moneypad1
+GOTO moneycombine
+:moneypad2
+SET pennies 0
+GOTO moneycombine
+:moneypad1
+MUL pennies 10
+:moneycombine
+EXPR cents $dollars * 100 + $pennies
+IF $cents <= 0 GOTO moneydone
+SET valid 1
+:moneydone
+RETURN
+
+:formatmoney
+SET dollars $cents
+DIV dollars 100
+SET pennies $cents
+MOD pennies 100
+SETSTR money "$dollars."
+IF $pennies >= 10 GOTO moneyappend
+APPEND money "0"
+:moneyappend
+APPEND money "$pennies"
+RETURN
+
+:storenote
+LEN n $line
+IF $n <= $width GOTO storefit
+SET n $width
+:storefit
+SET nlen[$idx] $n
+EXPR base $idx * $width
+SET j 0
+:storeloop
+IF $j >= $n GOTO storedone
+CHARAT code $line $j
+EXPR cell $base + $j
+SET note[$cell] $code
+ADD j 1
+GOTO storeloop
+:storedone
+RETURN
+
+:fetchnote
+SETSTR line ""
+SET n $nlen[$idx]
+EXPR base $idx * $width
+SET j 0
+:fetchloop
+IF $j >= $n GOTO fetchdone
+EXPR cell $base + $j
+CHR one $note[$cell]
+APPEND line $one
+ADD j 1
+GOTO fetchloop
+:fetchdone
+RETURN
+
+:load
+SET count 0
+FEXISTS have "/apps/expenses.dat"
+IF $have = 0 GOTO loaddone
+FOPEN "/apps/expenses.dat" read
+IF $fok = 0 GOTO loaddone
+:loadloop
+IF $count >= $slots GOTO loadclose
+FREAD text
+IF $feof = 1 GOTO loadclose
+GOSUB str2num
+SET idx $count
+SET category[$idx] $num
+FREAD text
+IF $feof = 1 GOTO loadclose
+GOSUB str2num
+SET amount[$idx] $num
+FREAD line
+IF $feof = 1 GOTO loadclose
+GOSUB storenote
+ADD count 1
+GOTO loadloop
+:loadclose
+FCLOSE
+:loaddone
+RETURN
+
+:save
+FOPEN "/apps/expenses.dat" write
+IF $fok = 0 GOTO savedone
+SET idx 0
+:saveloop
+IF $idx >= $count GOTO saveclose
+FWRITE "$category[$idx]"
+FWRITE "$amount[$idx]"
+GOSUB fetchnote
+FWRITE $line
+ADD idx 1
+GOTO saveloop
+:saveclose
+FCLOSE
+:savedone
+RETURN
+
+:str2num
+SET num 0
+SET i 0
+LEN n $text
+:numloop
+IF $i >= $n GOTO numdone
+CHARAT digit $text $i
+IF $digit < 48 GOTO numdone
+IF $digit > 57 GOTO numdone
+SUB digit 48
+MUL num 10
+ADD num $digit
+ADD i 1
+GOTO numloop
+:numdone
+RETURN
+
+:leave
+COLOR pink
+PRINT "$count expense(s) saved"
+EXIT

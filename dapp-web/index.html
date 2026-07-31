@@ -36,7 +36,7 @@
       <article class="window editor-window">
         <div class="titlebar">
           <div class="window-dots" aria-hidden="true"><span></span><span></span><span></span></div>
-          <strong>EDIT://untitled.dapp</strong>
+          <strong id="editor-title">EDIT://untitled.dapp</strong>
           <span id="save-state">LOCAL DRAFT</span>
         </div>
 
@@ -45,6 +45,8 @@
           <select id="example-select" aria-label="Load an example program">
             <option value="">starter programs...</option>
           </select>
+          <label class="select-label" for="filename-input">NAME</label>
+          <input id="filename-input" class="filename-input" type="text" value="untitled.dapp" maxlength="80" aria-label="Downloaded app filename">
           <button class="tool-button" id="new-button" type="button">NEW</button>
           <button class="tool-button" id="download-button" type="button">DOWNLOAD .DAPP</button>
           <span class="editor-stats" id="editor-stats">1 LINE</span>

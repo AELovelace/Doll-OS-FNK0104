@@ -1860,15 +1860,24 @@ DIM <name> <size>    create a numeric array of size cells, all zero
 SETSTR <name> <txt>  set a string variable
 APPEND <name> <txt>  append to a string variable
 CHR <name> <code>    set a string variable to one character by code
+HEX <name> <value> [width]  uppercase hexadecimal text, width 1..8
 SUBSTR <n> <t> <s> <c>  slice a string into a string variable
 LEN <name> <text>    character count into a numeric variable
 CHARAT <n> <t> <i>   character code at index i, or 0 past the end
 INPUT <name> [p]     read a line into a string variable (blocks until Enter)
 KEY <name>           read one keypress into a numeric variable, 0 if none
-FOPEN <path> <mode>  open a file: read, write (truncate), or append
+WAVE <ch> <kind> <hz> <level>  set sine/triangle/square/noise/off channel 1..3
+WAVESTOP             silence the synth and release the audio hardware
+HTTPGET <n> <url> [max] bounded HTTP/HTTPS GET into string variable n
+FOPEN <path> <mode>  open a file: read, write, append, or update
 FCLOSE               close it (automatic when the app ends)
 FREAD <name>         read one line into a string variable; $feof goes 1 at end
+FREADB <name>        read one raw byte (0..255); $feof distinguishes NUL/EOF
 FWRITE <text>        write a line, with $variables expanded
+FWRITEB <value>      write one raw byte (0..255)
+FSEEK <offset>       move to an absolute byte offset; $fok reports success
+FTELL <name>         current byte offset into a numeric variable
+FSIZE <name>         open file size into a numeric variable
 FEXISTS <n> <path>   1 into numeric variable n if the path exists
 FDELETE <path>       delete a file; $fok reports success
 CANVAS <cols> <rows> switch the display to a character grid
@@ -2009,6 +2018,24 @@ written with FWRITE come back as text -- parse digits with CHARAT before
 doing math on them. run tetris does exactly this for its persistent high
 score in /apps/tetris.hs.
 
+For binary files, open with update (or rw/r+), then use FREADB/FWRITEB and
+FSEEK. FREADB returns every byte as 0..255, so 0x00 and 0x0A are never eaten by
+line handling; $feof alone means no byte was available. FTELL and FSIZE expose
+positions, and HEX formats a value as 1..8 uppercase hexadecimal digits. run
+hex is a complete byte-safe editor built on these operations.
+
+Audio and HTTP:
+
+WAVE controls three mixed PCM channels on the onboard speaker. Kinds are sine,
+triangle, square, noise, and off; frequency is 1..12000Hz and level is 0..100.
+WAVESTOP (and app exit) silences/releases the hardware. $audiook reports the
+most recent start. run synth is the interactive mixer and waveform display.
+
+HTTPGET body "https://example.com/data.json" 2048 stores a bounded text body.
+$httpok, $httpcode, $httplen, and $httptruncated report the result. HTTPS is
+encrypted but generic script URLs are not certificate-authenticated; Dapper's
+verified package-download path is separate.
+
 Limits:
 
 A script is read into RAM in full before its first line runs. The storage comes
@@ -2041,6 +2068,12 @@ $ip
 $millis
 $seconds
 $wifi
+$ledok
+$audiook
+$httpok
+$httpcode
+$httplen
+$httptruncated
 
 Numeric only (see Keys and games): $kup, $kdown, $kleft, $kright, $kenter,
 $kesc, $kback, $ktab, $kspace; plus the file-op status pair $fok (last
