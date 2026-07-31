@@ -1644,6 +1644,7 @@ CHARAT <n> <t> <i>     character code at i, 0 past the end
 ── input ───────────────────────────────────────────────────────────
 INPUT <name> [prompt]  read a line (blocks); result is TEXT, not a number
 KEY <name>             one keypress or 0, never blocks
+LED <r> <g> <b>        set rear RGB LED channels (0..255 each)
 
 ── files ───────────────────────────────────────────────────────────
 FOPEN <path> <mode>    read | write (truncate) | append; $fok = success
@@ -1683,9 +1684,9 @@ EXIT                   end the app  (alias END)
 Every limit reports on the terminal when hit — including array indexes out of
 range, which stop the app with the line number.
 
-Built-ins: `$battery` `$cwd` `$heap` `$ip` `$millis` `$seconds` `$wifi`, the
-file status pair `$fok` (last FOPEN/FDELETE worked) and `$feof` (last FREAD
-hit end of file), and the key codes below.
+Built-ins: `$battery` `$cwd` `$heap` `$ip` `$millis` `$seconds` `$wifi`
+`$ledok`, the file status pair `$fok` (last FOPEN/FDELETE worked) and `$feof`
+(last FREAD hit end of file), and the key codes below.
 
 ## Appendix C — Key Codes
 

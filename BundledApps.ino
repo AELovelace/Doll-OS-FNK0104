@@ -70,16 +70,42 @@ static bool writeBundledAsset(const char* path, const char* contents) {
     return written == len;
 }
 
+static const char* bundledContentWithoutPackageHeader(const char* contents) {
+    const char* cursor = contents;
+    while (strncmp(cursor, "# @", 3) == 0) {
+        const char* newline = strchr(cursor, '\n');
+        if (!newline) return cursor;
+        cursor = newline + 1;
+    }
+    return cursor;
+}
+
 void seedBundledApps() {
-    ensureBundledDirectory("/apps");
+    ensureBundledDirectory("/system");
+    ensureBundledDirectory("/system/apps");
     ensureBundledDirectory("/docs");
 
     const BundledAsset bundledApps[] = {
+        { "/system/apps/adventure.dapp", BUNDLED_APP_ADVENTURE },
+        { "/system/apps/tetris.dapp", BUNDLED_APP_TETRIS },
+        { "/system/apps/snake.dapp", BUNDLED_APP_SNAKE },
+        { "/docs/dapp.txt", BUNDLED_DOC_DAPP },
+    };
+
+    //Older firmware seeded these three files into /apps. Remove an old copy only
+    //when its bytes still match the firmware bundle exactly; a user-edited copy is
+    //an intentional override and must survive the migration.
+    const BundledAsset legacyApps[] = {
         { "/apps/adventure.dapp", BUNDLED_APP_ADVENTURE },
         { "/apps/tetris.dapp", BUNDLED_APP_TETRIS },
         { "/apps/snake.dapp", BUNDLED_APP_SNAKE },
-        { "/docs/dapp.txt", BUNDLED_DOC_DAPP },
     };
+    for (const BundledAsset& legacy : legacyApps) {
+        if (bundledAssetMatches(legacy.path, legacy.contents) ||
+            bundledAssetMatches(legacy.path, bundledContentWithoutPackageHeader(legacy.contents))) {
+            LittleFS.remove(legacy.path);
+        }
+    }
 
     for (const BundledAsset& app : bundledApps) {
         if (bundledAssetMatches(app.path, app.contents)) {

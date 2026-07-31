@@ -1,0 +1,244 @@
+# @dapp-format 1
+# @id sysmon
+# @name Sysmon
+# @version 1.0.0
+# @boards fnk0104
+# @runtime >=1.1.0 <2.0.0
+# @summary Live heap, battery, network and uptime dashboard
+# /apps/sysmon.dapp
+# A live dashboard for the values a .dapp can see: free heap, battery,
+# network, uptime. R resets the peaks, escape quits.
+#
+# The heap graph is a scrolling window of the last 36 samples, one every
+# half second. The array is shifted left rather than used as a ring buffer:
+# 36 cells is nothing to move, and it means the drawing code can read the
+# samples in the order they happened instead of unwrapping an index. The
+# window is scaled to its own minimum and maximum, so the graph shows the
+# shape of the last eighteen seconds rather than a flat line near the top.
+
+CANVAS 40 15
+DIM hist 36
+
+SET hcount 0
+GOSUB resetpeaks
+SET nextat 0
+
+:loop
+KEY k
+IF $k = $kesc GOTO leave
+IF $k = 113 GOTO leave
+IF $k = 114 GOSUB resetpeaks
+IF $k = 82 GOSUB resetpeaks
+EXPR remain $nextat - $millis
+IF $remain > 0 GOTO lp_wait
+EXPR nextat $millis + 500
+GOSUB sample
+GOSUB draw
+:lp_wait
+WAIT 20
+GOTO loop
+
+# ---------------------------------------------------------------- sampling
+
+:resetpeaks
+SET lowest $heap
+SET highest $heap
+RETURN
+
+:sample
+SET now $heap
+IF $now < $lowest GOSUB setlow
+IF $now > $highest GOSUB sethigh
+SET j 0
+:sm_shift
+EXPR j1 $j + 1
+SET hist[$j] $hist[$j1]
+ADD j 1
+IF $j < 35 GOTO sm_shift
+SET hist[35] $now
+ADD hcount 1
+IF $hcount <= 36 GOTO sm_done
+SET hcount 36
+:sm_done
+RETURN
+
+:setlow
+SET lowest $now
+RETURN
+
+:sethigh
+SET highest $now
+RETURN
+
+# ---------------------------------------------------------------- drawing
+
+:draw
+CLS
+COLOR pink
+PUT 0 0 "SYSMON"
+COLOR cyan
+PUT 8 0 "free"
+COLOR white
+EXPR kb floor($now / 1024)
+PUT 13 0 "$kb kB"
+COLOR cyan
+PUT 22 0 "min"
+COLOR white
+EXPR kb floor($lowest / 1024)
+PUT 26 0 $kb
+COLOR cyan
+PUT 31 0 "max"
+COLOR white
+EXPR kb floor($highest / 1024)
+PUT 35 0 $kb
+
+GOSUB graph
+
+COLOR blue
+PUT 0 8 "+----------------------------------+"
+COLOR white
+PUT 36 8 "18s"
+
+GOSUB battline
+GOSUB netline
+
+COLOR cyan
+PUT 0 12 "up"
+COLOR white
+PUT 5 12 $clock
+COLOR cyan
+PUT 0 13 "cwd"
+COLOR white
+PUT 5 13 "$cwd"
+
+COLOR yellow
+PUT 0 14 "r resets peaks          esc quits"
+FLIP
+RETURN
+
+# the window is scaled to its own extremes, with a floor of one so a heap
+# that never moves draws a flat line instead of dividing by zero
+:graph
+EXPR first 36 - $hcount
+SET lo $hist[35]
+SET hi $hist[35]
+SET c $first
+:gr_range
+IF $hist[$c] < $lo GOSUB grlo
+IF $hist[$c] > $hi GOSUB grhi
+ADD c 1
+IF $c < 36 GOTO gr_range
+EXPR span $hi - $lo
+IF $span > 0 GOTO gr_draw
+SET span 1
+:gr_draw
+SET c $first
+:gr_col
+EXPR h floor(($hist[$c] - $lo) * 6 / $span + 0.5)
+IF $h > 0 GOTO gr_bar
+SET h 1
+:gr_bar
+COLOR cyan
+IF $c = 35 GOSUB grnow
+SET lvl 1
+:gr_cell
+IF $lvl > $h GOTO gr_next
+EXPR gy 8 - $lvl
+PUT $c $gy "#"
+ADD lvl 1
+GOTO gr_cell
+:gr_next
+ADD c 1
+IF $c < 36 GOTO gr_col
+RETURN
+
+:grlo
+SET lo $hist[$c]
+RETURN
+:grhi
+SET hi $hist[$c]
+RETURN
+:grnow
+COLOR yellow
+RETURN
+
+:battline
+COLOR cyan
+PUT 0 9 "batt"
+COLOR white
+PUT 5 9 "$battery%"
+EXPR fill floor($battery / 10)
+SETSTR bar "["
+SET j 0
+:bl_cell
+IF $j >= $fill GOTO bl_dot
+APPEND bar "#"
+GOTO bl_next
+:bl_dot
+APPEND bar "."
+:bl_next
+ADD j 1
+IF $j < 10 GOTO bl_cell
+APPEND bar "]"
+COLOR green
+IF $battery < 50 GOSUB battwarn
+PUT 12 9 $bar
+RETURN
+
+:battwarn
+COLOR yellow
+IF $battery >= 20 GOTO bw_done
+COLOR red
+:bw_done
+RETURN
+
+:netline
+COLOR cyan
+PUT 0 10 "wifi"
+IF $wifi = 1 GOTO nl_up
+COLOR red
+PUT 5 10 "offline"
+RETURN
+:nl_up
+COLOR green
+PUT 5 10 "online"
+COLOR white
+PUT 13 10 "$ip"
+RETURN
+
+# ---------------------------------------------------------------- uptime
+
+# $seconds broken into hh:mm:ss, each field padded to two digits so the
+# clock does not change width as it counts
+:clockstr
+EXPR hh floor($seconds / 3600)
+EXPR mm floor($seconds / 60) % 60
+EXPR ss $seconds % 60
+SET pv $hh
+GOSUB pad2
+SETSTR clock $p2
+APPEND clock ":"
+SET pv $mm
+GOSUB pad2
+APPEND clock $p2
+APPEND clock ":"
+SET pv $ss
+GOSUB pad2
+APPEND clock $p2
+RETURN
+
+:pad2
+SETSTR p2 ""
+IF $pv >= 10 GOTO p2_digits
+SETSTR p2 "0"
+:p2_digits
+APPEND p2 $pv
+RETURN
+
+:leave
+ENDCANVAS
+GOSUB clockstr
+EXPR kb floor($heap / 1024)
+COLOR cyan
+PRINT "sysmon: $kb kB free, battery $battery%, up $clock"
+EXIT

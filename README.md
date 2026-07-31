@@ -124,6 +124,7 @@ Run `help` on the device for the live list.
 | `calc` | expression evaluator |
 | `cat` `cd` `cp` `del` `ls` `mkdir` `mv` `pwd` `rm` | filesystem |
 | `clear` | clear the screen |
+| `dapper` | search, install, update, remove, and verify `.dapp` packages |
 | `dice` | dice roller |
 | `edit` | text editor |
 | `free` | heap / PSRAM report |
@@ -144,11 +145,15 @@ Run `help` on the device for the live list.
 | `wifi` | scan / connect / save credentials |
 
 > TODO: expand the interesting ones with usage examples — `radio`, `gb`, `asuka`,
-> `ssh`, `slave`, `run`.
+> `ssh`, `slave`, `run`, `dapper`.
 
 ---
 
 ## Writing `.dapp` apps
+
+Install published apps with Dapper; see [docs/DAPPER.md](docs/DAPPER.md). The
+package and repository format is documented in
+[docs/DAPP-PACKAGES.md](docs/DAPP-PACKAGES.md).
 
 > TODO: a hello-world here, then point at the docs.
 

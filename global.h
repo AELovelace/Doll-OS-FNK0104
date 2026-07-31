@@ -12,6 +12,7 @@
 
 #include <WiFi.h>
 #include <TFT_eSPI.h>
+#include <ArduinoJson.h>
 //   Pulled in here (not just in Radio.ino) so the ESP32-audioI2S `Audio` class is
 //   declared before the Arduino sketch builder's auto-generated function
 //   prototypes. radioAudioInfo(Audio::msg_t) (Radio.ino) gets a synthetic
@@ -21,6 +22,25 @@
 //   from DS.ino, so declaring it here fixes the ordering -- the same reason every
 //   other cross-file type lives in this file.
 #include "Audio.h"
+
+//   Optional rear RGB LED for app/runtime effects. Defaults to the board variant's
+//   RGB_BUILTIN when available; set REAR_RGB_LED_PIN in config.h to override, or -1
+//   to disable LED control entirely.
+#ifndef REAR_RGB_LED_PIN
+    #ifdef RGB_BUILTIN
+        #define REAR_RGB_LED_PIN RGB_BUILTIN
+    #else
+        #define REAR_RGB_LED_PIN -1
+    #endif
+#endif
+
+//   Shared rear-LED API for native modules (.ino/.cpp) and AppRunner opcodes.
+//   These are safe to call on builds without LED support: availability is queryable,
+//   and setters become no-ops when unavailable.
+bool rearLedAvailable();
+void rearLedSetRgb(uint8_t red, uint8_t green, uint8_t blue);
+void rearLedSetRgbLong(long red, long green, long blue);
+void rearLedOff();
 
 //   Display panel geometry, keyed off the same FNK0104* board-variant macro
 //   config.h already defines for SD_MMC/battery pins. Native panel resolution is
@@ -138,6 +158,29 @@ struct RoutedPath {
     bool isSd;
 };
 
+//Dapper.ino: package/catalog types used by auto-generated prototypes. These must
+//be visible here for the same Arduino prototype-hoisting reason as DappProgram.
+struct DapperRecord {
+    int packageFormat = 0;
+    String id;
+    String name;
+    String summary;
+    String version;
+    String runtimeMin;
+    String runtimeMaxExclusive;
+    String sha256;
+    String url;
+    size_t size = 0;
+    bool compatible = false;
+    String incompatibility;
+};
+
+struct DapperInstalled {
+    DapperRecord record;
+    String repository;
+    String installedPath;
+};
+
 //AppRunner.ino: these live here instead of inside AppRunner.ino because the Arduino
 //builder hoists prototypes for static functions above the tab's own type definitions.
 struct DappLine {
@@ -217,10 +260,15 @@ struct DappKeyState {
 };
 
 //shared helpers used across app/file command tabs
+#define DOLL_BOARD_ID "fnk0104"
+#define DAPP_RUNTIME_VERSION "1.2.0"
+#define DAPP_PACKAGE_FORMAT 1
+
 int splitCommand(const String& input, String parts[], int maxParts);
 String resolvePath(const String& cwd, const String& inputPath);
 RoutedPath routePath(const String& resolvedPath);
 void handleAppsCommand(const String parts[], int partCount);
+void handleDapperCommand(const String parts[], int partCount);
 void handleRunCommand(const String parts[], int partCount);
 void handleAsukaCommand(const String parts[], int partCount);
 void ftpService();

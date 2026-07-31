@@ -162,6 +162,7 @@ export const commandGroups = [
     commands: [
       ["DIM name size", "Create a zero-filled numeric array."],
       ["KEY name", "Read one key code now, or 0. Arrow constants include $kleft and $kup."],
+      ["LED r g b", "Set rear LED color channels (0..255). Check $ledok before using on-device."],
       ["CANVAS cols rows", "Open a fixed character grid, up to 120 x 60."],
       ["PUT x y text", "Place colored text in the canvas buffer."],
       ["FLIP / ENDCANVAS", "Show the buffered frame or return to terminal output."]

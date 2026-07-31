@@ -224,10 +224,11 @@ static bool appOpenByName(const String& target, File& outFile, String& resolvedO
     const String candidates[] = {
         "/sd/apps/" + name,
         "/apps/" + name,
+        "/system/apps/" + name,
         target,
     };
 
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < 4; i++) {
         if (appOpenCandidate(candidates[i], outFile, resolvedOut)) {
             return true;
         }
@@ -289,13 +290,14 @@ static void listAppsInDir(fs::FS& fs, const String& realPath, const String& labe
 
 void handleAppsCommand(const String parts[], int partCount) {
     ensureAppDirectories();
-    outLine("Apps live in /sd/apps for FTP uploads, or /apps on flash.", C_CYAN);
+    outLine("Apps: SD overrides, Dapper/user apps, then firmware fallbacks.", C_CYAN);
     if (sdCardMounted) {
         listAppsInDir(SD_MMC, "/apps", "/sd/apps");
     } else {
         outLine("/sd/apps: SD not mounted", C_YELLOW);
     }
     listAppsInDir(LittleFS, "/apps", "/apps");
+    listAppsInDir(LittleFS, "/system/apps", "/system/apps");
 }
 
 static int appFindLabel(const DappLabel labels[], int labelCount, String name) {
@@ -522,6 +524,7 @@ static long appBuiltinValue(String name) {
     if (name == "wifi") return wifiIsConnected() == 1 ? 1 : 0;
     if (name == "fok") return dappFok;
     if (name == "feof") return dappFeof;
+    if (name == "ledok") return rearLedAvailable() ? 1 : 0;
 
     //KEY's vocabulary, so scripts compare against a name instead of a magic number.
     //Numeric only -- these are not defined for string expansion (PRINT "$kup" is empty),
@@ -595,6 +598,7 @@ static String appStringValueOf(String token, DappProgram& program) {
     if (lowered == "wifi") return wifiIsConnected() == 1 ? "1" : "0";
     if (lowered == "fok") return String(dappFok);
     if (lowered == "feof") return String(dappFeof);
+    if (lowered == "ledok") return rearLedAvailable() ? "1" : "0";
     return "";
 }
 
@@ -1183,6 +1187,20 @@ static bool appExecute(DappProgram& program) {
             outLine(appExpandText(arg, program), color);
         } else if (op == "COLOR") {
             color = appColorByName(arg);
+        } else if (op == "LED") {
+            String parts[3];
+            int count = splitCommand(arg, parts, 3);
+            if (count < 3) {
+                outLine("run: LED needs <red> <green> <blue>", C_RED);
+                return false;
+            }
+            if (!rearLedAvailable()) {
+                outLine("run: LED unavailable on this build (set REAR_RGB_LED_PIN)", C_RED);
+                return false;
+            }
+            rearLedSetRgbLong(appValueOf(parts[0], program),
+                              appValueOf(parts[1], program),
+                              appValueOf(parts[2], program));
         } else if (op == "CLEAR" || op == "CLS") {
             //while a canvas is up this means "blank the grid", not "wipe the scrollback the
             //canvas is drawn over" -- the latter would be visible only after ENDCANVAS

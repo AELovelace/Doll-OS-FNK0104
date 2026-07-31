@@ -77,6 +77,15 @@
       "syntax_features": [
         "conditional-gosub"
       ]
+    },
+    "1.2.0": {
+      "extends": "1.1.0",
+      "opcodes": [
+        "LED"
+      ],
+      "builtins": [
+        "ledok"
+      ]
     }
   },
   "boards": {
@@ -97,7 +106,7 @@
       }
     },
     "fnk0104": {
-      "runtime": "1.1.0",
+      "runtime": "1.2.0",
       "limits": {
         "lines": 4000,
         "labels": 256,

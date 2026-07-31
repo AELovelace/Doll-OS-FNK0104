@@ -703,6 +703,7 @@ static const char* const EDIT_DAPP_KEYWORDS[] = {
     "PRINT", "ECHO", "COLOR", "CLEAR", "CLS", "WAIT", "SLEEP",
     "SET", "ADD", "SUB", "MUL", "DIV", "MOD", "EXPR", "RAND",
     "DIM", "SETSTR", "APPEND", "CHR", "SUBSTR", "LEN", "CHARAT", "INPUT", "KEY",
+    "LED",
     "CANVAS", "ENDCANVAS", "PUT", "FLIP",
     "FOPEN", "FCLOSE", "FREAD", "FWRITE", "FEXISTS", "FDELETE",
     "LABEL", "GOTO", "GOSUB", "RETURN", "IF", "IFEQ", "IFNE", "EXIT", "END",

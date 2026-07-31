@@ -26,6 +26,13 @@ const KEY_CODES = {
   " ": 32
 };
 
+function clampByte(value) {
+  const n = Number(value) || 0;
+  if (n < 0) return 0;
+  if (n > 255) return 255;
+  return Math.trunc(n);
+}
+
 class DappRuntimeError extends Error {
   constructor(message, line = 0) {
     super(message);
@@ -451,6 +458,17 @@ export class DappRuntime {
       this.writeTarget(arg, this.keyQueue.shift() || 0);
       return;
     }
+    if (op === "LED") {
+      const parts = splitArgs(arg, 3);
+      if (parts.length < 3) throw this.error("LED needs <red> <green> <blue>");
+      this.led = {
+        red: clampByte(this.valueOf(parts[0])),
+        green: clampByte(this.valueOf(parts[1])),
+        blue: clampByte(this.valueOf(parts[2]))
+      };
+      this.io.led?.(this.led);
+      return;
+    }
     if (op === "CANVAS") {
       const parts = splitArgs(arg, 2);
       if (parts.length < 2) throw this.error("CANVAS needs <cols> <rows>");
@@ -600,6 +618,7 @@ export class DappRuntime {
       millis: elapsed,
       seconds: Math.floor(elapsed / 1000),
       wifi: 1,
+      ledok: 1,
       fok: this.fok,
       feof: this.feof,
       kup: 1,

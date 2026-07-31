@@ -1805,7 +1805,8 @@ Upload          flashes firmware only
 LittleFS/SPIFFS uploads the filesystem image
 
 So data/apps/<name>.dapp only lands on the device when you run a dedicated
-filesystem upload. Built-in firmware-seeded apps are written to /apps on boot.
+filesystem upload. Built-in firmware-seeded apps are written to /system/apps
+on boot; /sd/apps and /apps override a built-in app with the same name.
 
 Use:
 

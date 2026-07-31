@@ -16,7 +16,8 @@ LittleFS/SPIFFS uploads the filesystem image
 ```
 
 So `data/apps/<name>.dapp` only lands on the device when you run a dedicated
-filesystem upload. Built-in firmware-seeded apps are written to `/apps` on boot.
+filesystem upload. Built-in firmware-seeded apps are written to `/system/apps`
+on boot; `/sd/apps` and `/apps` override a built-in app with the same name.
 This firmware bundle also seeds a plain text copy of this guide to
 `/docs/dapp.txt` on LittleFS.
 
@@ -82,6 +83,7 @@ LEN <name> <text>   character count into a numeric variable
 CHARAT <n> <txt> <i> character code at index i, or 0 past the end
 INPUT <name> [p]    read a line into a string variable (blocks until Enter)
 KEY <name>          read one keypress into a numeric variable, 0 if none
+LED <r> <g> <b>     set the rear RGB LED (0..255 per channel)
 FOPEN <path> <mode> open a file: read, write (truncate), or append
 FCLOSE              close it (automatic when the app ends)
 FREAD <name>        read one line into a string variable; $feof goes 1 at end
@@ -188,6 +190,11 @@ chord that leaves every other DOLL-OS screen also leaves yours. Ctrl+X is never
 delivered to the script: it aborts the running app, from `KEY`, `WAIT`, or a
 blocked `INPUT` alike.
 
+`LED` sets the rear RGB LED. Channel values are clamped into `0..255`, so
+negative values become `0` and values above `255` become `255`. Check `$ledok`
+first when writing portable apps that may run on builds where rear LED control
+is disabled.
+
 `CANVAS` replaces the scrolling terminal with a grid you address by cell. `PUT`
 writes into the grid without drawing anything, and `FLIP` shows the result — so a
 frame is assembled off-screen and appears at once. On the panel the grid is
@@ -278,6 +285,7 @@ $ip
 $millis
 $seconds
 $wifi
+$ledok
 ```
 
 Numeric only (see Keys and games): `$kup`, `$kdown`, `$kleft`, `$kright`,

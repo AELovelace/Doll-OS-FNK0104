@@ -62,6 +62,7 @@ Declared once, used everywhere. The ones you'll actually touch:
 | `usbModeDisplayActive` / `dappCanvasActive` | `bool` | swap the panel's terminal area for the USB banner / a `.dapp` canvas grid |
 | `C_RESET`, `C_WHITE`, `C_RED`, `C_GREEN`, `C_YELLOW`, `C_BLUE`, `C_MAGENTA`, `C_CYAN`, `C_PINK` | `const int` | ANSI SGR codes — the color vocabulary for `outLine()` |
 | `RADIO_VOLUME_MAX` | `const int` | 21; one notion of loudness for radio *and* the Game Boy APU |
+| `rearLedAvailable()`, `rearLedSetRgb()`, `rearLedSetRgbLong()`, `rearLedOff()` | functions | shared rear RGB LED control surface for native modules and AppRunner (`LED` opcode); no-op on builds where LED support is disabled |
 | `LineInputResult` / `LineEditState` | enum / struct | one line-editor call's result, and per-input-source escape/CR parse state |
 | `RoutedPath` | struct | `{ fs::FS* fs; String realPath; bool isSd; }` |
 | `AnsiFilterState`, `DisplayStreamState`, `DisplayEraseKind` | structs/enum | display-side filtering and incremental row building for raw byte streams |

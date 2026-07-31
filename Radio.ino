@@ -109,6 +109,31 @@ static void radioSetState(RadioState s) {
     portENTER_CRITICAL(&radioMux);
     radioState = s;
     portEXIT_CRITICAL(&radioMux);
+
+    //state-to-color mapping for the board's rear RGB LED. This is a shared API
+    //surface (Led.ino), so non-.dapp modules can use the same hardware path.
+    if (!rearLedAvailable()) {
+        return;
+    }
+    switch (s) {
+        case RADIO_CONNECTING:
+            rearLedSetRgb(0, 32, 128);
+            break;
+        case RADIO_PLAYING:
+            rearLedSetRgb(0, 160, 0);
+            break;
+        case RADIO_PAUSED:
+            rearLedSetRgb(160, 100, 0);
+            break;
+        case RADIO_ERROR:
+            rearLedSetRgb(180, 0, 0);
+            break;
+        case RADIO_OFF:
+        case RADIO_STOPPED:
+        default:
+            rearLedOff();
+            break;
+    }
 }
 
 //quick bus census so a codec failure says *why* on the serial log: prints every ACKing

@@ -116,7 +116,7 @@ test("current repository sources validate", async () => {
 test("FNK0104 compatibility contract matches AppRunner source", async () => {
   const compatibility = JSON.parse(await readFile(projectCompatibility, "utf8"));
   const source = await readFile(path.join(projectRoot, "AppRunner.ino"), "utf8");
-  assert.deepEqual(sourceOpcodes(source), resolvedRuntimeOpcodes(compatibility, "1.1.0"));
+  assert.deepEqual(sourceOpcodes(source), resolvedRuntimeOpcodes(compatibility, "1.2.0"));
   assertLimitsMatch(source, compatibility.boards.fnk0104.limits, {
     DAPP_MAX_LINES: "lines",
     DAPP_MAX_LABELS: "labels",

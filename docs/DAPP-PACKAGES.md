@@ -8,8 +8,8 @@ package metadata is a comment header at the beginning of that file, so packaged
 apps remain readable, editable, directly executable, and backward-compatible
 with AppRunner versions that predate the package manager.
 
-The on-device package manager and its state directory are called DPM, short for
-DOLL Package Manager.
+The on-device package manager is called **Dapper** and uses `/.dapper` for its
+private state.
 
 The first package format intentionally has no archives, native code, install
 scripts, or package dependencies. Those features would add memory, security,
@@ -23,7 +23,7 @@ Three versions are independent and must not be substituted for one another.
 | --- | --- | --- |
 | Package format | `1` | Syntax and required fields of the metadata header and repository records |
 | App version | `1.3.0` | Version of one app, assigned by its publisher |
-| AppRunner API | `1.1.0` | Language behavior, opcodes, built-ins, and runtime contract implemented by the firmware |
+| AppRunner API | `1.2.0` | Language behavior, opcodes, built-ins, and runtime contract implemented by the firmware |
 
 Firmware versions are deliberately not package compatibility versions. A
 firmware release may change Wi-Fi, display, or shell code without changing the
@@ -76,7 +76,7 @@ Each firmware exposes these compile-time values:
 #define DAPP_PACKAGE_FORMAT 1
 ```
 
-The shell command `apps runtime` prints all three values. Package selection uses
+The shell command `dapper runtime` prints all three values. Package selection uses
 the numeric version components; it must not compare version strings
 lexicographically.
 
@@ -85,11 +85,11 @@ The initial version assignments are:
 | Firmware family | Board ID | Initial AppRunner API |
 | --- | --- | --- |
 | M5Cardputer DOLL-OS | `m5cardputer` | `1.0.0` |
-| Freenove FNK0104 DOLL-OS | `fnk0104` | `1.1.0` |
+| Freenove FNK0104 DOLL-OS | `fnk0104` | `1.2.0` |
 
 These assignments describe the checked-in implementations summarized in
 section 4. The FNK0104 implementation contains the complete `1.0.0` command set
-plus the `1.1.0` extensions.
+plus the `1.1.0` and `1.2.0` extensions.
 
 ## 2. Board identity
 
@@ -190,9 +190,10 @@ information from source so it cannot quietly drift.
 | --- | --- |
 | `1.0.0` | `ADD`, `APPEND`, `CLEAR`, `CLS`, `COLOR`, `ECHO`, `END`, `EXIT`, `GOTO`, `IF`, `IFEQ`, `IFNE`, `INPUT`, `LABEL`, `PRINT`, `RAND`, `SET`, `SETSTR`, `SLEEP`, `WAIT` |
 | `1.1.0` | `CANVAS`, `CHARAT`, `CHR`, `DIM`, `DIV`, `ENDCANVAS`, `EXPR`, `FCLOSE`, `FDELETE`, `FEXISTS`, `FLIP`, `FOPEN`, `FREAD`, `FWRITE`, `GOSUB`, `KEY`, `LEN`, `MOD`, `MUL`, `PUT`, `RETURN`, `SUB`, `SUBSTR` |
+| `1.2.0` | `LED` |
 
 Aliases are included as opcodes because they are accepted directly by the
-interpreter. AppRunner 1.1.0 is a strict opcode superset of 1.0.0.
+interpreter. AppRunner 1.2.0 is a strict opcode superset of 1.1.0.
 
 AppRunner 1.1.0 also extends `IF`, `IFEQ`, and `IFNE` so their taken branch may
 use `GOSUB` as well as `GOTO`. A validator must check opcode syntax and not only
@@ -204,6 +205,7 @@ the first word of each line.
 | --- | --- | --- |
 | `1.0.0` | `$battery`, `$heap`, `$millis`, `$seconds`, `$wifi` | `$battery`, `$cwd`, `$heap`, `$ip`, `$millis`, `$seconds`, `$wifi` |
 | `1.1.0` additions | `$feof`, `$fok`, `$kup`, `$kdown`, `$kleft`, `$kright`, `$kenter`, `$kesc`, `$kback`, `$ktab`, `$kspace` | `$feof`, `$fok` |
+| `1.2.0` additions | `$ledok` | `$ledok` |
 
 The named key values are numeric-only and deliberately expand to empty text when
 printed as strings.
@@ -277,11 +279,8 @@ ambiguous.
 URLs are resolved relative to `repo.json`. Redirects to a different origin are
 rejected in format 1.
 
-Configured repositories have an explicit priority order. An unqualified install
-uses the first repository containing a compatible app ID and reports when a
-lower-priority repository also contains that ID. `apps install <repo-id>:<id>`
-selects an origin explicitly. Once installed, an app remains pinned to its origin
-repository for updates; another repository cannot silently replace it.
+Package format 1 uses the single canonical Sad Girls Club repository. Additional
+repository configuration and priority rules are reserved for a later client.
 
 ### 5.1 Publishing rules
 
@@ -321,7 +320,7 @@ apps: tetris requires AppRunner >=1.1.0; installed runtime is 1.0.0
 apps: package format 2 is newer than this client supports
 ```
 
-`apps install tetris@1.2.0` selects an exact release. `apps install tetris`
+`dapper install tetris@1.2.0` selects an exact release. `dapper install tetris`
 selects the newest compatible stable release, not merely the repository's newest
 release for any board.
 
@@ -331,24 +330,20 @@ Managed packages install to internal LittleFS by default:
 
 ```text
 /apps/<id>.dapp
-/.dpm/installed.ndjson
-/.dpm/repos.ndjson
-/.dpm/cache/catalog-v1.ndjson
-/.dpm/tmp/<id>.part
-/.dpm/backup/<id>.dapp
-/sd/.dpm/tmp/<id>.part
-/sd/.dpm/backup/<id>.dapp
+/.dapper/installed.ndjson
+/.dapper/catalog-v1.ndjson
+/.dapper/catalog.part
+/.dapper/package.part
+/.dapper/package.bak
 ```
 
-`apps install <id> --sd` installs to `/sd/apps/<id>.dapp` and records that path.
-The package database always lives on internal flash so removing the SD card does
-not erase package ownership information. Download and backup files live on the
-same filesystem as their final app, because a rename across LittleFS and SD is
-not atomic.
+Dapper installs managed packages to `/apps/<id>.dapp` on internal flash. SD-card
+installation is reserved for a later client because a transaction cannot rename
+atomically across LittleFS and SD.
 
 The installed record contains at least repository ID, app ID, app version,
 board ID, AppRunner constraint, installed path, size, and SHA-256. Package
-manager commands modify only files they own. `apps remove` removes the `.dapp`
+manager commands modify only files they own. `dapper remove` removes the `.dapp`
 but preserves save files such as `tetris.hs`; a future explicit `--purge` may
 remove data declared by a later package format.
 
@@ -356,7 +351,7 @@ Manually copied `.dapp` files remain runnable and appear in `apps`, but are
 reported as `unmanaged`. Update and remove operations require an installed
 record unless the user deletes the file with the normal filesystem commands.
 Installation refuses to overwrite an unmanaged file unless the user supplies an
-explicit `--force` and confirms that DPM will take ownership of that path.
+explicit `--force`; Dapper then takes ownership of that path.
 
 ### 7.1 Firmware-bundled apps
 
@@ -383,7 +378,7 @@ An installation is successful only after all of these steps complete:
 
 1. establish a usable clock when needed and connect over HTTPS with normal CA
    certificate validation;
-2. stream the artifact into the target filesystem's `.dpm/tmp` directory while
+2. stream the artifact into `/.dapper/package.part` while
    calculating SHA-256;
 3. reject an oversized response before it can exhaust the filesystem;
 4. verify byte count and SHA-256 against the catalog;
@@ -407,24 +402,21 @@ an untrusted catalog trustworthy by itself.
 The existing `apps` and `run` commands remain the public interface:
 
 ```text
-apps                         list all runnable apps and their origin
-apps runtime                 show board, AppRunner, and package-format versions
-apps search [text]           search compatible stable repository releases
-apps info <id>               show installed and available compatible versions
-apps install <id>[@version]  install to internal flash
-apps install <repo>:<id>     install explicitly from one repository
-apps install <id> --sd       install to the mounted SD card
-apps update [id|--all]       update managed packages only
-apps remove <id>             remove a managed package but keep app data
-apps doctor                  verify installed files and compatibility
-apps repo list               list configured repositories
-apps repo add <url>          add and validate a repository
-apps repo remove <id>        remove repository configuration, not installed apps
-run <id>                     run using the normal lookup order
+apps                              list all runnable apps and their origin
+dapper runtime                    show board, AppRunner, and package-format versions
+dapper refresh                    refresh and validate the cached catalog
+dapper search [text]              search compatible stable releases
+dapper info <id>                  show installed and available versions
+dapper install <id>[@version]     install to internal flash
+dapper install <id> --force       take ownership of an unmanaged app path
+dapper update [id|--all]          update managed packages only
+dapper remove <id>                remove a managed package but keep app data
+dapper doctor                     verify installed files and compatibility
+run <id>                          run using the normal lookup order
 ```
 
 Search results are filtered for the current board and runtime by default.
-`apps info` may show incompatible releases, but must say why they cannot be
+`dapper info` may show incompatible releases, but must say why they cannot be
 installed.
 
 ## 10. Implementation stages
@@ -442,7 +434,7 @@ installed.
 - Synchronize time before certificate validation when the device clock is not
   already usable.
 - Stream `catalog-v1.ndjson` one record at a time.
-- Implement `apps runtime`, `apps search`, and `apps info` without filesystem
+- Implement `dapper runtime`, `dapper search`, and `dapper info` without filesystem
   mutation.
 
 ### Stage 3: Transactional package operations
@@ -450,7 +442,7 @@ installed.
 - Implement install, exact-version install, update, remove, the installed
   database, SHA-256 checks, temporary files, and rollback.
 - Preserve manually copied apps as unmanaged files.
-- Add `apps doctor`.
+- Add `dapper doctor`.
 
 ### Stage 4: Bundled-app overlay and publishing
 

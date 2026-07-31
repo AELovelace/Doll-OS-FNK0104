@@ -92,8 +92,8 @@ struct CommandEntry {
 };
 
 void helpCommandHandler(const String parts[], int partCount) {
-    outLine("Commands: apps, asuka, battery, calc, cat, cd, clear, cp, del, dice, edit,");
-    outLine("          ftp, gb, help, ip, ls, mkdir, motoko, mv, ping, pwd, radio,");
+    outLine("Commands: apps, asuka, battery, calc, cat, cd, clear, cp, dapper, del,");
+    outLine("          dice, edit, ftp, gb, help, ip, ls, mkdir, motoko, mv, ping, pwd, radio,");
     outLine("          reboot, rm, run, slave, ssh, status, telnet, uptime, usb, wifi");
 }
 
@@ -142,6 +142,7 @@ static const CommandEntry commandTable[] = {
     { "cat",    handleCatCommand },
     { "cd",     handleCdCommand },
     { "cp",     handleCpCommand },
+    { "dapper", handleDapperCommand },
     { "del",    handleDelCommand },
     { "dice",   handleDiceCommand },
     { "edit",   handleEditCommand },
