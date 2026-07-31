@@ -1,3 +1,10 @@
+# @dapp-format 1
+# @id snake
+# @name Snake
+# @version 1.0.0
+# @boards fnk0104
+# @runtime >=1.1.0 <2.0.0
+# @summary The classic snake game for the DOLL-OS canvas
 # /apps/snake.dapp
 # Snake for the DOLL-OS shell. Arrows or WASD to turn, space pauses,
 # escape quits. Space or enter on the game over screen plays again.

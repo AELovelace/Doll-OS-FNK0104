@@ -1,3 +1,10 @@
+# @dapp-format 1
+# @id tetris
+# @name Tetris
+# @version 1.0.0
+# @boards fnk0104
+# @runtime >=1.1.0 <2.0.0
+# @summary A falling-block puzzle game for the DOLL-OS canvas
 # /apps/tetris.dapp
 # Tetris for the DOLL-OS shell. Arrows or WASD to move, up/W to rotate,
 # space to hard drop, escape to quit.

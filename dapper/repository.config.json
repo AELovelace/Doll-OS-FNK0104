@@ -1,0 +1,11 @@
+{
+  "repository_format": 1,
+  "id": "sadgirlsclub",
+  "name": "Sad Girls Club DAPP Repository",
+  "canonical_url": "https://sadgirlsclub.wtf/dapper/",
+  "catalog": "catalog-v1.ndjson",
+  "compatibility": "compatibility-v1.json",
+  "package_roots": [
+    "../apps"
+  ]
+}

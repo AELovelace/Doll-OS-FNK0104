@@ -1,3 +1,10 @@
+# @dapp-format 1
+# @id adventure
+# @name The Cursed Grotto
+# @version 1.0.0
+# @boards fnk0104
+# @runtime >=1.0.0 <2.0.0
+# @summary A branching fantasy text adventure
 # /sd/apps/adventure.dapp
 # A Mini DOLL-OS Adventure Game - "The Cursed Grotto"
 # Run with: apps run adventure

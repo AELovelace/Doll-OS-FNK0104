@@ -1,7 +1,14 @@
 #pragma once
 
 // Generated from apps/adventure.dapp for firmware-side LittleFS seeding.
-static const char BUNDLED_APP_ADVENTURE[] = R"DOLLAPP(# /sd/apps/adventure.dapp
+static const char BUNDLED_APP_ADVENTURE[] = R"DOLLAPP(# @dapp-format 1
+# @id adventure
+# @name The Cursed Grotto
+# @version 1.0.0
+# @boards fnk0104
+# @runtime >=1.0.0 <2.0.0
+# @summary A branching fantasy text adventure
+# /sd/apps/adventure.dapp
 # A Mini DOLL-OS Adventure Game - "The Cursed Grotto"
 # Run with: apps run adventure
 
@@ -847,7 +854,14 @@ EXIT
 )DOLLAPP";
 
 // Generated from apps/tetris.dapp for firmware-side LittleFS seeding.
-static const char BUNDLED_APP_TETRIS[] = R"DOLLAPP(# /apps/tetris.dapp
+static const char BUNDLED_APP_TETRIS[] = R"DOLLAPP(# @dapp-format 1
+# @id tetris
+# @name Tetris
+# @version 1.0.0
+# @boards fnk0104
+# @runtime >=1.1.0 <2.0.0
+# @summary A falling-block puzzle game for the DOLL-OS canvas
+# /apps/tetris.dapp
 # Tetris for the DOLL-OS shell. Arrows or WASD to move, up/W to rotate,
 # space to hard drop, escape to quit.
 #
@@ -1371,7 +1385,14 @@ EXIT
 )DOLLAPP";
 
 // Generated from apps/snake.dapp for firmware-side LittleFS seeding.
-static const char BUNDLED_APP_SNAKE[] = R"DOLLAPP(# /apps/snake.dapp
+static const char BUNDLED_APP_SNAKE[] = R"DOLLAPP(# @dapp-format 1
+# @id snake
+# @name Snake
+# @version 1.0.0
+# @boards fnk0104
+# @runtime >=1.1.0 <2.0.0
+# @summary The classic snake game for the DOLL-OS canvas
+# /apps/snake.dapp
 # Snake for the DOLL-OS shell. Arrows or WASD to turn, space pauses,
 # escape quits. Space or enter on the game over screen plays again.
 #

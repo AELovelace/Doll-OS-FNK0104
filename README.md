@@ -1,0 +1,211 @@
+# DOLL-OS (Freenove ESP32-S3 fork)
+
+DOLL-OS is my attempt at making my dream OS for the ESP32. It features many useful
+commands and features you'd expect from a desktop operating system, while booting 
+in under 2 seconds. Paired with a router for tailscaling DOLL-OS becomes less of a 
+curio. With it's built-in ssh and telnet capabilities, it's a powerful remote management
+tool. Can you do everything you can do with DOLL-OS on a smartphone? Yes, but that's not
+why you're on the market for an operating system for a 15 dollar microcontroller, is it?
+
+DOLL-OS-FNK is a shell-style OS for the Freenove ESP32-S3 display board (FNK0104-series, sold as
+the "FNK1014B" kit). A fork of DOLL-OS that swaps the upstream M5Cardputer's
+sprite display + physical keyboard for a telnet session as the input path, with
+the board's TFT panel running as a live output mirror. A companion sketch
+(`DS-Slave`) bridges BLE keyboards and gamepads in over UART so the device is
+usable with no network.
+
+> TODO: screenshot / photo of the panel here.
+
+---
+
+## Features
+
+> TODO: trim this to the ones worth leading with, drop the rest into the command table.
+
+- **Shell** — command dispatch, history ring, path-aware prompt, mirrored across
+  telnet and the panel simultaneously
+- **Storage** — unified LittleFS + SD path namespace (`/` flash, `/sd` card),
+  `ls`/`cd`/`cp`/`mv`/`rm`/`cat`
+- **`.dapp` apps** — text executables with their own scripting language; see
+  [docs/DAPP.md](docs/DAPP.md) and the [browser playground](dapp-web/)
+- **Editor** — full-screen text editor (`edit`)
+- **Networking** — telnet server + client, SSH client, FTP server, ping/ARP
+  sweep, IP tools, MQTT (`motoko`)
+- **Radio** — MP3 stream playback over I²S (ES8311 codec)
+- **Game Boy emulator** — `gb`, gnuboy port, gamepad via DS-Slave
+- **ASUKA** — local LLM chat with tool calling (search / weather / URL fetch / time)
+- **BLE input bridge** — DS-Slave connects keyboard + gamepad at once and merges
+  them into one UART stream
+
+---
+
+## Hardware
+
+| | |
+|---|---|
+| Board | Freenove FNK0104-series ESP32-S3 display kit |
+| Panel | 2.8" 240×320 ILI9341 (default) — also 3.5" ST77922, 4.0" ST7796 |
+| Flash / PSRAM | 16MB flash, OPI PSRAM (required) |
+| Storage | SD_MMC card slot + LittleFS |
+| Audio | ES8311 codec over I²S |
+| Companion | second ESP32-S3 running `DS-Slave` (BLE HID → UART) |
+
+> TODO: wiring notes — DS ↔ DS-Slave (UART on GPIO17/18, command channel on
+> GPIO2), speaker, battery divider. A small diagram or table would help here.
+So far, supported hardware is limited to FNK0104A/B, though support for larger screens is coming. 
+
+Recommended build:
+https://store.freenove.com/products/fnk0104
+https://lonelybinary.com/en-us/products/esp32-s3-ipex?variant=43699253706909
+
+NOTE: THIS VERSION OF DOLL-OS REQUIRES A 16R8, AND IS NOT GUARANTEED TO WORK ON ANYTHING OTHER THAN
+AN S3
+---
+
+## Getting started
+
+### 1. Configure
+
+```powershell
+copy config.h.example config.h
+```
+
+Fill in Wi-Fi credentials, FTP password, and any API keys. `config.h` is
+gitignored so secrets stay local. Uncomment the `#define` matching your panel
+variant at the top.
+
+### 2. Build and flash
+
+Open the sketch in the Arduino IDE and select the **`esp32s3 Dev Module` profile** from the
+toolbar dropdown before Verify/Upload. That covers board, flash size, custom
+partition scheme, PSRAM, and USB mode in one selection, and keeps this fork's
+sketch-local `TFT_eSPI` from colliding with a global install.
+
+Headless:
+
+```powershell
+arduino-cli compile --profile esp32s3
+```
+
+> TODO: gotchas worth calling out here — sketchbook path, audio library version.
+> See the porting notes.
+
+### 3. Flash the filesystem
+
+Firmware upload and filesystem upload are separate. `.dapp` apps under `/apps`
+need a LittleFS/SPIFFS image upload — though the bundled apps are seeded to flash
+on first boot.
+
+> TODO: exact steps / tool used for the FS upload.
+
+### 4. Flash DS-Slave
+
+> TODO: build + flash steps for the companion sketch, then `PAIR` once per device.
+
+### 5. Connect
+
+```text
+telnet <device-ip> 23
+```
+
+The panel and BLE keyboard are a complete UI on their own — telnet is optional.
+
+---
+
+## Commands
+
+Run `help` on the device for the live list.
+
+| Command | Description |
+|---|---|
+| `apps` | list installed `.dapp` apps |
+| `asuka` | LLM chat |
+| `battery` | battery voltage / percent |
+| `calc` | expression evaluator |
+| `cat` `cd` `cp` `del` `ls` `mkdir` `mv` `pwd` `rm` | filesystem |
+| `clear` | clear the screen |
+| `dice` | dice roller |
+| `edit` | text editor |
+| `free` | heap / PSRAM report |
+| `ftp` | serve the SD card over FTP |
+| `gb` | Game Boy emulator |
+| `help` | command list |
+| `ip` `ping` | network tools |
+| `motoko` | MQTT client |
+| `radio` | stream MP3 audio |
+| `reboot` | restart |
+| `run` | run a `.dapp` app |
+| `slave` | talk to DS-Slave |
+| `ssh` | SSH client |
+| `status` | Wi-Fi status |
+| `telnet` | telnet client |
+| `uptime` | uptime |
+| `usb` | USB mass storage mode |
+| `wifi` | scan / connect / save credentials |
+
+> TODO: expand the interesting ones with usage examples — `radio`, `gb`, `asuka`,
+> `ssh`, `slave`, `run`.
+
+---
+
+## Writing `.dapp` apps
+
+> TODO: a hello-world here, then point at the docs.
+
+```text
+COLOR cyan
+PRINT "hello from a DOLL-OS app"
+INPUT name "name> "
+PRINT "hi, $name"
+EXIT
+```
+
+- [docs/DAPP.md](docs/DAPP.md) — language reference
+- [docs/DAPP-BOOK.md](docs/DAPP-BOOK.md) — the long-form guide
+- [dapp-web/](dapp-web/) — browser IDE + runtime, no build step
+
+---
+
+## Project layout
+
+> TODO: prune to what a newcomer actually needs to find.
+
+```text
+DS.ino               entry point, setup/loop
+CommandProcessor.ino tokenizing, history, dispatch table
+Display.ino          TFT panel mirror
+Storage.ino          LittleFS + SD unified namespace
+AppRunner.ino        .dapp interpreter
+Edit.ino             text editor
+Gameboy.ino          gnuboy port
+Radio.ino            audio streaming
+Asuka.ino            LLM chat        AsukaTools.ino  its tool calls
+SlaveLink.ino        outbound channel to DS-Slave
+KeyboardSerial.ino   inbound keystrokes from DS-Slave
+global.h  config.h   shared state / local secrets
+sketch.yaml          board profile + pinned libraries
+apps/                bundled .dapp sources
+docs/                language reference, porting notes
+tools/               book generator, bundled-app regen
+dapp-web/            browser playground
+```
+
+---
+
+## Known issues / roadmap
+
+> TODO. Starting points:
+> - Game Boy audio is still muted
+> - Wi-Fi autoconnect vs. radio contention
+> - FTP storage backend depends on a hand edit to the library's own header
+
+---
+
+## Credits
+
+> TODO: upstream DOLL-OS, gnuboy, TFT_eSPI (Freenove fork), tinyexpr,
+> ESP32-audioI2S, LibSSH-ESP32, SimpleFTPServer, NimBLE.
+
+## License
+
+> TODO.
