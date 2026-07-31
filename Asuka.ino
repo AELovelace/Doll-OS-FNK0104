@@ -1,5 +1,5 @@
 //   Asuka.ino
-//   Native DS command for local ASUKA text chat. This keeps ASUKA as firmware, not
+//   Native DOLL-OS command for local ASUKA text chat. This keeps ASUKA as firmware, not
 //   a .dapp: scripts can be interactive, but the LLM transport stays in C++ where
 //   sockets, streaming, and heap limits are easier to control.
 #include <LittleFS.h>

@@ -4,14 +4,14 @@
 //   as a full-screen takeover on this board's TFT panel, driven by the BLE
 //   keyboard through DS-Slave's gamepad mode.
 //
-//   This is the one place in DS that does NOT follow the telnet-mirror model:
+//   This is the one place in DOLL-OS that does NOT follow the telnet-mirror model:
 //   an emulator is a real-time framebuffer + low-latency input, so `gb <rom>`
 //   seizes loop() (it runs its own inner loop until the player quits), draws
 //   the 160x144 GB frame straight to `tft` instead of through the mirrored
 //   history sprite, and reads raw button events off the keyboard link instead
 //   of the line editor. On exit it hands control cleanly back to the shell.
 //
-//   Input: DS tells DS-Slave to enter gamepad mode ("GAME 1"). In that mode the
+//   Input: DOLL-OS tells DS-Slave to enter gamepad mode ("GAME 1"). In that mode the
 //   slave stops sending ASCII and instead sends 2-byte button events:
 //       0xF0 <bit>   button DOWN (bit = a GB_PAD_* bit, 0x01..0x80)
 //       0xF1 <bit>   button UP
@@ -141,7 +141,7 @@ static const uint8_t GB_EVT_MENU = 0x02;   // Escape
 // Drains every button event waiting on the keyboard link and folds it into the
 // live bitmap. Returns the one-shot events seen during this drain (a mask, not a
 // single event: a drain can span several reports and dropping one would lose a
-// keypress). Reused DS plumbing: keyboardReadRawByte() (KeyboardSerial.ino) hands
+// keypress). Reused DOLL-OS plumbing: keyboardReadRawByte() (KeyboardSerial.ino) hands
 // back one raw slave byte or -1.
 static uint8_t gbPumpInput(uint8_t& buttons) {
     static uint8_t phase = 0;   // 0 = idle, 1 = expect DOWN bit, 2 = expect UP bit
@@ -163,7 +163,7 @@ static uint8_t gbPumpInput(uint8_t& buttons) {
     return events;
 }
 
-// Turns a DS logical path (absolute or relative to cwd) into a stdio/VFS path
+// Turns a DOLL-OS logical path (absolute or relative to cwd) into a stdio/VFS path
 // gnuboy's fopen can open. SD is mounted at "/sdcard" (Storage.ino), LittleFS at
 // "/littlefs". Returns "" if the path routes to SD but no card is mounted.
 static String gbVfsPath(const String& arg) {
@@ -494,7 +494,7 @@ static bool gbPickRom(String& romLogical) {
 static void gbPrintUsage() {
     outLine("Usage: gb [rom.gb|.gbc] [1x|fit]", C_CYAN);
     outLine("  Bare 'gb' opens the /sd/gb ROM picker.", C_CYAN);
-    outLine("  ROM path is a normal DS path (e.g. /sd/roms/zelda.gb).", C_CYAN);
+    outLine("  ROM path is a normal DOLL-OS path (e.g. /sd/roms/zelda.gb).", C_CYAN);
     outLine("  fit (default) fills the panel but costs ~38ms of SPI per push,", C_CYAN);
     outLine("  so most frames go undrawn; 1x is small but near-smooth.", C_CYAN);
     outLine("  Controls (BLE keyboard via slave): WASD/arrows=D-pad, N=A,", C_CYAN);

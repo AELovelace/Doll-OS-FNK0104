@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#ff0f7f">
+  <meta name="description" content="The complete guide to writing DOLL-OS .dapp programs.">
+  <title>The .dapp Book // dapp.exe</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="book.css">
+</head>
+<body class="book-page">
+  <div class="noise" aria-hidden="true"></div>
+  <header class="masthead">
+    <a class="wordmark" href="index.html" aria-label="Return to the dapp.exe IDE">
+      <span class="sad-face">:(</span>
+      <span>dapp.exe</span>
+    </a>
+    <p class="marquee"><span>READ THE MANUAL // TYPE THE EXAMPLES // BREAK SOMETHING SMALL //</span></p>
+    <div class="header-links">
+      <a href="index.html">OPEN IDE</a>
+      <a href="#book-top">TOP</a>
+    </div>
+  </header>
+
+  <button class="toc-toggle" id="toc-toggle" type="button" aria-expanded="false" aria-controls="book-toc">CHAPTERS</button>
+
+  <div class="book-shell" id="book-top">
+    <aside class="book-toc" id="book-toc">
+      <div class="toc-head">
+        <span>CONTENTS.DAPP</span>
+        <button id="toc-close" type="button" aria-label="Close chapter navigation">X</button>
+      </div>
+      <nav aria-label="Book chapters">
+        {{BOOK_TOC}}
+      </nav>
+      <a class="toc-ide-link" href="index.html">&gt; OPEN THE IDE</a>
+    </aside>
+
+    <main class="book-main">
+      <header class="book-hero">
+        <p class="eyebrow">DOLL-OS FIELD MANUAL / REVISION 1</p>
+        <h1>The<br><em>.dapp Book</em></h1>
+        <p>Learning to program the DOLL-OS shell, one tiny executable at a time.</p>
+        <div class="book-hero-actions">
+          <a href="#chapter-0-getting-set-up">START READING</a>
+          <a href="index.html">PRACTICE IN THE IDE</a>
+        </div>
+      </header>
+
+      <article class="book-content">
+        {{BOOK_CONTENT}}
+      </article>
+
+      <footer class="book-end">
+        <span>END OF FILE</span>
+        <a href="#book-top">BACK TO TOP</a>
+        <a href="index.html">OPEN IDE</a>
+      </footer>
+    </main>
+  </div>
+
+  <div class="toc-scrim" id="toc-scrim" hidden></div>
+  <script type="module" src="book.js"></script>
+</body>
+</html>

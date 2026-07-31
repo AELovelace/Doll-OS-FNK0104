@@ -1,6 +1,6 @@
 //   WiFiManager.ino
 //   Wi-Fi connectivity: DOLL-OS's wifi.ino command subsystem (scan/connect/save/
-//   status) driving a plain STA connection. DS originally also ran an always-on
+//   status) driving a plain STA connection. DOLL-OS originally also ran an always-on
 //   softAP here as a fallback telnet path, but AP+STA on the S3's single radio
 //   cost too much streaming throughput (Radio.ino audio starved once its buffer
 //   drained) and the AP went unused -- the panel + BLE keyboard already cover
@@ -23,7 +23,7 @@ bool connectToInternet() {
     //spin on association *forever* in the background, and that permanently-busy radio
     //blocks everything else: esp_wifi_scan_start() and esp_wifi_set_config() both fail
     //immediately while the STA is mid-connect, so "wifi scan" fails instantly and
-    //"wifi connect" hits "cannot set config". DS drives its own reconnection instead
+    //"wifi connect" hits "cannot set config". DOLL-OS drives its own reconnection instead
     //(maintainInternetConnection, a bounded 10s tick), which keeps the radio idle
     //between attempts so scans/manual connects can get in. Only needs setting once,
     //but it's cheap and idempotent here.

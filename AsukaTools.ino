@@ -201,7 +201,7 @@ static bool asukaFetchUrlContent(String requestedUrl, int requestedMaxChars, Str
 
     http.addHeader("Accept", "text/plain, text/html, application/json, application/xml;q=0.9, text/xml;q=0.9");
     http.addHeader("Accept-Encoding", "identity");
-    http.addHeader("User-Agent", "ASUKA-DS/1.0");
+    http.addHeader("User-Agent", "ASUKA-DOLL-OS/1.0");
 
     int httpCode = http.GET();
     if (httpCode <= 0) {
@@ -385,7 +385,7 @@ static bool asukaOpenWeatherCurrent(String requestedUnits, String& toolResult) {
     http.setTimeout(15000);
     http.addHeader("Accept", "application/json");
     http.addHeader("Accept-Encoding", "identity");
-    http.addHeader("User-Agent", "ASUKA-DS/1.0");
+    http.addHeader("User-Agent", "ASUKA-DOLL-OS/1.0");
 
     int httpCode = http.GET();
     String body = http.getString();

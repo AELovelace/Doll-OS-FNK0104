@@ -1,6 +1,6 @@
 //   TelnetClient.ino
-//   plain TCP telnet client for the "telnet" command -- DS's own outbound telnet
-//   client, distinct from TelnetServer.ino (which is DS *being* a telnet server for
+//   plain TCP telnet client for the "telnet" command -- DOLL-OS's own outbound telnet
+//   client, distinct from TelnetServer.ino (which is DOLL-OS *being* a telnet server for
 //   the user). No encryption, just a raw socket wired into the RemoteSession
 //   framework, plus just enough IAC option negotiation (RFC 854/855) that
 //   well-behaved remote servers stop spamming control bytes into the stream.
@@ -9,7 +9,7 @@
 //   its own ANSI/color escape codes) is written straight through to telnetClient --
 //   the user's own telnet client is a real terminal and renders it natively. This
 //   file's IAC handling is the mirror image of what TelnetServer.ino does for
-//   incoming connections: there DS is the well-behaved server; here it's the
+//   incoming connections: there DOLL-OS is the well-behaved server; here it's the
 //   well-behaved client dialing out.
 //
 //   The board's TFT panel mirrors this session too (Display.ino) but can't render

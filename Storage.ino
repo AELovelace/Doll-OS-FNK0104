@@ -34,7 +34,7 @@ static void setTaskWdtTimeout(uint32_t timeoutMs) {
 void initStorage() {
     //begin(true) asks esp_littlefs to auto-format when the mount fails, which covers a
     //blank first-boot partition. But a partition left half-written -- the "Corrupted
-    //dir pair at {0x0, 0x1}" state -- isn't reliably recovered by that path, and DS
+    //dir pair at {0x0, 0x1}" state -- isn't reliably recovered by that path, and DOLL-OS
     //then boots with settings storage dead (no saved wifi.cfg -> falls back to the
     //config.h default SSID and can never reconnect). So on failure, force an explicit
     //format + clean remount; settings reset to defaults but storage lives again.

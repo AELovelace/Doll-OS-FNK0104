@@ -15,16 +15,16 @@
 //     need to *send* a handful of short control lines the other way, and infrequently.
 //     So rather than share the UART peripheral's TX, we drive the outbound wire in
 //     software on GPIO2 -- the exact pin KeyboardSerial.ino already documents as
-//     "DS TX = GPIO2 -> DS-Slave RX = GPIO18". KeyboardSerial is now started RX-only
+//     "DOLL-OS TX = GPIO2 -> DS-Slave RX = GPIO18". KeyboardSerial is now started RX-only
 //     so nothing else touches GPIO2 (see initKeyboardSerial()). (The link originally
 //     used GPIO15/16, vacated because they are the codec/touch I2C bus -- see
 //     KeyboardSerial.ino's wiring note.)
 //
 //   The link is deliberately one-way. DS-Slave prints every command's reply to its
-//   own USB serial console (Serial.print, never back onto its UART1 TX), so DS cannot
+//   own USB serial console (Serial.print, never back onto its UART1 TX), so DOLL-OS cannot
 //   read STATUS/HELP/etc. output back over this wire -- GPIO15 -> GPIO18 carries
 //   commands out and nothing returns on it. The keystroke stream on the *other* wire
-//   (Slave GPIO17 -> DS GPIO16) is unrelated and keeps flowing. handleSlaveCommand()
+//   (Slave GPIO17 -> DOLL-OS GPIO16) is unrelated and keeps flowing. handleSlaveCommand()
 //   says as much so a user isn't left waiting for a reply that only lands on the
 //   slave's console.
 
@@ -121,12 +121,12 @@ void slaveLinkSendLine(const String& line) {
     slaveLinkWriteByte('\n');
 }
 
-//   Shell command: "slave <subcommand> [args]" -- one DS-side verb that reaches every
+//   Shell command: "slave <subcommand> [args]" -- one DOLL-OS-side verb that reaches every
 //   DS-Slave command over the bit-banged wire. Subcommand names mirror DS-Slave's own
 //   (case-insensitive here; forwarded upper-cased where the slave expects it). "raw"
 //   is an escape hatch that forwards the rest of the line verbatim.
 static void slaveLinkUsage() {
-    outLine("slave <subcommand> -- drive the DS-Slave BLE-keyboard bridge", C_CYAN);
+    outLine("slave <subcommand> -- drive the DOLL-OS BLE-keyboard bridge", C_CYAN);
     outLine("  slave status              request STATUS");
     outLine("  slave keyboards|paired    list saved keyboards");
     outLine("  slave pair                pair one more device (existing ones stay)");
@@ -141,7 +141,7 @@ static void slaveLinkUsage() {
     outLine("  slave out <hex bytes>     send a raw HID output report");
     outLine("  slave help                ask the slave to print its help");
     outLine("  slave raw <text...>       forward a line verbatim");
-    outLine("Link is send-only: replies print on DS-Slave's USB console, not here.", C_YELLOW);
+    outLine("Link is send-only: replies print on the keyboard bridge's USB console, not here.", C_YELLOW);
 }
 
 //joins parts[from..partCount) back into a space-separated string (undoing the tokenizer)
@@ -227,5 +227,5 @@ void handleSlaveCommand(const String parts[], int partCount) {
     }
 
     slaveLinkSendLine(line);
-    outLine("-> DS-Slave: " + line, C_GREEN);
+    outLine("-> DOLL-OS keyboard bridge: " + line, C_GREEN);
 }

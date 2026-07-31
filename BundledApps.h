@@ -1,14 +1,14 @@
 #pragma once
 
 // Generated from apps/adventure.dapp for firmware-side LittleFS seeding.
-static const char BUNDLED_APP_ADVENTURE[] = R"DSAPP(# /sd/apps/adventure.dapp
-# A Mini DS Adventure Game - "The Cursed Grotto"
+static const char BUNDLED_APP_ADVENTURE[] = R"DOLLAPP(# /sd/apps/adventure.dapp
+# A Mini DOLL-OS Adventure Game - "The Cursed Grotto"
 # Run with: apps run adventure
 
 COLOR cyan
 PRINT "=================================="
 PRINT "   THE CURSED GROTTO"
-PRINT "   A Mini DS Adventure"
+PRINT "   A Mini DOLL-OS Adventure"
 PRINT "=================================="
 WAIT 500
 CLEAR
@@ -844,11 +844,11 @@ PRINT "Run 'apps run adventure'"
 PRINT "to try again!"
 WAIT 750
 EXIT
-)DSAPP";
+)DOLLAPP";
 
 // Generated from apps/tetris.dapp for firmware-side LittleFS seeding.
-static const char BUNDLED_APP_TETRIS[] = R"DSAPP(# /apps/tetris.dapp
-# Tetris for the DS shell. Arrows or WASD to move, up/W to rotate,
+static const char BUNDLED_APP_TETRIS[] = R"DOLLAPP(# /apps/tetris.dapp
+# Tetris for the DOLL-OS shell. Arrows or WASD to move, up/W to rotate,
 # space to hard drop, escape to quit.
 #
 # This is the app the .dapp language grew CANVAS/KEY/DIM/EXPR/GOSUB for --
@@ -1368,12 +1368,411 @@ ENDCANVAS
 COLOR pink
 PRINT "tetris: $lines lines, level $level, score $score (best $hiscore)"
 EXIT
-)DSAPP";
+)DOLLAPP";
+
+// Generated from apps/snake.dapp for firmware-side LittleFS seeding.
+static const char BUNDLED_APP_SNAKE[] = R"DOLLAPP(# /apps/snake.dapp
+# Snake for the DOLL-OS shell. Arrows or WASD to turn, space pauses,
+# escape quits. Space or enter on the game over screen plays again.
+#
+# The snake lives in two places at once: a ring buffer of body cells
+# (snx/sny, oldest at $tl, head at $hd) so the tail can be dropped in
+# constant time, and an occupancy grid (occ, 0 empty / 1 snake / 2 food)
+# so collision and food placement are single lookups instead of a walk
+# down the body. Movement is paced off $millis, never off WAIT.
+
+CANVAS 40 22
+COLOR green
+PUT 14 9 "SNAKE"
+COLOR white
+PUT 8 11 "arrows or wasd to turn"
+PUT 8 12 "space pauses - esc quits"
+FLIP
+WAIT 1200
+
+# board is 14 x 20 cells, drawn two characters wide so a cell looks square
+DIM occ 280
+DIM snx 280
+DIM sny 280
+
+# best score so far, persisted in /apps/snake.hs across runs
+GOSUB loadhs
+
+:newgame
+SET score 0
+SET stepms 150
+SET quit 0
+SET paused 0
+SET dead 0
+SET won 0
+SET newhi 0
+GOSUB reset
+GOSUB placefood
+EXPR moveat $millis + $stepms
+GOSUB draw
+
+# space both restarts and pauses, so the keypress that started this round has
+# to be eaten here or the new game opens paused
+:ng_drain
+KEY k
+IF $k <> 0 GOTO ng_drain
+
+# ---------------------------------------------------------------- main loop
+
+:loop
+KEY k
+IF $k <> 0 GOSUB handlekey
+IF $quit = 1 GOTO leave
+IF $paused = 1 GOTO lp_wait
+EXPR remain $moveat - $millis
+IF $remain > 0 GOTO lp_wait
+GOSUB step
+IF $dead = 1 GOTO gameover
+IF $won = 1 GOTO youwin
+EXPR moveat $millis + $stepms
+GOSUB draw
+:lp_wait
+WAIT 12
+GOTO loop
+
+# ---------------------------------------------------------------- setup
+
+# three cells long, pointed right, sitting a little left of centre
+:reset
+SET i 0
+:rs_clear
+SET occ[$i] 0
+ADD i 1
+IF $i < 280 GOTO rs_clear
+SET tl 0
+SET hd 2
+SET len 3
+SET snx[0] 4
+SET sny[0] 10
+SET snx[1] 5
+SET sny[1] 10
+SET snx[2] 6
+SET sny[2] 10
+SET occ[144] 1
+SET occ[145] 1
+SET occ[146] 1
+SET vx 1
+SET vy 0
+SET nvx 1
+SET nvy 0
+RETURN
+
+# random empty cell, with a scan as the fallback once the board is crowded
+# enough that guessing stops paying off
+:placefood
+SET tries 0
+:pf_try
+RAND fx 14
+RAND fy 20
+EXPR fi $fy * 14 + $fx
+IF $occ[$fi] = 0 GOTO pf_ok
+ADD tries 1
+IF $tries < 400 GOTO pf_try
+SET fi 0
+:pf_scan
+IF $fi >= 280 GOTO pf_full
+IF $occ[$fi] = 0 GOTO pf_found
+ADD fi 1
+GOTO pf_scan
+:pf_found
+EXPR fy floor($fi / 14)
+EXPR fx $fi - $fy * 14
+GOTO pf_ok
+:pf_full
+SET won 1
+RETURN
+:pf_ok
+SET occ[$fi] 2
+RETURN
+
+# ---------------------------------------------------------------- input
+
+:handlekey
+IF $k = $kesc GOTO hk_quit
+IF $k = $kspace GOTO hk_pause
+IF $k = $kleft GOTO hk_left
+IF $k = 97 GOTO hk_left
+IF $k = $kright GOTO hk_right
+IF $k = 100 GOTO hk_right
+IF $k = $kup GOTO hk_up
+IF $k = 119 GOTO hk_up
+IF $k = $kdown GOTO hk_down
+IF $k = 115 GOTO hk_down
+RETURN
+
+:hk_quit
+SET quit 1
+RETURN
+
+# Each turn is tested against vx/vy -- the direction already walked -- not
+# against the pending one, so mashing up then left inside a single tick
+# cannot fold the snake back into its own neck.
+:hk_left
+IF $vx = 1 GOTO hk_done
+SET nvx -1
+SET nvy 0
+RETURN
+:hk_right
+IF $vx = -1 GOTO hk_done
+SET nvx 1
+SET nvy 0
+RETURN
+:hk_up
+IF $vy = 1 GOTO hk_done
+SET nvx 0
+SET nvy -1
+RETURN
+:hk_down
+IF $vy = -1 GOTO hk_done
+SET nvx 0
+SET nvy 1
+RETURN
+:hk_done
+RETURN
+
+:hk_pause
+IF $paused = 1 GOTO hk_unpause
+SET paused 1
+GOSUB draw
+RETURN
+:hk_unpause
+SET paused 0
+EXPR moveat $millis + $stepms
+GOSUB draw
+RETURN
+
+# ---------------------------------------------------------------- rules
+
+# one move. Sets dead=1 rather than jumping to the game over screen: a
+# GOTO out of a GOSUB would strand its return address on the stack.
+:step
+SET vx $nvx
+SET vy $nvy
+EXPR nx $snx[$hd] + $vx
+EXPR ny $sny[$hd] + $vy
+IF $nx < 0 GOTO st_dead
+IF $nx > 13 GOTO st_dead
+IF $ny < 0 GOTO st_dead
+IF $ny > 19 GOTO st_dead
+EXPR ni $ny * 14 + $nx
+
+SET ate 0
+IF $occ[$ni] <> 2 GOTO st_tail
+SET ate 1
+GOTO st_test
+
+# the tail vacates before the head is tested, so chasing the very last
+# cell of your own tail is a legal move rather than a death
+:st_tail
+EXPR ti $sny[$tl] * 14 + $snx[$tl]
+SET occ[$ti] 0
+ADD tl 1
+IF $tl < 280 GOTO st_test
+SET tl 0
+
+:st_test
+IF $occ[$ni] = 1 GOTO st_dead
+ADD hd 1
+IF $hd < 280 GOTO st_push
+SET hd 0
+:st_push
+SET snx[$hd] $nx
+SET sny[$hd] $ny
+SET occ[$ni] 1
+IF $ate = 0 GOTO st_done
+ADD len 1
+ADD score 10
+GOSUB speedup
+GOSUB placefood
+:st_done
+RETURN
+
+:st_dead
+SET dead 1
+RETURN
+
+:speedup
+SUB stepms 4
+IF $stepms > 55 GOTO su_done
+SET stepms 55
+:su_done
+RETURN
+
+# ---------------------------------------------------------------- drawing
+
+:draw
+CLS
+COLOR blue
+PUT 0 0 "+----------------------------+"
+PUT 0 21 "+----------------------------+"
+SET dy 1
+:dr_side
+PUT 0 $dy "|"
+PUT 29 $dy "|"
+ADD dy 1
+IF $dy < 21 GOTO dr_side
+
+SET dy 0
+:dr_row
+SET dx 0
+:dr_col
+EXPR ci $dy * 14 + $dx
+SET cv $occ[$ci]
+IF $cv = 0 GOTO dr_col_next
+EXPR scx $dx * 2 + 1
+EXPR scy $dy + 1
+IF $cv = 2 GOTO dr_food
+COLOR green
+PUT $scx $scy "[]"
+GOTO dr_col_next
+:dr_food
+COLOR red
+PUT $scx $scy "<>"
+:dr_col_next
+ADD dx 1
+IF $dx < 14 GOTO dr_col
+ADD dy 1
+IF $dy < 20 GOTO dr_row
+
+# the head is just another occupied cell in the grid -- redrawn last, in
+# its own colour, so you can tell which end of the snake you are steering
+COLOR yellow
+EXPR scx $snx[$hd] * 2 + 1
+EXPR scy $sny[$hd] + 1
+PUT $scx $scy "@@"
+
+COLOR pink
+PUT 31 1 "SNAKE"
+COLOR cyan
+PUT 31 3 "SCORE"
+COLOR white
+PUT 31 4 $score
+COLOR cyan
+PUT 31 6 "LEN"
+COLOR white
+PUT 31 7 $len
+COLOR cyan
+PUT 31 9 "HI"
+COLOR white
+PUT 31 10 $hiscore
+COLOR yellow
+PUT 31 13 "wasd"
+PUT 31 14 "or arw"
+PUT 31 16 "spc"
+PUT 31 17 "pause"
+PUT 31 19 "esc"
+PUT 31 20 "quit"
+
+IF $paused = 0 GOTO dr_flip
+COLOR yellow
+PUT 10 10 " PAUSED "
+:dr_flip
+FLIP
+RETURN
+
+# ---------------------------------------------------------------- high score
+
+# reads /apps/snake.hs into hiscore, tolerating a missing or garbled file --
+# a fresh install simply starts the ladder at 0
+:loadhs
+SET hiscore 0
+FEXISTS hs "/apps/snake.hs"
+IF $hs = 0 GOTO lh_done
+FOPEN "/apps/snake.hs" read
+IF $fok = 0 GOTO lh_done
+FREAD text
+FCLOSE
+GOSUB str2num
+SET hiscore $num
+:lh_done
+RETURN
+
+:savehs
+SET newhi 0
+IF $score <= $hiscore GOTO sh_done
+SET hiscore $score
+SET newhi 1
+FOPEN "/apps/snake.hs" write
+IF $fok = 0 GOTO sh_done
+FWRITE $score
+FCLOSE
+:sh_done
+RETURN
+
+# in: text (string)   out: num -- digits off the front of a string, since a
+# number read back from a file is text again
+:str2num
+SET num 0
+SET s2i 0
+LEN s2len $text
+:s2n_loop
+IF $s2i >= $s2len GOTO s2n_done
+CHARAT s2d $text $s2i
+IF $s2d < 48 GOTO s2n_done
+IF $s2d > 57 GOTO s2n_done
+SUB s2d 48
+MUL num 10
+ADD num $s2d
+ADD s2i 1
+GOTO s2n_loop
+:s2n_done
+RETURN
+
+# ---------------------------------------------------------------- exits
+
+:gameover
+GOSUB savehs
+COLOR red
+PUT 9 9 " GAME OVER "
+GOTO go_banner
+
+:youwin
+GOSUB savehs
+COLOR green
+PUT 4 9 " YOU FILLED THE BOARD "
+
+:go_banner
+COLOR white
+PUT 8 11 " score $score "
+IF $newhi = 0 GOTO go_keys
+COLOR yellow
+PUT 6 12 " NEW HIGH SCORE "
+:go_keys
+COLOR cyan
+PUT 4 14 "space=again  esc=quit"
+FLIP
+
+# swallow whatever was still held down when the snake hit something, so the
+# banner is not skipped by the keypress that caused it
+WAIT 400
+:go_drain
+KEY k
+IF $k <> 0 GOTO go_drain
+
+:go_wait
+KEY k
+IF $k = $kspace GOTO newgame
+IF $k = $kenter GOTO newgame
+IF $k = $kesc GOTO leave
+WAIT 20
+GOTO go_wait
+
+:leave
+ENDCANVAS
+COLOR green
+PRINT "snake: length $len, score $score (best $hiscore)"
+EXIT
+)DOLLAPP";
 
 // Generated from docs/DAPP.txt for firmware-side LittleFS seeding.
-static const char BUNDLED_DOC_DAPP[] = R"DSDOC(DS .dapp Apps
+static const char BUNDLED_DOC_DAPP[] = R"DOLLDOC(DOLL-OS .dapp Apps
 
-.dapp files are text executables for the DS shell. DS looks for them in both
+.dapp files are text executables for the DOLL-OS shell. DOLL-OS looks for them in both
 places:
 
 /sd/apps   on the SD card (upload with FTP into /apps)
@@ -1398,7 +1797,7 @@ Example:
 
 # /sd/apps/hello.dapp
 COLOR cyan
-PRINT "hello from a DS app"
+PRINT "hello from a DOLL-OS app"
 PRINT "cwd=$cwd ip=$ip battery=$battery%"
 INPUT name "name> "
 PRINT "hi, $name"
@@ -1523,7 +1922,7 @@ Keys and games:
 INPUT blocks until Enter, which makes it useless for anything that has to keep
 moving while nobody is typing. KEY reads at most one keypress and returns
 immediately with 0 when nothing is waiting, from either the telnet client or a
-BLE keyboard on the DS-Slave link:
+BLE keyboard on the companion DOLL-OS keyboard bridge:
 
 :loop
 KEY k
@@ -1536,7 +1935,7 @@ Printable keys come back as their ASCII code (65 for A, 32 for space), and
 these built-ins name the rest: $kup, $kdown, $kleft, $kright, $kenter, $kesc,
 $kback, $ktab, $kspace. They are numbers, not text -- compare against them,
 don't PRINT them. Ctrl+C and Ctrl+T both read as $kesc, so the chord that
-leaves every other DS screen also leaves yours. Ctrl+X is never delivered to
+leaves every other DOLL-OS screen also leaves yours. Ctrl+X is never delivered to
 the script: it aborts the running app, from KEY, WAIT, or a blocked INPUT.
 
 CANVAS replaces the scrolling terminal with a grid you address by cell. PUT
@@ -1640,4 +2039,4 @@ GOTO again
 :done
 PRINT "bye"
 EXIT
-)DSDOC";
+)DOLLDOC";

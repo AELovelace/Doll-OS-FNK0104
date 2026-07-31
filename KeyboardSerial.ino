@@ -3,16 +3,16 @@
 //   bridges a BLE HID keyboard to a serial line (see ../DS-Slave/DS-Slave.ino). DS-Slave
 //   decodes each BLE key report into a plain byte stream: printable ASCII, CR for Enter,
 //   0x08 for Backspace, and ESC/CSI sequences for the arrows/Home/End/Delete/function
-//   keys. That is exactly the vocabulary DS's telnet line editor already speaks, so the
+//   keys. That is exactly the vocabulary DOLL-OS's telnet line editor already speaks, so the
 //   received bytes are fed straight into the shared processLineEditByte() (TelnetServer.ino)
 //   -- the BLE keyboard becomes a second way to drive the shell, working with or without
 //   a telnet client attached.
 //
 //   Wiring (this board <-> DS-Slave):
-//     DS RX = GPIO21  <-  DS-Slave TX = GPIO17   (keystrokes flow in on this wire)
-//     DS TX = GPIO2   ->  DS-Slave RX = GPIO18   (DS-Slave's STATUS/LED/... command channel)
-//     DS GND          <-> DS-Slave GND           (shared ground -- carried by the power pair below)
-//     DS 5V/VIN       ->  DS-Slave 5V/VIN        (DS powers DS-Slave; see the current note in setup)
+//     DOLL-OS RX = GPIO21  <-  DS-Slave TX = GPIO17   (keystrokes flow in on this wire)
+//     DOLL-OS TX = GPIO2   ->  DS-Slave RX = GPIO18   (DS-Slave's STATUS/LED/... command channel)
+//     DOLL-OS GND          <-> DS-Slave GND           (shared ground -- carried by the power pair below)
+//     DOLL-OS 5V/VIN       ->  DS-Slave 5V/VIN        (DOLL-OS powers DS-Slave; see the current note in setup)
 //   The link originally sat on GPIO15/16, but on this board those pins are the PCB-routed
 //   I2C bus to the onboard ES8311 codec + FT6336U touch (SCL=15, SDA=16) -- they only
 //   *looked* free while nothing talked to the codec. Radio.ino now does, so the link moved
@@ -41,7 +41,7 @@ void initKeyboardSerial() {
 }
 
 //drains whatever DS-Slave has sent this tick, feeding each byte through the same line
-//editor the telnet client uses. Both edit the one shared currentCommand buffer -- DS is
+//editor the telnet client uses. Both edit the one shared currentCommand buffer -- DOLL-OS is
 //a single-user shell (global.h), so the keyboard and a telnet client are just two ways in
 //for the same user. Mirrors the submit/reprompt dance of readTelnetClient().
 void readKeyboardSerial() {

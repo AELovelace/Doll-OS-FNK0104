@@ -1,11 +1,11 @@
 # /sd/apps/adventure.dapp
-# A Mini DS Adventure Game - "The Cursed Grotto"
+# A Mini DOLL-OS Adventure Game - "The Cursed Grotto"
 # Run with: apps run adventure
 
 COLOR cyan
 PRINT "=================================="
 PRINT "   THE CURSED GROTTO"
-PRINT "   A Mini DS Adventure"
+PRINT "   A Mini DOLL-OS Adventure"
 PRINT "=================================="
 WAIT 500
 CLEAR

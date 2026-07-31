@@ -5,7 +5,7 @@
 // Emulator audio sink: the Game Boy APU's samples on the board's onboard ES8311
 // codec + speaker.
 //
-// DS port note: DS's codec is normally Radio.ino's -- it owns the I2C control
+// DOLL-OS port note: DOLL-OS's codec is normally Radio.ino's -- it owns the I2C control
 // bus, the codec registers, and *both* of the S3's two I2S controllers (one
 // bootstrap channel for MCLK, one for the ESP32-audioI2S engine). So a game
 // can't just open a channel: Gameboy.ino first calls radioReleaseAudio()

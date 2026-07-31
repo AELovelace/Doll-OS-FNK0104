@@ -179,7 +179,7 @@ void handleUsbCommand(const String parts[], int partCount) {
     }
 
     if (!mscStarted) {
-        msc.vendorID("DS");
+        msc.vendorID("DOLL-OS");
         msc.productID("SD Card");
         msc.productRevision("1.0");
         msc.onRead(onMscRead);

@@ -1,11 +1,7 @@
 {
-	"folders": [
-		{
-			"path": "."
-		},
-		{
-			"path": "../DS-Slave"
-		}
-	],
-	"settings": {}
+    "folders": [
+        {
+            "path": "."
+        }
+    ]
 }

@@ -56,7 +56,7 @@ void drawDisplayBootSplash() {
     frameSprite.setTextDatum(MC_DATUM);
     frameSprite.setTextColor(TFT_PINK, TFT_CYAN);
     frameSprite.setTextSize(2);
-    frameSprite.drawString("DS", DISPLAY_WIDTH / 2, DISPLAY_HEIGHT / 2 - 10);
+    frameSprite.drawString("DOLL-OS", DISPLAY_WIDTH / 2, DISPLAY_HEIGHT / 2 - 10);
     frameSprite.setTextSize(1);
     frameSprite.drawString("booting...", DISPLAY_WIDTH / 2, DISPLAY_HEIGHT / 2 + 14);
     frameSprite.setTextDatum(TL_DATUM);
@@ -553,7 +553,7 @@ void drawDisplayStatusBar() {
     frameSprite.fillRect(0, 0, DISPLAY_WIDTH, DISPLAY_STATUS_BAR_HEIGHT, TFT_BLACK);
     frameSprite.setTextDatum(TL_DATUM);
     frameSprite.setTextColor(TFT_PINK, TFT_BLACK);
-    frameSprite.drawString("DS", DISPLAY_PADDING, 2);
+    frameSprite.drawString("DOLL-OS", DISPLAY_PADDING, 2);
 
     char statusText[64];
     snprintf(statusText, sizeof(statusText), "MEM:%luKB VOL:%02d BAT:%d%%",

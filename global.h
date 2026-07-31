@@ -1,5 +1,5 @@
 //   global.h
-//   shared state used across DS -- the telnet-interface port of DOLL-OS.
+//   shared state used across DOLL-OS -- the telnet-interface port of DOLL-OS.
 //
 //   Telnet is the sole *input* path (this is what the user asked to replace
 //   DOLL-OS's physical keyboard with), but this board's TFT panel is driven as a
@@ -37,7 +37,7 @@
     const int DISPLAY_HEIGHT = 240;
 #endif
 
-//   Telnet server + the one connected client. DS permits a single interactive
+//   Telnet server + the one connected client. DOLL-OS permits a single interactive
 //   session at a time, same as the original scaffold -- DOLL-OS's whole keyboard/
 //   command model assumes one local user too, so this isn't a new constraint.
 WiFiServer telnetServer(TELNET_PORT);
@@ -59,7 +59,7 @@ String activeInputText = "";     //current content of whichever buffer is active
 enum LineInputResult { LINE_NO_INPUT, LINE_EDITING, LINE_SUBMITTED };
 
 //per-input-source line-edit state (escape/CSI parsing + CRLF pairing). DOLL-OS had a
-//single physical keyboard, so this was implicit module state in one place. DS now has
+//single physical keyboard, so this was implicit module state in one place. DOLL-OS now has
 //two sources feeding the same line editor -- the telnet client (TelnetServer.ino) and
 //the BLE-keyboard UART bridge (KeyboardSerial.ino) -- so each keeps its own copy: a
 //half-finished escape sequence arriving on one source can't corrupt the other's parse.
@@ -283,7 +283,7 @@ extern WiFiClient remoteTelnetClient;   //outbound socket for the "telnet" clien
                                          //named distinctly from telnetClient (our server's connected user) above
 
 //   Display mirror (Display.ino). The TFT panel isn't a second *input* device --
-//   telnet remains the only way to control DS -- it just shows the same session a
+//   telnet remains the only way to control DOLL-OS -- it just shows the same session a
 //   connected telnet client sees, the way the user asked: "as if it was a second
 //   screen for the cardputer." That means reviving DOLL-OS's pixel-wrapped
 //   history/ANSI-filter machinery, just retargeted from an M5GFX sprite to a

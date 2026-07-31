@@ -1,5 +1,5 @@
 //   CommandProcessor.ino
-//   parses and runs terminal commands for DS. Ported near-verbatim from
+//   parses and runs terminal commands for DOLL-OS. Ported near-verbatim from
 //   DOLL-OS's CommandProcessor.ino -- tokenizing, history, and dispatch are all
 //   display-agnostic, so only the output calls changed (addWrappedHistoryLine -> outLine).
 

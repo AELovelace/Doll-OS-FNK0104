@@ -1,5 +1,5 @@
 # /apps/tetris.dapp
-# Tetris for the DS shell. Arrows or WASD to move, up/W to rotate,
+# Tetris for the DOLL-OS shell. Arrows or WASD to move, up/W to rotate,
 # space to hard drop, escape to quit.
 #
 # This is the app the .dapp language grew CANVAS/KEY/DIM/EXPR/GOSUB for --

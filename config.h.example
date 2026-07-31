@@ -48,20 +48,20 @@ const uint16_t TELNET_PORT = 23;
 
 //   FTP (FtpServer.ino) -- exposes the SD card over the network as an alternative
 //   to USB MSC. Plaintext, LAN-only -- same posture as telnet above.
-const char* FTP_USER = "ds";
+const char* FTP_USER = "doll-os";
 const char* FTP_PASS = "CHANGE_ME";
 
 //   Motoko MQTT defaults
 const char* MOTOKO_DEFAULT_BROKER = "192.168.44.4";
 const int MOTOKO_DEFAULT_PORT = 1883;
-const char* MOTOKO_CLIENT_ID = "MOTOKO-DS";
+const char* MOTOKO_CLIENT_ID = "MOTOKO-DOLL-OS";
 
 //   Radio defaults (Radio.ino)
 const char* RADIO_DEFAULT_URL = "http://192.168.1.252:8000/stream.mp3";
 const int RADIO_DEFAULT_VOLUME = 12;
 
 //   ASUKA local LLM chat command. This talks to Mochi over Tailscale by default,
-//   using DS's existing shell/telnet surfaces; no ASUKA webserver or MQTT listener
+//   using DOLL-OS's existing shell/telnet surfaces; no ASUKA webserver or MQTT listener
 //   is started here.
 const char* ASUKA_DEFAULT_LLM_HOST = "100.66.64.45";
 const uint16_t ASUKA_DEFAULT_LLM_PORT = 9090;
@@ -77,6 +77,6 @@ const char* ASUKA_DEVICE_TIME_ZONE = "PST8PDT,M3.2.0,M11.1.0";
 const char* ASUKA_NTP_SERVER_PRIMARY = "pool.ntp.org";
 const char* ASUKA_NTP_SERVER_SECONDARY = "time.nist.gov";
 const char* ASUKA_SYSTEM_PROMPT =
-    "You are ASUKA, a concise local assistant running through DS.";
+    "You are ASUKA, a concise local assistant running through DOLL-OS.";
 const char* ASUKA_CLASSIFIER_PROMPT =
-    "You are ASUKA's tool-selection pass running on DS. If the user's request needs live information, weather, a page, URL inspection, or the current date/time, respond with only one JSON object and no markdown. For current web search, use exactly {\"tool\":\"brave_search\",\"arguments\":{\"query\":\"...\",\"count\":5}}. For current weather at the configured location, use exactly {\"tool\":\"openweather_current\",\"arguments\":{\"units\":\"metric\"}} or {\"tool\":\"openweather_current\",\"arguments\":{\"units\":\"imperial\"}}. For reading a specific URL, use exactly {\"tool\":\"fetch_url\",\"arguments\":{\"url\":\"https://...\",\"max_chars\":4000}}. For current local date/time, use exactly {\"tool\":\"current_datetime\",\"arguments\":{}}. If no live tool is needed, answer normally.";
+    "You are ASUKA's tool-selection pass running on DOLL-OS. If the user's request needs live information, weather, a page, URL inspection, or the current date/time, respond with only one JSON object and no markdown. For current web search, use exactly {\"tool\":\"brave_search\",\"arguments\":{\"query\":\"...\",\"count\":5}}. For current weather at the configured location, use exactly {\"tool\":\"openweather_current\",\"arguments\":{\"units\":\"metric\"}} or {\"tool\":\"openweather_current\",\"arguments\":{\"units\":\"imperial\"}}. For reading a specific URL, use exactly {\"tool\":\"fetch_url\",\"arguments\":{\"url\":\"https://...\",\"max_chars\":4000}}. For current local date/time, use exactly {\"tool\":\"current_datetime\",\"arguments\":{}}. If no live tool is needed, answer normally.";

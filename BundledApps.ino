@@ -77,6 +77,7 @@ void seedBundledApps() {
     const BundledAsset bundledApps[] = {
         { "/apps/adventure.dapp", BUNDLED_APP_ADVENTURE },
         { "/apps/tetris.dapp", BUNDLED_APP_TETRIS },
+        { "/apps/snake.dapp", BUNDLED_APP_SNAKE },
         { "/docs/dapp.txt", BUNDLED_DOC_DAPP },
     };
 

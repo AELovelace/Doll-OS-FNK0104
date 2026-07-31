@@ -1,5 +1,5 @@
 ﻿//   AppRunner.ino
-//   tiny executable script runtime for DS. Apps are plain text .dapp files stored
+//   tiny executable script runtime for DOLL-OS. Apps are plain text .dapp files stored
 //   in /apps on LittleFS or /sd/apps on the FTP-served SD card, then launched from
 //   the shell with "run". The format is intentionally small: a few display/shell
 //   commands, numeric variables, labels, and jumps.
@@ -981,7 +981,7 @@ static long appDecodeKeyByte(uint8_t b, DappKeyState& st) {
     if (b == '\r' || b == '\n') return DAPP_KEY_ENTER;
     if (b == 0x08 || b == 0x7F) return DAPP_KEY_BACK;
     if (b == '\t') return DAPP_KEY_TAB;
-    //Ctrl+C and Ctrl+T are how every other modal screen in DS is escaped, so a script that
+    //Ctrl+C and Ctrl+T are how every other modal screen in DOLL-OS is escaped, so a script that
     //quits on $kesc quits on the chords its user already knows too
     if (b == 0x03 || b == 0x14) return DAPP_KEY_ESC;
     if (b >= 32 && b < 127) return (long)b;

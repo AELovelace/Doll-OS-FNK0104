@@ -1,0 +1,1216 @@
+<!doctype html>
+<!-- Generated from docs/DAPP-BOOK.md by tools/build-dapp-book.mjs. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#ff0f7f">
+  <meta name="description" content="The complete guide to writing DOLL-OS .dapp programs.">
+  <title>The .dapp Book // dapp.exe</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="book.css">
+</head>
+<body class="book-page">
+  <div class="noise" aria-hidden="true"></div>
+  <header class="masthead">
+    <a class="wordmark" href="index.html" aria-label="Return to the dapp.exe IDE">
+      <span class="sad-face">:(</span>
+      <span>dapp.exe</span>
+    </a>
+    <p class="marquee"><span>READ THE MANUAL // TYPE THE EXAMPLES // BREAK SOMETHING SMALL //</span></p>
+    <div class="header-links">
+      <a href="index.html">OPEN IDE</a>
+      <a href="#book-top">TOP</a>
+    </div>
+  </header>
+
+  <button class="toc-toggle" id="toc-toggle" type="button" aria-expanded="false" aria-controls="book-toc">CHAPTERS</button>
+
+  <div class="book-shell" id="book-top">
+    <aside class="book-toc" id="book-toc">
+      <div class="toc-head">
+        <span>CONTENTS.DAPP</span>
+        <button id="toc-close" type="button" aria-label="Close chapter navigation">X</button>
+      </div>
+      <nav aria-label="Book chapters">
+        <ol class="toc-list">
+<li class="toc-depth-2"><a href="#chapter-0-getting-set-up">Chapter 0 — Getting Set Up</a></li>
+<li class="toc-depth-2"><a href="#chapter-1-hello-doll-os">Chapter 1 — Hello, DOLL-OS</a></li>
+<li class="toc-depth-3"><a href="#1-1-print-and-echo">1.1 PRINT and ECHO</a></li>
+<li class="toc-depth-3"><a href="#1-2-color">1.2 COLOR</a></li>
+<li class="toc-depth-3"><a href="#1-3-wait">1.3 WAIT</a></li>
+<li class="toc-depth-3"><a href="#1-4-clear-comments-and-exit">1.4 CLEAR, comments, and EXIT</a></li>
+<li class="toc-depth-3"><a href="#1-5-your-first-real-program">1.5 Your first real program</a></li>
+<li class="toc-depth-3"><a href="#practice-1">Practice 1</a></li>
+<li class="toc-depth-2"><a href="#chapter-2-numbers">Chapter 2 — Numbers</a></li>
+<li class="toc-depth-3"><a href="#2-1-variables">2.1 Variables</a></li>
+<li class="toc-depth-3"><a href="#2-2-arithmetic-commands">2.2 Arithmetic commands</a></li>
+<li class="toc-depth-3"><a href="#2-3-rand">2.3 RAND</a></li>
+<li class="toc-depth-3"><a href="#2-4-built-in-values">2.4 Built-in values</a></li>
+<li class="toc-depth-3"><a href="#practice-2">Practice 2</a></li>
+<li class="toc-depth-2"><a href="#chapter-3-text">Chapter 3 — Text</a></li>
+<li class="toc-depth-3"><a href="#3-1-string-variables">3.1 String variables</a></li>
+<li class="toc-depth-3"><a href="#3-2-input">3.2 INPUT</a></li>
+<li class="toc-depth-3"><a href="#3-3-a-warning-that-will-save-you-an-evening">3.3 A warning that will save you an evening</a></li>
+<li class="toc-depth-3"><a href="#3-4-taking-strings-apart">3.4 Taking strings apart</a></li>
+<li class="toc-depth-3"><a href="#practice-3">Practice 3</a></li>
+<li class="toc-depth-2"><a href="#chapter-4-jumps-and-choices">Chapter 4 — Jumps and Choices</a></li>
+<li class="toc-depth-3"><a href="#4-1-labels-and-goto">4.1 Labels and GOTO</a></li>
+<li class="toc-depth-3"><a href="#4-2-if-numeric-decisions">4.2 IF — numeric decisions</a></li>
+<li class="toc-depth-3"><a href="#4-3-ifeq-and-ifne-text-decisions">4.3 IFEQ and IFNE — text decisions</a></li>
+<li class="toc-depth-3"><a href="#4-4-choosing-among-many">4.4 Choosing among many</a></li>
+<li class="toc-depth-3"><a href="#practice-4">Practice 4</a></li>
+<li class="toc-depth-2"><a href="#chapter-5-routines">Chapter 5 — Routines</a></li>
+<li class="toc-depth-3"><a href="#5-1-gosub-and-return">5.1 GOSUB and RETURN</a></li>
+<li class="toc-depth-3"><a href="#5-2-passing-values-in-and-out">5.2 Passing values in and out</a></li>
+<li class="toc-depth-3"><a href="#5-3-the-one-rule-leave-through-return">5.3 The one rule: leave through RETURN</a></li>
+<li class="toc-depth-3"><a href="#5-4-worked-example-text-into-numbers">5.4 Worked example: text into numbers</a></li>
+<li class="toc-depth-3"><a href="#practice-5">Practice 5</a></li>
+<li class="toc-depth-2"><a href="#chapter-6-expr">Chapter 6 — EXPR</a></li>
+<li class="toc-depth-3"><a href="#6-1-whole-formulas-at-once">6.1 Whole formulas at once</a></li>
+<li class="toc-depth-3"><a href="#6-2-the-rounding-rule-read-this-twice">6.2 The rounding rule (read this twice)</a></li>
+<li class="toc-depth-3"><a href="#practice-6">Practice 6</a></li>
+<li class="toc-depth-2"><a href="#chapter-7-arrays">Chapter 7 — Arrays</a></li>
+<li class="toc-depth-3"><a href="#7-1-two-hundred-variables-would-be-terrible">7.1 Two hundred variables would be terrible</a></li>
+<li class="toc-depth-3"><a href="#7-2-the-bounds-check-is-your-friend">7.2 The bounds check is your friend</a></li>
+<li class="toc-depth-3"><a href="#7-3-a-grid-in-a-straight-line">7.3 A grid in a straight line</a></li>
+<li class="toc-depth-3"><a href="#7-4-re-dim-to-reset">7.4 Re-DIM to reset</a></li>
+<li class="toc-depth-3"><a href="#practice-7">Practice 7</a></li>
+<li class="toc-depth-2"><a href="#chapter-8-the-game-loop">Chapter 8 — The Game Loop</a></li>
+<li class="toc-depth-3"><a href="#8-1-why-input-can-t-run-a-game">8.1 Why INPUT can't run a game</a></li>
+<li class="toc-depth-3"><a href="#8-2-key-codes">8.2 Key codes</a></li>
+<li class="toc-depth-3"><a href="#8-3-the-wait-matters">8.3 The WAIT matters</a></li>
+<li class="toc-depth-3"><a href="#8-4-doing-things-on-time">8.4 Doing things on time</a></li>
+<li class="toc-depth-3"><a href="#8-5-the-dirty-flag">8.5 The dirty flag</a></li>
+<li class="toc-depth-3"><a href="#practice-8">Practice 8</a></li>
+<li class="toc-depth-2"><a href="#chapter-9-the-canvas">Chapter 9 — The Canvas</a></li>
+<li class="toc-depth-3"><a href="#9-1-a-screen-you-can-draw-on">9.1 A screen you can draw on</a></li>
+<li class="toc-depth-3"><a href="#9-2-put-draws-nothing-flip-shows-everything">9.2 PUT draws nothing; FLIP shows everything</a></li>
+<li class="toc-depth-3"><a href="#9-3-worked-example-the-bouncing-ball">9.3 Worked example: the bouncing ball</a></li>
+<li class="toc-depth-3"><a href="#practice-9">Practice 9</a></li>
+<li class="toc-depth-2"><a href="#chapter-10-project-tetris">Chapter 10 — Project: Tetris</a></li>
+<li class="toc-depth-3"><a href="#10-1-the-plan">10.1 The plan</a></li>
+<li class="toc-depth-3"><a href="#10-2-the-screen">10.2 The screen</a></li>
+<li class="toc-depth-3"><a href="#10-3-the-well">10.3 The well</a></li>
+<li class="toc-depth-3"><a href="#10-4-describing-the-pieces">10.4 Describing the pieces</a></li>
+<li class="toc-depth-3"><a href="#10-5-rotation-is-a-formula-not-a-table">10.5 Rotation is a formula, not a table</a></li>
+<li class="toc-depth-3"><a href="#10-6-collision-move-test-undo">10.6 Collision — move, test, undo</a></li>
+<li class="toc-depth-3"><a href="#10-7-drawing-a-frame">10.7 Drawing a frame</a></li>
+<li class="toc-depth-3"><a href="#10-8-the-heart-the-main-loop">10.8 The heart: the main loop</a></li>
+<li class="toc-depth-3"><a href="#10-9-steering">10.9 Steering</a></li>
+<li class="toc-depth-3"><a href="#10-10-locking-and-clearing-lines">10.10 Locking and clearing lines</a></li>
+<li class="toc-depth-3"><a href="#10-11-spawning-dying-leaving">10.11 Spawning, dying, leaving</a></li>
+<li class="toc-depth-3"><a href="#10-12-what-you-built-and-what-to-build-next">10.12 What you built, and what to build next</a></li>
+<li class="toc-depth-2"><a href="#chapter-11-files">Chapter 11 — Files</a></li>
+<li class="toc-depth-3"><a href="#11-1-one-file-at-a-time">11.1 One file at a time</a></li>
+<li class="toc-depth-3"><a href="#11-2-writing">11.2 Writing</a></li>
+<li class="toc-depth-3"><a href="#11-3-reading">11.3 Reading</a></li>
+<li class="toc-depth-3"><a href="#11-4-fexists-and-fdelete">11.4 FEXISTS and FDELETE</a></li>
+<li class="toc-depth-3"><a href="#11-5-numbers-come-back-as-text">11.5 Numbers come back as text</a></li>
+<li class="toc-depth-3"><a href="#11-6-tetris-remembers">11.6 Tetris remembers</a></li>
+<li class="toc-depth-3"><a href="#practice-11">Practice 11</a></li>
+<li class="toc-depth-2"><a href="#appendix-a-command-reference">Appendix A — Command Reference</a></li>
+<li class="toc-depth-2"><a href="#appendix-b-limits-and-built-ins">Appendix B — Limits and Built-ins</a></li>
+<li class="toc-depth-2"><a href="#appendix-c-key-codes">Appendix C — Key Codes</a></li>
+<li class="toc-depth-2"><a href="#appendix-d-answers">Appendix D — Answers</a></li>
+</ol>
+      </nav>
+      <a class="toc-ide-link" href="index.html">&gt; OPEN THE IDE</a>
+    </aside>
+
+    <main class="book-main">
+      <header class="book-hero">
+        <p class="eyebrow">DOLL-OS FIELD MANUAL / REVISION 1</p>
+        <h1>The<br><em>.dapp Book</em></h1>
+        <p>Learning to program the DOLL-OS shell, one tiny executable at a time.</p>
+        <div class="book-hero-actions">
+          <a href="#chapter-0-getting-set-up">START READING</a>
+          <a href="index.html">PRACTICE IN THE IDE</a>
+        </div>
+      </header>
+
+      <article class="book-content">
+        <hr>
+<p>A <code>.dapp</code> file is a plain text program that the DOLL-OS shell runs with the <code>run</code> command. The language is small on purpose: about forty commands, numbers, strings, arrays, and jumps. Small does not mean weak — by the end of this book you will have built Tetris in it — but it does mean <em>learnable</em>. Every command fits on one line, every program is a text file you can read top to bottom, and nothing is hiding anywhere.</p>
+<p><strong>How to use this book.</strong> Each chapter teaches a handful of commands, shows them working, and ends with practice problems. Type the examples in — really type them; that is where the learning happens. Answers to the practice problems are in Appendix D, but wrestle with them first. The last two chapters are the payoff: a full walkthrough of the Tetris that ships on this device as <code>/apps/tetris.dapp</code>, and then teaching that Tetris to remember its high score after the power goes out.</p>
+<hr>
+<h2 id="chapter-0-getting-set-up">Chapter 0 — Getting Set Up</h2>
+<p>Apps live in two places:</p>
+<pre><code class="language-text">/sd/apps   on the SD card (upload over FTP into /apps)
+/apps      on internal flash</code></pre>
+<p>Three shell commands are your whole toolchain:</p>
+<pre><code class="language-text">apps                     list installed .dapp files
+edit /sd/apps/first.dapp write or change a program, ^O saves, ^X exits
+run first                run it</code></pre>
+<p><code>run</code> finds an app by bare name in <code>/sd/apps</code> then <code>/apps</code>, or takes a full path. The <code>edit</code> command syntax-highlights <code>.dapp</code> files: commands turn cyan, labels pink, strings green, <code>$variables</code> yellow, numbers orange. <strong>If an opcode stays white, <code>run</code> will reject it</strong> — the highlighter and the interpreter agree about what is a command, which makes the colors a free spell-checker.</p>
+<p>Create <code>/sd/apps/first.dapp</code> with <code>edit</code>, put <code>PRINT &quot;hello&quot;</code> in it, save, and <code>run first</code>. If you see hello, your toolchain works and you are a DOLL-OS programmer now. The rest is vocabulary.</p>
+<hr>
+<h2 id="chapter-1-hello-doll-os">Chapter 1 — Hello, DOLL-OS</h2>
+<h3 id="1-1-print-and-echo">1.1 PRINT and ECHO</h3>
+<p><code>PRINT</code> writes one line to the terminal (and to the panel, which mirrors it):</p>
+<pre><code class="language-text">PRINT &quot;hello from a DOLL-OS app&quot;
+PRINT hello too
+ECHO &quot;same thing, different name&quot;</code></pre>
+<p>Quotes are optional unless you care about exact spacing — a quoted string keeps its leading and trailing spaces, a bare one is trimmed. <code>ECHO</code> is <code>PRINT</code> under an alias; use whichever reads better to you.</p>
+<h3 id="1-2-color">1.2 COLOR</h3>
+<p><code>COLOR</code> sets the color used by every following <code>PRINT</code> (and later, every <code>PUT</code>), until the next <code>COLOR</code>:</p>
+<pre><code class="language-text">COLOR cyan
+PRINT &quot;this is cyan&quot;
+PRINT &quot;still cyan&quot;
+COLOR pink
+PRINT &quot;now pink&quot;</code></pre>
+<p>The palette is <code>white</code>, <code>red</code>, <code>green</code>, <code>yellow</code>, <code>blue</code>, <code>magenta</code>, <code>cyan</code>, and <code>pink</code>. Anything else falls back to white.</p>
+<h3 id="1-3-wait">1.3 WAIT</h3>
+<p><code>WAIT</code> pauses for a number of <strong>milliseconds</strong> — thousandths of a second, so <code>WAIT 1000</code> is one second:</p>
+<pre><code class="language-text">PRINT &quot;3&quot;
+WAIT 1000
+PRINT &quot;2&quot;
+WAIT 1000
+PRINT &quot;1&quot;
+WAIT 1000
+PRINT &quot;liftoff&quot;</code></pre>
+<p><code>SLEEP</code> is an alias. While waiting, DOLL-OS keeps servicing the display, the radio, and FTP — a waiting app doesn't freeze the machine.</p>
+<h3 id="1-4-clear-comments-and-exit">1.4 CLEAR, comments, and EXIT</h3>
+<pre><code class="language-text"># a comment: the interpreter skips this line
+// this style works too
+CLEAR              wipe the terminal (CLS is an alias)
+EXIT               end the program (END is an alias)</code></pre>
+<p>A program also ends when it runs off its last line, but an explicit <code>EXIT</code> reads better and lets you end from the middle.</p>
+<h3 id="1-5-your-first-real-program">1.5 Your first real program</h3>
+<pre><code class="language-text"># /sd/apps/greet.dapp
+CLEAR
+COLOR cyan
+PRINT &quot;DOLL-OS ONLINE&quot;
+WAIT 500
+COLOR white
+PRINT &quot;all systems nominal&quot;
+WAIT 500
+COLOR pink
+PRINT &quot;have a nice day&quot;
+EXIT</code></pre>
+<h3 id="practice-1">Practice 1</h3>
+<ol>
+<li>Write a traffic light: print <code>STOP</code> in red, wait two seconds, print <code>READY</code> in yellow, wait one second, print <code>GO</code> in green.</li>
+<li>Make a program that clears the screen, then prints your name five times, each line in a different color.</li>
+<li>What is the difference between <code>PRINT &quot;  hi  &quot;</code> and <code>PRINT   hi  </code>? Predict, then test.</li>
+</ol>
+<hr>
+<h2 id="chapter-2-numbers">Chapter 2 — Numbers</h2>
+<h3 id="2-1-variables">2.1 Variables</h3>
+<p>A variable is a named number. <code>SET</code> creates it (or overwrites it):</p>
+<pre><code class="language-text">SET score 0
+SET lives 3</code></pre>
+<p>You never declare variables — naming one brings it into existence, starting at</p>
+<ol>
+<li>Names are made of letters, digits, and <code>_</code>, and they are case-sensitive:</li>
+</ol>
+<p><code>Score</code> and <code>score</code> are two different variables. Stick to lowercase and you will never be surprised. All values are <strong>whole numbers</strong> (from about -2.1 billion to +2.1 billion); there are no decimals in variables.</p>
+<p>To use a variable's value, put <code>$</code> in front of its name:</p>
+<pre><code class="language-text">SET score 100
+PRINT &quot;score is $score&quot;
+SET backup $score</code></pre>
+<p>Inside a <code>PRINT</code> string, <code>$name</code> is replaced by the value. As a command argument, <code>$score</code> means &quot;the value of score.&quot; (Writing just <code>score</code> as a value argument usually works too, but the <code>$</code> makes intent visible — use it.)</p>
+<h3 id="2-2-arithmetic-commands">2.2 Arithmetic commands</h3>
+<p>Each of these changes a variable by one value:</p>
+<pre><code class="language-text">SET  hp 100      hp is now 100
+ADD  hp 25       hp is now 125
+SUB  hp 5        hp is now 120
+MUL  hp 2        hp is now 240
+DIV  hp 7        hp is now 34   (whole-number division, remainder discarded)
+MOD  hp 10       hp is now 4    (the remainder after dividing by 10)</code></pre>
+<p><code>DIV</code> and <code>MOD</code> stop the program with an error if the value is zero — there is no dividing by zero, here or anywhere.</p>
+<p>The value can itself be a variable:</p>
+<pre><code class="language-text">SET bonus 50
+ADD score $bonus</code></pre>
+<p>One command, one operation. That is deliberately spartan; Chapter 6 introduces <code>EXPR</code>, which does whole formulas in one line. Learn these first — for counters and running totals they are all you need.</p>
+<h3 id="2-3-rand">2.3 RAND</h3>
+<p><code>RAND</code> puts a random number into a variable. Two forms:</p>
+<pre><code class="language-text">RAND coin 2        0 or 1        (one argument: 0 up to but not including 2)
+RAND die 1 6       1 through 6   (two arguments: both ends included)</code></pre>
+<p>A dice roller:</p>
+<pre><code class="language-text">RAND a 1 6
+RAND b 1 6
+SET total $a
+ADD total $b
+PRINT &quot;you rolled $a and $b: $total&quot;</code></pre>
+<h3 id="2-4-built-in-values">2.4 Built-in values</h3>
+<p>Some <code>$names</code> are provided by the system:</p>
+<pre><code class="language-text">$millis    milliseconds since the device booted
+$seconds   the same, in seconds
+$battery   battery percent
+$heap      free internal memory in bytes
+$wifi      1 if connected, else 0
+$ip        the device's IP address (text)
+$cwd       the shell's current directory (text)</code></pre>
+<p><code>$millis</code> is the important one — it is the clock every game runs on, and Chapter 8 is built around it.</p>
+<h3 id="practice-2">Practice 2</h3>
+<ol>
+<li>Set <code>apples</code> to 7 and <code>oranges</code> to 5. Print <code>12 pieces of fruit</code> using a third variable — without writing the number 12 yourself.</li>
+<li>Roll three six-sided dice and print the total.</li>
+<li>Using only <code>DIV</code> and <code>MOD</code>, split 137 seconds into minutes and seconds and print <code>2m 17s</code>.</li>
+<li>Predict what <code>SET x 7</code> then <code>DIV x 2</code> leaves in <code>x</code>. Then predict <code>MOD x 2</code> applied after that. Test both.</li>
+</ol>
+<hr>
+<h2 id="chapter-3-text">Chapter 3 — Text</h2>
+<h3 id="3-1-string-variables">3.1 String variables</h3>
+<p>Numbers and text live in <strong>separate kinds of variables</strong>. <code>SETSTR</code> sets a string, <code>APPEND</code> adds to its end:</p>
+<pre><code class="language-text">SETSTR name &quot;Asuka&quot;
+APPEND name &quot; Langley&quot;
+PRINT &quot;pilot: $name&quot;</code></pre>
+<p>The same <code>$name</code> syntax reads either kind — <code>PRINT</code> doesn't care whether <code>$name</code> is text or a number. But the arithmetic commands (<code>ADD</code>, <code>SUB</code>, ...) work only on numeric variables, and <code>SETSTR</code>/<code>APPEND</code> only on strings. A name refers to at most one of the two; don't reuse a name across kinds.</p>
+<p>Text in <code>SETSTR</code> and <code>APPEND</code> expands <code>$variables</code>, so strings can be built from pieces:</p>
+<pre><code class="language-text">SET score 420
+SETSTR banner &quot;final score: $score points&quot;
+PRINT $banner</code></pre>
+<h3 id="3-2-input">3.2 INPUT</h3>
+<p><code>INPUT</code> asks the user for a line of text and stores it in a string variable. The program stops and waits until Enter is pressed:</p>
+<pre><code class="language-text">INPUT name &quot;what is your name? &quot;
+PRINT &quot;hello, $name&quot;</code></pre>
+<p>The second argument is the prompt; leave it off and DOLL-OS shows <code>name&gt; </code>.</p>
+<h3 id="3-3-a-warning-that-will-save-you-an-evening">3.3 A warning that will save you an evening</h3>
+<p><strong>What <code>INPUT</code> gives you is text, and text never automatically becomes a number.</strong> If the user types <code>42</code>, the string variable holds the two characters <code>4</code> and <code>2</code> — and using it where a number is expected yields 0, not 42.</p>
+<p>You <em>can</em> compare strings for equality, with <code>IFEQ</code>/<code>IFNE</code> (next chapter), so programs that check exact answers work fine. Programs that need to do <em>math</em> on typed input must convert it themselves — Chapter 5 builds the conversion routine, and it is shorter than you'd fear.</p>
+<h3 id="3-4-taking-strings-apart">3.4 Taking strings apart</h3>
+<p>Four commands inspect and build strings:</p>
+<pre><code class="language-text">LEN n &lt;text&gt;              put the length of the text into numeric variable n
+CHARAT n &lt;text&gt; &lt;i&gt;       put the character code at position i into n
+SUBSTR s &lt;text&gt; &lt;start&gt; &lt;count&gt;   copy a slice into string variable s
+CHR s &lt;code&gt;              set string variable s to the single character &lt;code&gt;</code></pre>
+<p>Positions count from 0. Character codes are ASCII: <code>A</code> is 65, <code>a</code> is 97, <code>0</code> is 48, space is 32. <code>CHARAT</code> past the end of the string gives 0, and <code>SUBSTR</code> quietly clamps a slice that runs off the end — neither is an error.</p>
+<pre><code class="language-text">SETSTR word &quot;tetris&quot;
+LEN n $word
+PRINT &quot;length: $n&quot;          length: 6
+CHARAT c $word 0
+PRINT &quot;first code: $c&quot;      first code: 116 (lowercase t)
+SUBSTR part $word 0 3
+PRINT &quot;slice: $part&quot;        slice: tet
+CHR letter 65
+PRINT &quot;letter: $letter&quot;     letter: A</code></pre>
+<h3 id="practice-3">Practice 3</h3>
+<ol>
+<li>Ask for the user's name and print it three times on one line, separated by spaces, using <code>SETSTR</code> and <code>APPEND</code>.</li>
+<li>Ask for a word and print its first and last characters' codes. (You will need <code>LEN</code> and a <code>SUB</code>.)</li>
+<li><code>CHR</code> only accepts codes 32–126 (printable ASCII); anything else becomes a space. Why do you think the language refuses to put control characters in strings? (Think about what <code>PRINT</code> would do with them.)</li>
+</ol>
+<hr>
+<h2 id="chapter-4-jumps-and-choices">Chapter 4 — Jumps and Choices</h2>
+<h3 id="4-1-labels-and-goto">4.1 Labels and GOTO</h3>
+<p>Programs normally run top to bottom. A <strong>label</strong> marks a line; <code>GOTO</code> jumps to it:</p>
+<pre><code class="language-text">:forever
+PRINT &quot;again!&quot;
+WAIT 500
+GOTO forever</code></pre>
+<p><code>:name</code> on its own line is a label. (<code>LABEL name</code> is the long spelling.) Labels are jump <em>targets</em> — execution passing through one does nothing.</p>
+<p>That example never ends by itself — press <strong>Ctrl+X</strong> to abort a running app, the same chord that exits the editor. DOLL-OS also has a second line of defense: a loop that runs a million commands without ever <code>WAIT</code>ing gets stopped by the interpreter, on the theory that a loop that never pauses is a bug, not a program. (A loop <em>with</em> a <code>WAIT</code> is presumed intentional and runs forever — that is exactly why Ctrl+X exists. One habit worth forming anyway: give every loop a way out.)</p>
+<h3 id="4-2-if-numeric-decisions">4.2 IF — numeric decisions</h3>
+<pre><code class="language-text">IF &lt;left&gt; &lt;op&gt; &lt;right&gt; GOTO &lt;label&gt;</code></pre>
+<p>If the comparison is true, jump; otherwise continue to the next line. The operators are <code>=</code> <code>==</code> (equal), <code>!=</code> <code>&lt;&gt;</code> (not equal), <code>&lt;</code> <code>&lt;=</code> <code>&gt;</code> <code>&gt;=</code>.</p>
+<pre><code class="language-text">SET hp 3
+:hit
+PRINT &quot;ouch! hp=$hp&quot;
+SUB hp 1
+WAIT 400
+IF $hp &gt; 0 GOTO hit
+PRINT &quot;game over&quot;</code></pre>
+<p>That shape — <em>do the work, change a counter, jump back while a condition holds</em> — is <strong>the loop</strong>, and you will write it hundreds of times. A counted loop, for the times you know how many:</p>
+<pre><code class="language-text">SET i 0
+:loop
+PRINT &quot;i is $i&quot;
+ADD i 1
+IF $i &lt; 5 GOTO loop</code></pre>
+<h3 id="4-3-ifeq-and-ifne-text-decisions">4.3 IFEQ and IFNE — text decisions</h3>
+<p><code>IF</code> compares numbers. For strings there is <code>IFEQ</code> (equal) and <code>IFNE</code> (not equal):</p>
+<pre><code class="language-text">:ask
+INPUT reply &quot;password? &quot;
+IFNE $reply &quot;swordfish&quot; GOTO wrong
+PRINT &quot;welcome.&quot;
+EXIT
+
+:wrong
+PRINT &quot;no.&quot;
+GOTO ask</code></pre>
+<p>Quote any string literal containing spaces. <code>IFEQ</code>/<code>IFNE</code> compare exactly — case, spaces, everything.</p>
+<h3 id="4-4-choosing-among-many">4.4 Choosing among many</h3>
+<p>There is no &quot;else&quot; — you build it from jumps. The idiom for a menu:</p>
+<pre><code class="language-text">INPUT choice &quot;attack, run, or hide? &quot;
+IFEQ $choice &quot;attack&quot; GOTO attack
+IFEQ $choice &quot;run&quot; GOTO run
+IFEQ $choice &quot;hide&quot; GOTO hide
+PRINT &quot;unknown command&quot;
+GOTO menu</code></pre>
+<p>Each test either jumps away or falls through to the next — the last line is what happens when nothing matched. Read a chain like this as a <code>switch</code> statement written long-hand.</p>
+<h3 id="practice-4">Practice 4</h3>
+<ol>
+<li>Count down from 10 to 1, one line per number, half a second apart, then print <code>LIFTOFF</code>.</li>
+<li>Print the multiples of 7 that are less than 100.</li>
+<li>Write a quiz: ask &quot;what is the capital of france? &quot; and loop until the answer is <code>paris</code>, counting attempts. Report the count at the end.</li>
+<li>This program is meant to print <code>done</code> after ten trips around the loop. Instead it dies with <code>stopped after 1000000 steps</code>. Why — and what one line fixes it? ``<code>text SET i 0 :loop IF $i &gt;= 10 GOTO done GOTO loop :done PRINT &quot;done&quot; </code>``</li>
+</ol>
+<hr>
+<h2 id="chapter-5-routines">Chapter 5 — Routines</h2>
+<h3 id="5-1-gosub-and-return">5.1 GOSUB and RETURN</h3>
+<p><code>GOSUB</code> jumps to a label like <code>GOTO</code>, but remembers where it came from. <code>RETURN</code> goes back to the line after the <code>GOSUB</code>:</p>
+<pre><code class="language-text">GOSUB fanfare
+PRINT &quot;back in the main program&quot;
+GOSUB fanfare
+EXIT
+
+:fanfare
+COLOR yellow
+PRINT &quot;*** ta-da! ***&quot;
+COLOR white
+RETURN</code></pre>
+<p><code>fanfare</code> runs twice, and each time control comes back. A labeled block that ends in <code>RETURN</code> is a <strong>routine</strong> — a named, reusable piece of program. Notice the <code>EXIT</code> before the routine: without it, the main program would fall off its last line <em>into</em> <code>:fanfare</code>, and the <code>RETURN</code> at the end would have nowhere to go. Keep routines below an <code>EXIT</code> (or below the main loop's <code>GOTO</code>).</p>
+<p>Routines may call other routines, up to 64 levels deep. The conditional forms work too: <code>IF $hp &lt; 1 GOSUB die</code> calls and comes back.</p>
+<h3 id="5-2-passing-values-in-and-out">5.2 Passing values in and out</h3>
+<p>Routines have no private variables — every variable is shared by the whole program. The convention: set agreed-upon variables before the call, read agreed-upon variables after, and say so in a comment:</p>
+<pre><code class="language-text"># in: w, h   out: area
+:rectarea
+SET area $w
+MUL area $h
+RETURN</code></pre>
+<pre><code class="language-text">SET w 6
+SET h 4
+GOSUB rectarea
+PRINT &quot;area: $area&quot;</code></pre>
+<p>Because everything is shared, a routine that quietly reuses a name like <code>i</code> will trample its caller's <code>i</code>. Pick distinct names for routine-internal counters (<code>ri</code>, <code>ci</code>, ...) — future you will be grateful.</p>
+<h3 id="5-3-the-one-rule-leave-through-return">5.3 The one rule: leave through RETURN</h3>
+<p>A routine may jump around <em>inside</em> itself freely. What it must never do is <code>GOTO</code> somewhere <em>outside</em> itself instead of returning. Each <code>GOSUB</code> stores a return address; only <code>RETURN</code> removes one. Jump out and the address is stranded — do that in a loop and the stack fills, and the app dies at depth 64 with <code>GOSUB nested deeper than 64</code>.</p>
+<p>When a routine discovers something the caller must act on — the player died, the piece can't move — <strong>set a variable and RETURN</strong>:</p>
+<pre><code class="language-text"># out: hit (1 = collision)
+:collide
+SET hit 0
+IF $x &lt; 0 GOTO collide_bad
+IF $x &gt; 9 GOTO collide_bad
+RETURN
+:collide_bad
+SET hit 1
+RETURN</code></pre>
+<p>The internal <code>GOTO collide_bad</code> is fine — it lands on a line that <code>RETURN</code>s. The caller then decides:</p>
+<pre><code class="language-text">GOSUB collide
+IF $hit = 1 GOTO undo_move</code></pre>
+<h3 id="5-4-worked-example-text-into-numbers">5.4 Worked example: text into numbers</h3>
+<p>Chapter 3 promised the fix for <code>INPUT</code> giving you text. Here it is — a routine that reads digits off the front of a string and builds the number, using only tools you already have:</p>
+<pre><code class="language-text"># in: text (string)   out: num
+:str2num
+SET num 0
+SET si 0
+LEN slen $text
+:s2n_loop
+IF $si &gt;= $slen GOTO s2n_done
+CHARAT d $text $si
+IF $d &lt; 48 GOTO s2n_done
+IF $d &gt; 57 GOTO s2n_done
+SUB d 48
+MUL num 10
+ADD num $d
+ADD si 1
+GOTO s2n_loop
+:s2n_done
+RETURN</code></pre>
+<p>Digit characters have codes 48 (<code>0</code>) through 57 (<code>9</code>), so <code>SUB d 48</code> turns a code into its digit, and <code>num = num*10 + digit</code> shifts it in. Now the classic guessing game is possible:</p>
+<pre><code class="language-text">RAND secret 1 100
+PRINT &quot;I'm thinking of a number from 1 to 100.&quot;
+
+:guess
+INPUT text &quot;guess&gt; &quot;
+GOSUB str2num
+IF $num &lt; $secret GOTO low
+IF $num &gt; $secret GOTO high
+COLOR green
+PRINT &quot;yes! it was $secret&quot;
+EXIT
+
+:low
+PRINT &quot;higher...&quot;
+GOTO guess
+:high
+PRINT &quot;lower...&quot;
+GOTO guess</code></pre>
+<p>(Routines from <code>:str2num</code> go at the bottom, after the last <code>EXIT</code>.)</p>
+<h3 id="practice-5">Practice 5</h3>
+<ol>
+<li>Write a routine <code># in: n  out: fact</code> that computes n factorial (1×2×...×n), and use it to print the factorials of 1 through 8.</li>
+<li>Write a routine that prints a line of <code>n</code> stars (<code>*</code>), then use it to draw a triangle ten rows tall.</li>
+<li>Extend the guessing game to count guesses and report the count on success.</li>
+<li>This routine is correct — test it alone and it works forever. Yet pasted into one particular larger program, it crashed after a few hundred calls with <code>GOSUB nested deeper than 64</code>. The routine has no bug. What property of <em>labels</em> makes it dangerous anyway, and what do the tetris routines do about it? ``<code>text # in: x   out: sign :signof SET sign 1 IF $x &gt;= 0 GOTO done SET sign 0 SUB sign 1 :done RETURN </code>``</li>
+</ol>
+<hr>
+<h2 id="chapter-6-expr">Chapter 6 — EXPR</h2>
+<h3 id="6-1-whole-formulas-at-once">6.1 Whole formulas at once</h3>
+<p>The Chapter 2 commands do one operation each. Real formulas get tedious:</p>
+<pre><code class="language-text"># index = row * 10 + col, the hard way
+SET index $row
+MUL index 10
+ADD index $col</code></pre>
+<p><code>EXPR</code> evaluates an entire expression and stores the result:</p>
+<pre><code class="language-text">EXPR index $row * 10 + $col</code></pre>
+<p>Everything after the variable name is the formula. Spaces are fine. Parentheses group. The operators are <code>+ - * / ^ %</code> (<code>^</code> is power, <code>%</code> is remainder), plus functions: <code>abs(x)</code>, <code>floor(x)</code>, <code>ceil(x)</code>, <code>sqrt(x)</code>, <code>pow(x,y)</code>, and the trig set (<code>sin</code>, <code>cos</code>, <code>tan</code>, ...). It is the same evaluator behind the shell's <code>calc</code> command.</p>
+<pre><code class="language-text">EXPR c sqrt($a*$a + $b*$b)
+EXPR wrapped ($angle + 360) % 360
+EXPR dropat $millis + $dropms</code></pre>
+<p>Every <code>$name</code> in the formula is replaced by its <strong>numeric</strong> value before evaluation — string variables have no business in a formula.</p>
+<h3 id="6-2-the-rounding-rule-read-this-twice">6.2 The rounding rule (read this twice)</h3>
+<p><code>EXPR</code> computes with real numbers internally, then <strong>rounds to the nearest whole number</strong> when storing. <code>DIV</code> truncates. These disagree:</p>
+<pre><code class="language-text">SET a 7
+DIV a 2          a is 3   (truncated)
+EXPR b 7 / 2     b is 4   (3.5 rounded up)</code></pre>
+<p>When a formula needs throw-away-the-remainder division — and grid math almost always does — wrap it in <code>floor()</code>:</p>
+<pre><code class="language-text">EXPR level floor($lines / 10) + 1
+EXPR row floor($i / 10)
+EXPR col $i % 10</code></pre>
+<p>That <code>floor(i/10)</code> / <code>i%10</code> pair converts a flat index into row and column. Memorize it; Chapter 7 is built on it.</p>
+<h3 id="practice-6">Practice 6</h3>
+<ol>
+<li>Redo Practice 2.3 (137 seconds into minutes and seconds) as two <code>EXPR</code> lines.</li>
+<li>Convert a Celsius temperature to Fahrenheit: F = C × 9 / 5 + 32. Check what your program says for 37, and think about whether rounding or truncation is what you want here.</li>
+<li>Without running it: what does <code>EXPR x 5 / 10</code> store in <code>x</code>? What about <code>EXPR x floor(5 / 10)</code>? Now run both.</li>
+<li>A circle's area is πr². There is no <code>$pi</code> built-in — get π from <code>EXPR pi 4 * atan(1)</code> and compute the area for r = 10.</li>
+</ol>
+<hr>
+<h2 id="chapter-7-arrays">Chapter 7 — Arrays</h2>
+<h3 id="7-1-two-hundred-variables-would-be-terrible">7.1 Two hundred variables would be terrible</h3>
+<p>A game board is hundreds of cells. Naming them <code>cell0</code>, <code>cell1</code>, ... <code>cell199</code> is obviously unworkable — and the 64-variable limit stops you long before 200 anyway. An <strong>array</strong> is one name for many numbered cells:</p>
+<pre><code class="language-text">DIM scores 10</code></pre>
+<p>That creates <code>scores</code>, ten cells, numbered 0 through 9, each starting at 0. Read a cell with <code>$name[index]</code>, write one by using <code>name[index]</code> where a variable name would go:</p>
+<pre><code class="language-text">SET scores[0] 100
+SET scores[1] 250
+EXPR scores[2] $scores[0] + $scores[1]
+PRINT &quot;third: $scores[2]&quot;</code></pre>
+<p>The index is itself a value — a number, a <code>$variable</code>, or arithmetic hiding inside a subscript:</p>
+<pre><code class="language-text">SET i 5
+SET scores[$i] 999
+PRINT &quot;$scores[$i]&quot;</code></pre>
+<p>Arrays hold numbers only (there are no string arrays), up to 16 arrays per program, sharing a pool of 8192 cells.</p>
+<h3 id="7-2-the-bounds-check-is-your-friend">7.2 The bounds check is your friend</h3>
+<p>Reading or writing outside an array — <code>$scores[10]</code> on a ten-cell array, or a negative index — <strong>stops the program immediately</strong> and reports the line number. This is a feature. The alternative (silently reading 0) turns a one-character bug into an evening of &quot;why is my board empty in one corner.&quot; When your app dies with <code>index 10 outside scores[0..9] (line 40)</code>, it is telling you exactly where you got your index math wrong. Thank it and go look at line 40.</p>
+<h3 id="7-3-a-grid-in-a-straight-line">7.3 A grid in a straight line</h3>
+<p>Arrays are one-dimensional; boards are two-dimensional. The bridge is the formula from Chapter 6. For a grid <code>W</code> cells wide, cell (row, col) lives at:</p>
+<pre><code class="language-text">index = row * W + col</code></pre>
+<p>and back the other way: <code>row = floor(index / W)</code>, <code>col = index % W</code>. A 10-wide, 20-tall playfield:</p>
+<pre><code class="language-text">DIM board 200
+
+# write: board[row=3][col=7] = 5
+EXPR i 3 * 10 + 7
+SET board[$i] 5
+
+# read every cell, row by row
+SET r 0
+:rows
+SET c 0
+:cols
+EXPR i $r * 10 + $c
+IF $board[$i] &lt;&gt; 0 GOSUB drawcell
+ADD c 1
+IF $c &lt; 10 GOTO cols
+ADD r 1
+IF $r &lt; 20 GOTO rows</code></pre>
+<p>That nested pair of counted loops is <em>the</em> array-walking pattern. Notice each loop resets its counter at the top — forget <code>SET c 0</code> inside the outer loop and only the first row gets visited.</p>
+<h3 id="7-4-re-dim-to-reset">7.4 Re-DIM to reset</h3>
+<p><code>DIM</code> on a name that already exists, at the same size, zeroes every cell — that is the &quot;new game&quot; button. (At a <em>different</em> size it is an error; an array's size is for life.)</p>
+<h3 id="practice-7">Practice 7</h3>
+<ol>
+<li><code>DIM rolls 6</code>, roll a die 100 times, count how many times each face came up, and print the six counts. (The array index <em>is</em> the tally slot.)</li>
+<li>Fill a 20-cell array with the squares 1, 4, 9, ... 400, then print them back in reverse order.</li>
+<li>Using a 10×10 grid in a 100-cell array, set the two diagonals to 1 and count how many cells got set. (Careful: the diagonals cross. What does your count say, and why?)</li>
+<li>Predict the error message: <code>DIM a 5</code> then <code>SET i 5</code> then <code>PRINT &quot;$a[$i]&quot;</code>.</li>
+</ol>
+<hr>
+<h2 id="chapter-8-the-game-loop">Chapter 8 — The Game Loop</h2>
+<h3 id="8-1-why-input-can-t-run-a-game">8.1 Why INPUT can't run a game</h3>
+<p><code>INPUT</code> stops the world until Enter. Games can't stop the world — gravity pulls the piece down whether or not you are touching the keys. What a game needs is <em>&quot;did the player press something? if yes, what? either way, keep moving&quot;</em> — and that is <code>KEY</code>:</p>
+<pre><code class="language-text">KEY k</code></pre>
+<p><code>KEY</code> never waits. It reads <strong>at most one</strong> keypress into a numeric variable: 0 if nothing was pressed, otherwise a code saying what. It hears both the telnet client and a BLE keyboard on the companion DOLL-OS keyboard bridge.</p>
+<h3 id="8-2-key-codes">8.2 Key codes</h3>
+<p>Letters, digits, and punctuation come back as their ASCII code — <code>a</code> is 97, space is 32. The special keys have named built-ins so you never memorize their numbers:</p>
+<pre><code class="language-text">$kup  $kdown  $kleft  $kright     arrow keys
+$kenter  $kesc  $kback  $ktab     enter, escape, backspace, tab
+$kspace                           the space bar (same as 32)</code></pre>
+<p>These are numbers, for comparing — <code>PRINT &quot;$kup&quot;</code> prints nothing useful. Ctrl+C and Ctrl+T also arrive as <code>$kesc</code>, so the quit-chord users already know from the rest of DOLL-OS works in your game for free. Ctrl+X never reaches your program at all — it aborts the app on the spot, which is what makes an infinite <code>KEY</code> loop safe to experiment with.</p>
+<pre><code class="language-text">:loop
+KEY k
+IF $k = 0 GOTO loop_wait
+IF $k = $kleft GOSUB move_left
+IF $k = $kright GOSUB move_right
+IF $k = $kesc GOTO quit
+IF $k = 112 GOSUB toggle_pause     the letter p
+:loop_wait
+WAIT 16
+GOTO loop</code></pre>
+<h3 id="8-3-the-wait-matters">8.3 The WAIT matters</h3>
+<p>That <code>WAIT 16</code> is not decoration. It paces the loop to roughly sixty trips a second — fast enough that input feels instant, slow enough that the display and radio get serviced. It also resets the runaway-loop guard: the interpreter's rule is that a loop that <code>WAIT</code>s is a program and a loop that never does is a bug. A game loop with a <code>WAIT</code> in it can run all day.</p>
+<h3 id="8-4-doing-things-on-time">8.4 Doing things on time</h3>
+<p>The wrong way to make something happen every 650 ms is to <code>WAIT 650</code> — then the player can't move during the wait. The right way: remember <em>when the next one is due</em>, and check the clock each trip around the loop:</p>
+<pre><code class="language-text">EXPR dropat $millis + 650
+
+:loop
+KEY k
+# ... handle keys every single trip ...
+IF $millis &lt; $dropat GOTO loop_wait
+GOSUB gravity
+EXPR dropat $millis + 650
+:loop_wait
+WAIT 16
+GOTO loop</code></pre>
+<p>Input is checked ~60 times a second; gravity fires when its moment comes. Every timed thing in a game — falling pieces, blinking text, a speed-up per level — is this pattern with a different variable.</p>
+<h3 id="8-5-the-dirty-flag">8.5 The dirty flag</h3>
+<p>Redrawing the screen is the slowest thing a game does, and most loop trips nothing has visibly changed. So: keep a variable <code>dirty</code>, set it to 1 whenever you change something visible, and redraw only when it is set:</p>
+<pre><code class="language-text">:loop
+IF $dirty = 1 GOSUB draw
+SET dirty 0
+...</code></pre>
+<p>Every routine that moves a piece or bumps the score does <code>SET dirty 1</code> and nothing more; the loop redraws once, however many things changed.</p>
+<h3 id="practice-8">Practice 8</h3>
+<ol>
+<li>Write a stopwatch: <code>s</code> starts it and prints elapsed seconds when pressed again; <code>$kesc</code> quits. (You will want <code>$seconds</code> and a saved start time.)</li>
+<li>Make a counter that shows a number which climbs by 1 every second, while <code>$kup</code> and <code>$kdown</code> add and subtract 10 instantly. (Two timescales — one from the clock pattern, one from keys.)</li>
+<li>What goes wrong with the 8.4 loop if you write <code>EXPR dropat $dropat + 650</code> instead of <code>$millis + 650</code>? When would you <em>want</em> that version? (This is a real design choice — think about what happens after a lag spike.)</li>
+</ol>
+<hr>
+<h2 id="chapter-9-the-canvas">Chapter 9 — The Canvas</h2>
+<h3 id="9-1-a-screen-you-can-draw-on">9.1 A screen you can draw on</h3>
+<p><code>PRINT</code> appends lines to a scrolling terminal, which is exactly wrong for a game: you can't put the score <em>back at the top</em> or redraw the playfield in place. <code>CANVAS</code> replaces the scroll with a fixed grid of character cells that you address directly:</p>
+<pre><code class="language-text">CANVAS 32 22        a grid 32 columns wide, 22 rows tall
+PUT 13 10 &quot;hello&quot;   write text at column 13, row 10
+FLIP                show it
+WAIT 1000
+ENDCANVAS           put the normal terminal back</code></pre>
+<p>Coordinates are column-first, counted from 0, origin at the top-left. <code>PUT</code> draws in the current <code>COLOR</code>. Text that runs off an edge is clipped, not an error — drawing a sprite half off-screen is normal and fine.</p>
+<p>On the panel the grid is scaled up to fill the screen — a small grid gets big chunky cells, a big grid gets fine ones. On telnet the same frame is drawn in place, without scrolling. Maximum size is 120×60.</p>
+<h3 id="9-2-put-draws-nothing-flip-shows-everything">9.2 PUT draws nothing; FLIP shows everything</h3>
+<p><code>PUT</code> writes into an off-screen buffer. Nothing appears until <code>FLIP</code> pushes the whole buffer at once. This is what makes animation clean: build the entire frame — erase, borders, board, piece, score — then one <code>FLIP</code>. The screen goes straight from the old complete frame to the new complete frame, and never shows a half-drawn one.</p>
+<p>The frame loop is always the same shape:</p>
+<pre><code class="language-text">:draw
+CLS                        blank the canvas (CLS clears the *grid* while one is up)
+PUT ... everything ...
+FLIP
+RETURN</code></pre>
+<p>Two rules while a canvas is up: <strong>don't <code>PRINT</code></strong> (it goes to the terminal underneath and garbles the telnet view — save your goodbye message for after <code>ENDCANVAS</code>), and don't forget <code>ENDCANVAS</code> on the way out (though DOLL-OS restores the terminal automatically when the app ends, even if it crashed).</p>
+<h3 id="9-3-worked-example-the-bouncing-ball">9.3 Worked example: the bouncing ball</h3>
+<p>The complete canvas-plus-game-loop pattern in thirty lines:</p>
+<pre><code class="language-text">CANVAS 40 20
+SET x 5
+SET y 3
+SET dx 1
+SET dy 1
+
+:loop
+KEY k
+IF $k = $kesc GOTO done
+
+ADD x $dx
+ADD y $dy
+IF $x &gt; 0 GOTO checkright
+SET dx 1
+:checkright
+IF $x &lt; 39 GOTO checktop
+SET dx 0
+SUB dx 1
+:checktop
+IF $y &gt; 0 GOTO checkbottom
+SET dy 1
+:checkbottom
+IF $y &lt; 19 GOTO draw
+SET dy 0
+SUB dy 1
+
+:draw
+CLS
+COLOR cyan
+PUT $x $y &quot;o&quot;
+FLIP
+WAIT 50
+GOTO loop
+
+:done
+ENDCANVAS
+PRINT &quot;bounced out&quot;
+EXIT</code></pre>
+<p>Move, bounce off each wall by flipping the direction's sign, erase, draw, flip, wait, repeat. Every 2-D game you write is this program with more variables. (<code>SET dx 0</code> / <code>SUB dx 1</code> is &quot;set dx to -1&quot; — remember <code>SET</code>'s argument is a value, and <code>-1</code> is a fine value: <code>SET dx -1</code> works too. The long spelling above is just to show sign-flipping without negative literals.)</p>
+<h3 id="practice-9">Practice 9</h3>
+<ol>
+<li>Draw a checkerboard: an 8×8 grid where cells with (row+col) even get <code>##</code>. (You'll want <code>MOD</code> or <code>%</code>.)</li>
+<li>Make the ball leave a trail: <em>don't</em> <code>CLS</code> each frame. Then explain why the no-trail version needs the <code>CLS</code>.</li>
+<li>Two balls, different speeds. (Hint: the second ball moves every <em>other</em> frame — a counter and a <code>MOD</code> will do it.)</li>
+<li>Put a live clock in the corner of the bouncing-ball screen: <code>$seconds</code> since boot, updated only when it changes. (Dirty-flag thinking: what marks it stale?)</li>
+</ol>
+<hr>
+<h2 id="chapter-10-project-tetris">Chapter 10 — Project: Tetris</h2>
+<p>Time to spend everything. The finished game ships on the device — <code>run tetris</code>, and the source is <code>/apps/tetris.dapp</code> (about 400 lines, half of it data). This chapter builds it in the order it was actually built. Type each stage in, run it, watch it work, then build the next on top.</p>
+<p>We will need: an array for the well, arrays for piece shapes, <code>EXPR</code> for the index math, <code>KEY</code> + <code>$millis</code> for the loop, the canvas for drawing, and routines for everything — every chapter of this book, load-bearing at once.</p>
+<h3 id="10-1-the-plan">10.1 The plan</h3>
+<p>Tetris is smaller than its reputation. The whole game is:</p>
+<ul>
+<li>a <strong>well</strong>, 10 columns × 20 rows — an array where 0 is empty and 1–7 says which color of block has settled there;</li>
+<li>a <strong>current piece</strong> — which of the 7 shapes (<code>piece</code>), where it is (<code>px</code>, <code>py</code>), and how it's turned (<code>rot</code>);</li>
+<li><strong>gravity</strong> — the piece's <code>py</code> increases on a timer;</li>
+<li><strong>collision</strong> — &quot;would the piece overlap a wall or a settled block?&quot;;</li>
+<li><strong>locking</strong> — a piece that can't fall stamps itself into the well, full rows vanish, a new piece spawns;</li>
+<li>a <strong>draw</strong> routine that paints all of it.</li>
+</ul>
+<p>Everything else is decoration. Take these one at a time.</p>
+<h3 id="10-2-the-screen">10.2 The screen</h3>
+<p>A 10-wide well drawn 2 characters per cell (blocks are <code>[]</code> — the classic look, and twice as wide reads much better than single characters) needs 22 columns with borders; 20 rows plus borders is 22. Add a sidebar for score:</p>
+<pre><code class="language-text">CANVAS 32 22
+COLOR blue
+PUT 0 0 &quot;+--------------------+&quot;
+PUT 0 21 &quot;+--------------------+&quot;
+SET dy 1
+:draw_side
+PUT 0 $dy &quot;|&quot;
+PUT 21 $dy &quot;|&quot;
+ADD dy 1
+IF $dy &lt; 21 GOTO draw_side
+FLIP
+WAIT 2000
+ENDCANVAS
+EXIT</code></pre>
+<p>Run it: an empty well. The mapping from well coordinates to screen coordinates, used everywhere below: a cell at well column <code>bx</code>, row <code>by</code> draws at screen <code>(bx*2 + 1, by + 1)</code> — double for the two-character blocks, plus one for the border.</p>
+<h3 id="10-3-the-well">10.3 The well</h3>
+<pre><code class="language-text">DIM well 200</code></pre>
+<p>Cell (row, col) is <code>well[row*10 + col]</code>, per Chapter 7. Zero means empty; 1–7 means a settled block wearing that piece's color. That's the entire data model of the playfield. When we later test &quot;is this spot free,&quot; it is one line: <code>IF $well[$wi] &lt;&gt; 0 GOTO occupied</code>.</p>
+<h3 id="10-4-describing-the-pieces">10.4 Describing the pieces</h3>
+<p>Here is the trick that keeps the data small. Each of the 7 tetrominoes is four blocks in a small square box (the I piece in a 4×4 box, the O in 2×2, the rest in 3×3). We store only the <strong>spawn orientation</strong> — for each piece, the row and column of its four cells — and <em>compute</em> the other three rotations. Three parallel arrays:</p>
+<pre><code class="language-text">DIM pbox 7      box size per piece  (I=4, O=2, others=3)
+DIM pr 28       row of cell j of piece p, at index p*4 + j
+DIM pc 28       column, same indexing</code></pre>
+<p>then 63 <code>SET</code> lines of pure data (see the shipped file for the full table — type it once, carefully). For example the T piece (piece 2, box 3) is cells (0,1), (1,0), (1,1), (1,2):</p>
+<pre><code class="language-text">.#.       pr[8..11]  = 0 1 1 1
+###       pc[8..11]  = 1 0 1 2
+...</code></pre>
+<p>The <code>p*4 + j</code> indexing is the grid formula again — the 7×4 table of cells, flattened, exactly like the well.</p>
+<h3 id="10-5-rotation-is-a-formula-not-a-table">10.5 Rotation is a formula, not a table</h3>
+<p>Rotating a point clockwise inside an N×N box:</p>
+<pre><code class="language-text">(row, col)  →  (col, N-1-row)</code></pre>
+<p>Check it on paper with a 3×3 box: (0,0) — top-left — goes to (0,2) — top-right. Yes: that's a clockwise quarter-turn. Apply the formula <code>rot</code> times and you have any orientation from the spawn data:</p>
+<pre><code class="language-text"># in: piece, rot, i (0..3)   out: cr, cc (cell's row/col in the box)
+:cellat
+EXPR pi $piece * 4 + $i
+SET cr $pr[$pi]
+SET cc $pc[$pi]
+SET rleft $rot
+:cellat_spin
+IF $rleft &lt;= 0 GOTO cellat_done
+SET t $cr
+SET cr $cc
+EXPR cc $pbox[$piece] - 1 - $t
+SUB rleft 1
+GOTO cellat_spin
+:cellat_done
+RETURN</code></pre>
+<p>Note the <code>SET t $cr</code> — the two assignments each use the <em>old</em> values, so the first one must be stashed before it's overwritten. (A classic bug: swap two variables without a temporary and watch one value vanish.)</p>
+<p>Every routine below asks &quot;where is cell i of the current piece?&quot; by calling this. The alternative — a hand-typed 7-pieces × 4-rotations table — is 112 rows of data to get wrong. Ten lines of formula beat it.</p>
+<h3 id="10-6-collision-move-test-undo">10.6 Collision — move, test, undo</h3>
+<p>The single most useful routine in the game. &quot;If the piece were at (<code>px</code>, <code>py</code>) rotated <code>rot</code>, would it fit?&quot; — check all four cells:</p>
+<pre><code class="language-text"># in: px, py, rot, piece   out: hit (1 = doesn't fit)
+:collide
+SET hit 0
+SET i 0
+:collide_cell
+GOSUB cellat
+EXPR bx $px + $cc
+EXPR by $py + $cr
+IF $bx &lt; 0 GOTO collide_hit
+IF $bx &gt; 9 GOTO collide_hit
+IF $by &gt; 19 GOTO collide_hit
+IF $by &lt; 0 GOTO collide_next
+EXPR wi $by * 10 + $bx
+IF $well[$wi] &lt;&gt; 0 GOTO collide_hit
+:collide_next
+ADD i 1
+IF $i &lt; 4 GOTO collide_cell
+RETURN
+:collide_hit
+SET hit 1
+RETURN</code></pre>
+<p>Each cell must be inside the side walls and floor, and its well cell must be empty. One deliberate asymmetry: <code>by &lt; 0</code> — above the top — is <em>legal</em>, and skips the well test rather than failing. Pieces spawn with part of their box above the visible well; forbidding that would end the game one move early.</p>
+<p>With <code>collide</code> in hand, all movement is the same three-step idiom:</p>
+<pre><code class="language-text">:hk_left
+SUB px 1          move
+GOSUB collide     test
+IF $hit = 0 GOTO hk_left_ok
+ADD px 1          undo
+:hk_left_ok
+SET dirty 1
+RETURN</code></pre>
+<p>Try the move for real, ask if it fits, put it back if not. No &quot;would it fit&quot; math separate from the &quot;do it&quot; math — the move <em>is</em> the test. Rotation, soft drop, gravity: all this shape.</p>
+<h3 id="10-7-drawing-a-frame">10.7 Drawing a frame</h3>
+<p>Chapter 9's frame pattern, applied. Blank, borders, then every settled block, then the falling piece, then the sidebar; one <code>FLIP</code> at the end:</p>
+<pre><code class="language-text">:draw
+CLS
+COLOR blue
+# ... the border drawing from 10.2 ...
+
+SET dy 0
+:draw_row
+SET dx 0
+:draw_col
+EXPR wi $dy * 10 + $dx
+SET ck $well[$wi]
+IF $ck = 0 GOTO draw_col_next
+GOSUB setcolor
+EXPR sx $dx * 2 + 1
+EXPR sy $dy + 1
+PUT $sx $sy &quot;[]&quot;
+:draw_col_next
+ADD dx 1
+IF $dx &lt; 10 GOTO draw_col
+ADD dy 1
+IF $dy &lt; 20 GOTO draw_row
+
+EXPR ck $piece + 1
+GOSUB setcolor
+SET i 0
+:draw_piece
+GOSUB cellat
+EXPR bx $px + $cc
+EXPR by $py + $cr
+IF $by &lt; 0 GOTO draw_piece_next
+EXPR sx $bx * 2 + 1
+EXPR sy $by + 1
+PUT $sx $sy &quot;[]&quot;
+:draw_piece_next
+ADD i 1
+IF $i &lt; 4 GOTO draw_piece
+
+COLOR cyan
+PUT 23 3 &quot;SCORE&quot;
+COLOR white
+PUT 23 4 $score
+FLIP
+RETURN</code></pre>
+<p><code>setcolor</code> is a routine that turns a block's number 1–7 into a <code>COLOR</code> — a Chapter 4 if-chain, one comparison per color (<code>COLOR</code> takes a name, not a number, so dispatching is the only way; it's in the shipped file). Note the piece skips cells with <code>by &lt; 0</code> — the piece can <em>be</em> above the well, but there is nothing up there to draw on.</p>
+<h3 id="10-8-the-heart-the-main-loop">10.8 The heart: the main loop</h3>
+<p>Chapter 8, verbatim — dirty flag, key poll, clock check:</p>
+<pre><code class="language-text">SET score 0
+SET lines 0
+SET level 1
+SET dropms 650
+SET quit 0
+SET dirty 1
+GOTO spawn
+
+:loop
+IF $dirty = 1 GOSUB draw
+SET dirty 0
+KEY k
+IF $k &lt;&gt; 0 GOSUB handlekey
+IF $quit = 1 GOTO leave
+EXPR remain $dropat - $millis
+IF $remain &gt; 0 GOTO loop_wait
+GOSUB gravity
+IF $locked = 1 GOTO spawn
+:loop_wait
+WAIT 12
+GOTO loop</code></pre>
+<p>Gravity is move-test-undo pointing down, and when down fails, the piece has landed:</p>
+<pre><code class="language-text"># out: locked (1 = piece settled and was stamped in)
+:gravity
+SET locked 0
+ADD py 1
+GOSUB collide
+IF $hit = 0 GOTO gr_done
+SUB py 1
+GOSUB lock
+GOSUB clearlines
+GOSUB addscore
+SET locked 1
+:gr_done
+EXPR dropat $millis + $dropms
+SET dirty 1
+RETURN</code></pre>
+<p>Notice what <code>gravity</code> does <em>not</em> do: it doesn't jump to <code>spawn</code> itself — it sets <code>locked</code> and returns, and the main loop reads it. That is the Chapter 5 rule paying rent. The first draft of this routine ended with <code>GOTO spawn</code>, and the game died at depth 64 after about sixty pieces — sixty stranded return addresses. If you hit <code>GOSUB nested deeper than 64</code> in your own games, hunt for exactly this: a routine that jumps out instead of reporting back.</p>
+<h3 id="10-9-steering">10.9 Steering</h3>
+<p><code>handlekey</code> is a Chapter 4 dispatch chain — each key either jumps to its little handler (which <code>RETURN</code>s) or falls through to the next test. Both arrows and WASD, so it plays the same over telnet and a BLE keyboard:</p>
+<pre><code class="language-text"># in: k   out: quit, and moves the piece
+:handlekey
+IF $k = $kesc GOTO hk_quit
+IF $k = $kleft GOTO hk_left
+IF $k = 97 GOTO hk_left        a
+IF $k = $kright GOTO hk_right
+IF $k = 100 GOTO hk_right      d
+IF $k = $kup GOTO hk_rot
+IF $k = 119 GOTO hk_rot        w
+IF $k = $kdown GOTO hk_down
+IF $k = 115 GOTO hk_down       s
+IF $k = $kspace GOTO hk_drop
+RETURN</code></pre>
+<p>Left and right you have (10.6). Rotation is move-test-undo where the &quot;move&quot; is <code>rot</code>, with one refinement — if the turned piece doesn't fit, try nudging it one cell right, then one left, before giving up. Those <em>wall kicks</em> are what makes rotating against a wall feel right instead of stubborn:</p>
+<pre><code class="language-text">:hk_rot
+SET oldrot $rot
+SET oldpx $px
+ADD rot 1
+IF $rot &lt; 4 GOTO hk_rot_test
+SET rot 0
+:hk_rot_test
+GOSUB collide
+IF $hit = 0 GOTO hk_rot_ok
+ADD px 1
+GOSUB collide
+IF $hit = 0 GOTO hk_rot_ok
+SUB px 2
+GOSUB collide
+IF $hit = 0 GOTO hk_rot_ok
+SET px $oldpx
+SET rot $oldrot
+:hk_rot_ok
+SET dirty 1
+RETURN</code></pre>
+<p>Soft drop (<code>hk_down</code>) is one gravity-step that also resets the drop timer and scores a point. Hard drop repeats &quot;down until it hits,&quot; then sets <code>dropat</code> to 0 — forcing gravity to fire on the very next loop trip, so the locking happens in the one routine that ever locks. Both are in the shipped file; write them yourself first, they are each five lines of ideas you have.</p>
+<h3 id="10-10-locking-and-clearing-lines">10.10 Locking and clearing lines</h3>
+<p><code>lock</code> stamps the four cells into the well — <code>cellat</code>, the index formula, and <code>SET well[$wi] $lc</code> where <code>lc</code> is <code>piece + 1</code> (so color 0 stays &quot;empty&quot;). Cells above the top (<code>by &lt; 0</code>) are skipped.</p>
+<p><code>clearlines</code> is the most intricate routine in the game, and it is only three nested ideas:</p>
+<pre><code class="language-text">for each row from the bottom up:          (ry 19 → 0)
+    is every one of its 10 cells non-zero?
+    if yes: copy every row above it down one, zero the top row,
+            count the clear — and re-check this same ry</code></pre>
+<p>That &quot;re-check the same row&quot; is the subtle part: after rows shift down, the row you just cleared holds what was above it — which might <em>also</em> be full. The shipped routine does it by looping on <code>ry</code> only when the row was <em>not</em> full. Scoring (<code>addscore</code>) then pays 100/300/500/800 × level for 1/2/3/4 lines — the jackpot for a four-line Tetris is the whole point of saving up — and speeds gravity as levels rise:</p>
+<pre><code class="language-text">EXPR level floor($lines / 10) + 1
+EXPR dropms 650 - ($level - 1) * 55
+IF $dropms &gt; 80 GOTO as_done
+SET dropms 80
+:as_done</code></pre>
+<p>Chapter 6's warning made real: this formula originally read <code>$lines / 10 + 1</code>, and at 5 lines EXPR rounded 0.5 <em>up</em> — promoting the player to level 2 at half the score. <code>floor()</code> fixed it. When a threshold in your game fires early, check your division.</p>
+<h3 id="10-11-spawning-dying-leaving">10.11 Spawning, dying, leaving</h3>
+<pre><code class="language-text">:spawn
+RAND piece 7
+SET rot 0
+SET px 3
+SET py 0
+GOSUB collide
+IF $hit = 1 GOTO gameover
+EXPR dropat $millis + $dropms
+SET dirty 1
+GOTO loop</code></pre>
+<p>A new piece that collides <em>immediately</em> means the stack has reached the spawn point — and that test, one reused routine, is the entire game-over detection. <code>gameover</code> PUTs a banner over the frozen board, FLIPs, waits, and falls into <code>leave</code>, which does <code>ENDCANVAS</code> and prints the final score — with <code>PRINT</code>, legal again now that the canvas is down.</p>
+<h3 id="10-12-what-you-built-and-what-to-build-next">10.12 What you built, and what to build next</h3>
+<p>Count the chapters in the finished file: the well and piece tables (7), every formula (6), move-test-undo and the frame loop (8, 9), fifteen routines with one honest contract each (5), and dispatch chains everywhere (4). No single piece is clever. The game is the <em>arrangement</em>.</p>
+<p>Extensions, in rough order of difficulty — the honest way to own this code:</p>
+<ol>
+<li><strong>Pause key.</strong> One flag, one <code>IF</code> in the loop, one banner.</li>
+<li><strong>Next-piece preview.</strong> <code>RAND</code> one piece ahead; draw it in the sidebar (a second, smaller version of the draw-piece loop).</li>
+<li><strong>Ghost piece.</strong> Where would the piece land? You have <code>collide</code> — drop a copy of <code>py</code> until it hits, draw the outline there. (Save and restore <code>py</code> around it. Which variables does <code>cellat</code> touch? That contract discipline suddenly matters.)</li>
+<li><strong>Hold slot.</strong> Swap the current piece into storage, once per drop.</li>
+<li><strong>A high score that survives the power switch.</strong> That one needs a whole new power — files — and it is exactly what Chapter 11 builds.</li>
+<li><strong>Two-player.</strong> There is a second set of... no. Some things need a bigger language. Everything above fits in this one.</li>
+</ol>
+<hr>
+<h2 id="chapter-11-files">Chapter 11 — Files</h2>
+<p>Everything so far vanishes when the app ends. Every variable, every array, the high score you just fought for — gone. Files are how a program leaves a note for its future self, and they are the last commands in the language.</p>
+<h3 id="11-1-one-file-at-a-time">11.1 One file at a time</h3>
+<pre><code class="language-text">FOPEN &lt;path&gt; &lt;mode&gt;    open a file: read, write, or append
+FCLOSE                 close it</code></pre>
+<p>One file can be open at a time. <code>FOPEN</code> while another file is open closes the old one first, and the app ending closes whatever was left — so a forgotten <code>FCLOSE</code> is untidy, never fatal. Paths are shell paths: <code>/sd/...</code> is the card, everything else is flash, and <code>$variables</code> expand inside them (so <code>FOPEN &quot;/apps/save_$slot.txt&quot; read</code> works).</p>
+<p>The three modes:</p>
+<pre><code class="language-text">read     the file must exist; you will FREAD from it
+write    start the file over from nothing; you will FWRITE to it
+append   like write, but existing content is kept and you add to the end</code></pre>
+<p>Whether the open <em>worked</em> is in the built-in <code>$fok</code> — 1 or 0:</p>
+<pre><code class="language-text">FOPEN &quot;/apps/save.txt&quot; read
+IF $fok = 0 GOTO nosave</code></pre>
+<p>Notice the philosophy split, because it is the same one the array bounds check taught: a <strong>missing file is a fact</strong>, not a bug — save files legitimately don't exist yet, so <code>FOPEN</code> reports through <code>$fok</code> and lets the script decide. But <strong>misusing the handle is a bug</strong> — <code>FREAD</code> with nothing open, or against a file opened for <code>write</code> — and stops the app with an error like any other.</p>
+<h3 id="11-2-writing">11.2 Writing</h3>
+<p><code>FWRITE</code> writes one line, <code>$variables</code> expanded, newline supplied:</p>
+<pre><code class="language-text"># /sd/apps/log.dapp -- a captain's log, one entry per run
+FOPEN &quot;/apps/log.txt&quot; append
+IF $fok = 0 GOTO fail
+FWRITE &quot;up $seconds seconds, battery $battery%&quot;
+FCLOSE
+PRINT &quot;logged.&quot;
+EXIT
+
+:fail
+PRINT &quot;couldn't open the log&quot;
+EXIT</code></pre>
+<p>Run it a few times, then <code>cat /apps/log.txt</code> from the shell — one line per run. <code>append</code> is what made that accumulate; <code>write</code> would have started over each time, leaving only the newest entry. Choosing between them <em>is</em> the design decision most file code comes down to: a log appends, a save file overwrites.</p>
+<h3 id="11-3-reading">11.3 Reading</h3>
+<p><code>FREAD</code> reads one line into a string variable. The built-in <code>$feof</code> (&quot;end of file&quot;) becomes 1 when a read finds nothing left — and that, not the empty string, is how you detect the end, because an empty <em>line</em> in the middle of a file is real data that leaves <code>$feof</code> at 0:</p>
+<pre><code class="language-text">FOPEN &quot;/apps/log.txt&quot; read
+IF $fok = 0 GOTO nolog
+SET n 0
+:rl
+FREAD line
+IF $feof = 1 GOTO done
+ADD n 1
+PRINT &quot;$n: $line&quot;
+GOTO rl
+:done
+FCLOSE
+PRINT &quot;$n entries&quot;
+EXIT
+:nolog
+PRINT &quot;no log yet&quot;
+EXIT</code></pre>
+<p>That <code>:rl</code> loop is the file-reading pattern, and it is worth reading twice: <em>read first, test <code>$feof</code>, then use the line</em>. Testing after using processes a phantom empty line at the end; reading after testing skips the first line. Read, test, use.</p>
+<h3 id="11-4-fexists-and-fdelete">11.4 FEXISTS and FDELETE</h3>
+<pre><code class="language-text">FEXISTS &lt;numvar&gt; &lt;path&gt;     1 if the path exists, else 0
+FDELETE &lt;path&gt;              delete a file; $fok says whether it worked</code></pre>
+<p><code>FEXISTS</code> answers &quot;is there a save?&quot; without disturbing the open handle, which makes it the polite first move before an <code>FOPEN read</code>. <code>FDELETE</code> is the reset button — a &quot;clear high score&quot; menu option is one line. Deleting a file that isn't there just leaves <code>$fok</code> at 0; nothing stops.</p>
+<h3 id="11-5-numbers-come-back-as-text">11.5 Numbers come back as text</h3>
+<p>Here is the trap the chapter has been building toward. You <code>FWRITE $score</code> and the file now holds <code>3300</code> — as <strong>four characters</strong>. When <code>FREAD</code> brings it back, you hold a string, and Chapter 3's warning applies in full: using it as a number yields 0, silently.</p>
+<p>The cure is the routine you already own: Chapter 5.4's <code>str2num</code>, digits off the front of a string. Write number → text is free (<code>FWRITE</code> expands <code>$score</code> for you); text → number is <code>str2num</code>. Every save-file scheme in this language is those two moves.</p>
+<h3 id="11-6-tetris-remembers">11.6 Tetris remembers</h3>
+<p>Now the real thing — the code that makes <code>run tetris</code> greet you with your best score. Two additions to the shipped game, both short. Loading, called once at startup (<code>GOSUB loadhs</code>):</p>
+<pre><code class="language-text"># reads /apps/tetris.hs into hiscore, tolerating a missing or garbled file
+:loadhs
+SET hiscore 0
+FEXISTS hs &quot;/apps/tetris.hs&quot;
+IF $hs = 0 GOTO lh_done
+FOPEN &quot;/apps/tetris.hs&quot; read
+IF $fok = 0 GOTO lh_done
+FREAD text
+FCLOSE
+GOSUB str2num
+SET hiscore $num
+:lh_done
+RETURN</code></pre>
+<p>Count the ways this refuses to die: no file → <code>hiscore</code> stays 0; unopenable file → 0; a garbled file (<code>str2num</code> stops at the first non-digit) → 0. A save loader must treat the file as <em>untrusted</em> — the one thing it may never do is crash the game over a bad byte on flash. And saving, in <code>gameover</code>:</p>
+<pre><code class="language-text">:gameover
+IF $score &lt;= $hiscore GOTO go_banner
+SET hiscore $score
+FOPEN &quot;/apps/tetris.hs&quot; write
+IF $fok = 0 GOTO go_nosave
+FWRITE $score
+FCLOSE
+:go_nosave
+COLOR yellow
+PUT 4 8 &quot;NEW HIGH SCORE&quot;
+:go_banner
+...</code></pre>
+<p><code>write</code>, not <code>append</code> — a save file's whole job is to hold the latest truth. Note the shipped <code>str2num</code> wears prefixed names (<code>s2i</code>, <code>s2len</code>, <code>s2d</code>) instead of Chapter 5.4's bare ones: inside a program that already uses <code>i</code> and <code>d</code> everywhere, Practice 5.4's label-and-name lesson stopped being theoretical. One more detail worth stealing: the banner shows even when the <em>saving</em> failed (<code>go_nosave</code>) — the player still earned it; only the bookkeeping fell short.</p>
+<h3 id="practice-11">Practice 11</h3>
+<ol>
+<li>Extend the captain's log with a run counter: the first line of <code>/apps/log.txt</code> holds how many times the app has run, and each run rewrites the file with the incremented count plus a fresh entry line. (Read-modify-write — you will need <code>str2num</code>.)</li>
+<li>Point the 11.3 reader at any file and report the number of lines and the length of the longest one.</li>
+<li>Give the Chapter 9 bouncing ball a settings file: if <code>/apps/ball.cfg</code> exists, its first line is the <code>WAIT</code> delay; otherwise use 50.</li>
+<li><code>FWRITE &quot;hello&quot;</code> immediately followed by <code>FREAD line</code> stops the app. Why — and what is the correct sequence to write a file and then read it back?</li>
+</ol>
+<hr>
+<h2 id="appendix-a-command-reference">Appendix A — Command Reference</h2>
+<pre><code class="language-text">── output ──────────────────────────────────────────────────────────
+PRINT &lt;text&gt;           print a line, $variables expanded  (alias ECHO)
+COLOR &lt;name&gt;           white red green yellow blue magenta cyan pink
+CLEAR                  clear terminal, or canvas if one is up  (alias CLS)
+
+── numbers ─────────────────────────────────────────────────────────
+SET &lt;name&gt; &lt;value&gt;     assign            ADD/SUB/MUL/DIV/MOD likewise
+EXPR &lt;name&gt; &lt;formula&gt;  full expression; rounds to nearest — floor() to chop
+RAND &lt;n&gt; &lt;max&gt;         0..max-1
+RAND &lt;n&gt; &lt;min&gt; &lt;max&gt;   min..max inclusive
+DIM &lt;name&gt; &lt;size&gt;      make an array; $name[i] reads, name[i] writes
+
+── strings ─────────────────────────────────────────────────────────
+SETSTR &lt;name&gt; &lt;text&gt;   assign            APPEND &lt;name&gt; &lt;text&gt;  concatenate
+CHR &lt;name&gt; &lt;code&gt;      one character from its code (32..126)
+SUBSTR &lt;n&gt; &lt;t&gt; &lt;s&gt; &lt;c&gt; slice: from position s, c characters
+LEN &lt;n&gt; &lt;text&gt;         length → numeric variable
+CHARAT &lt;n&gt; &lt;t&gt; &lt;i&gt;     character code at i, 0 past the end
+
+── input ───────────────────────────────────────────────────────────
+INPUT &lt;name&gt; [prompt]  read a line (blocks); result is TEXT, not a number
+KEY &lt;name&gt;             one keypress or 0, never blocks
+
+── files ───────────────────────────────────────────────────────────
+FOPEN &lt;path&gt; &lt;mode&gt;    read | write (truncate) | append; $fok = success
+FCLOSE                 close (automatic at app end; FOPEN closes the previous)
+FREAD &lt;name&gt;           one line → string variable; $feof = 1 at end of file
+FWRITE &lt;text&gt;          write one line, $variables expanded
+FEXISTS &lt;n&gt; &lt;path&gt;     1 → numeric variable if the path exists
+FDELETE &lt;path&gt;         delete; $fok = success
+
+── canvas ──────────────────────────────────────────────────────────
+CANVAS &lt;cols&gt; &lt;rows&gt;   enter grid mode (max 120x60)
+PUT &lt;col&gt; &lt;row&gt; &lt;text&gt; draw into the buffer in the current COLOR
+FLIP                   show the buffer
+ENDCANVAS              restore the terminal (automatic at app end)
+
+── flow ────────────────────────────────────────────────────────────
+:&lt;name&gt;                label  (alias LABEL &lt;name&gt;)
+GOTO &lt;label&gt;           jump
+GOSUB &lt;label&gt;          call; RETURN comes back (max 64 deep)
+IF &lt;l&gt; &lt;op&gt; &lt;r&gt; GOTO|GOSUB &lt;label&gt;     numeric; = == != &lt;&gt; &lt; &lt;= &gt; &gt;=
+IFEQ &lt;l&gt; &lt;r&gt; GOTO|GOSUB &lt;label&gt;        string equality
+IFNE &lt;l&gt; &lt;r&gt; GOTO|GOSUB &lt;label&gt;        string inequality
+WAIT &lt;ms&gt;              pause; resets the loop guard  (alias SLEEP)
+EXIT                   end the app  (alias END)</code></pre>
+<h2 id="appendix-b-limits-and-built-ins">Appendix B — Limits and Built-ins</h2>
+<pre><code class="language-text">4000       lines per app          64      numeric variables
+256        labels                 32      string variables (4096 chars each)
+16         arrays / 8192 cells    64      GOSUB depth
+120 x 60   largest canvas         1       open file at a time
+1000000    steps between WAITs before the loop guard trips</code></pre>
+<p>Every limit reports on the terminal when hit — including array indexes out of range, which stop the app with the line number.</p>
+<p>Built-ins: <code>$battery</code> <code>$cwd</code> <code>$heap</code> <code>$ip</code> <code>$millis</code> <code>$seconds</code> <code>$wifi</code>, the file status pair <code>$fok</code> (last FOPEN/FDELETE worked) and <code>$feof</code> (last FREAD hit end of file), and the key codes below.</p>
+<h2 id="appendix-c-key-codes">Appendix C — Key Codes</h2>
+<pre><code class="language-text">0    nothing pressed            $kenter  5   enter
+$kup     1   arrow up           $kesc    6   escape (also Ctrl+C, Ctrl+T)
+$kdown   2   arrow down         $kback   8   backspace
+$kleft   3   arrow left         $ktab    9   tab
+$kright  4   arrow right        $kspace  32  space
+32..126  printable keys, as ASCII: a=97, z=122, A=65, 0=48, p=112
+Ctrl+X   never delivered — aborts the running app instead</code></pre>
+<h2 id="appendix-d-answers">Appendix D — Answers</h2>
+<p><strong>1.1</strong></p>
+<pre><code class="language-text">COLOR red
+PRINT &quot;STOP&quot;
+WAIT 2000
+COLOR yellow
+PRINT &quot;READY&quot;
+WAIT 1000
+COLOR green
+PRINT &quot;GO&quot;</code></pre>
+<p><strong>1.3</strong> The quoted one keeps its spaces; the bare one is trimmed to <code>hi</code>.</p>
+<p><strong>2.1</strong></p>
+<pre><code class="language-text">SET apples 7
+SET oranges 5
+SET fruit $apples
+ADD fruit $oranges
+PRINT &quot;$fruit pieces of fruit&quot;</code></pre>
+<p><strong>2.3</strong></p>
+<pre><code class="language-text">SET total 137
+SET m $total
+DIV m 60
+SET s $total
+MOD s 60
+SETSTR out &quot;$m&quot;
+APPEND out &quot;m $s&quot;
+APPEND out &quot;s&quot;
+PRINT $out</code></pre>
+<p>Why the <code>SETSTR</code>/<code>APPEND</code> dance? <code>PRINT &quot;$mm $ss&quot;</code> doesn't work — the expander would read <code>$mm</code> as a variable <em>named</em> <code>mm</code>. A <code>$name</code> ends only at a character that can't be part of a name, so gluing a letter directly after a variable needs the string built in pieces. (There is no <code>${m}</code> escape syntax.)</p>
+<p><strong>2.4</strong> <code>DIV</code> truncates: 7÷2 → 3. Then 3 MOD 2 → 1.</p>
+<p><strong>3.2</strong></p>
+<pre><code class="language-text">INPUT word &quot;word? &quot;
+CHARAT first $word 0
+LEN n $word
+SUB n 1
+CHARAT last $word $n
+PRINT &quot;first=$first last=$last&quot;</code></pre>
+<p><strong>3.3</strong> Control characters would move the cursor, ring bells, or start escape sequences on the telnet client — a string could corrupt the terminal just by being printed. Refusing them keeps every string printable.</p>
+<p><strong>4.3</strong></p>
+<pre><code class="language-text">SET tries 0
+:ask
+INPUT ans &quot;what is the capital of france? &quot;
+ADD tries 1
+IFNE $ans &quot;paris&quot; GOTO ask
+PRINT &quot;correct, in $tries tries&quot;</code></pre>
+<p><strong>4.4</strong> Nothing in the loop ever changes <code>i</code> — the missing line is <code>ADD i 1</code>. The exit test can never become true, and because the loop contains no <code>WAIT</code>, the million-step guard is what finally kills it (that is its whole job: catching loops that neither pause nor progress). Note the diagnosis in the error message itself: <em>stopped after N steps</em> means &quot;this loop never WAITed&quot; — your first question should always be &quot;what did I forget to change?&quot;</p>
+<p><strong>5.1</strong></p>
+<pre><code class="language-text">SET n 1
+:next
+GOSUB factorial
+PRINT &quot;$n! = $fact&quot;
+ADD n 1
+IF $n &lt;= 8 GOTO next
+EXIT
+
+# in: n   out: fact
+:factorial
+SET fact 1
+SET fi 1
+:f_loop
+MUL fact $fi
+ADD fi 1
+IF $fi &lt;= $n GOTO f_loop
+RETURN</code></pre>
+<p>(Note <code>fi</code>, not <code>i</code> — Chapter 5.2's naming advice, so the routine can't trample a caller's counter.)</p>
+<p><strong>5.4</strong> Labels are <strong>global, and the first definition in the file wins</strong>. The host program also had a <code>:done</code> — earlier in the file, in its main code. So <code>GOTO done</code> inside the routine jumped not to the <code>:done</code> four lines down but to the main program's, leaving the routine without <code>RETURN</code> — the Chapter 5.3 leak, one stranded return address per negative call, dying at depth 64. The routine was innocent; its label's <em>name</em> was the bug. The defense is visible all over <code>tetris.dapp</code>: every internal label wears its routine's name as a prefix — <code>cellat_spin</code>, <code>collide_hit</code>, <code>hk_rot_ok</code>, <code>cl_next_row</code>. Do that and two routines can never capture each other's jumps.</p>
+<p><strong>6.3</strong> <code>EXPR x 5 / 10</code> → 0.5 → rounds to <strong>1</strong>. With <code>floor()</code>: <strong>0</strong>.</p>
+<p><strong>7.1</strong></p>
+<pre><code class="language-text">DIM rolls 6
+SET i 0
+:roll
+RAND r 6
+ADD rolls[$r] 1
+ADD i 1
+IF $i &lt; 100 GOTO roll
+SET f 0
+:show
+EXPR face $f + 1
+PRINT &quot;face $face: $rolls[$f]&quot;
+ADD f 1
+IF $f &lt; 6 GOTO show</code></pre>
+<p><strong>7.3</strong> 19, not 20 — on a grid with odd width the diagonals share the center cell, and setting it twice is still one cell. (Count cells that <em>are</em> 1, don't count your <code>SET</code>s.)</p>
+<p><strong>7.4</strong> <code>index 5 outside a[0..4]</code>, plus the line number of the <code>PRINT</code>.</p>
+<p><strong>8.3</strong> <code>$dropat + 650</code> schedules from the <em>previous due time</em>: after a lag spike the loop fires several gravity steps back-to-back to catch up. <code>$millis + 650</code> schedules from <em>now</em> and quietly forgives the spike. For Tetris, forgiving feels better; for a metronome or a clock, catching up is correct — that is why both spellings exist.</p>
+<p><strong>9.2</strong> Without <code>CLS</code>, every old position stays drawn — the &quot;ball&quot; becomes a growing snake of <code>o</code>s. The clear-and-redraw is what creates the illusion of motion: each frame repaints the world as it is <em>now</em>, not as it has ever been.</p>
+<p><strong>11.1</strong></p>
+<pre><code class="language-text"># count previous runs, then rewrite the whole file
+SET runs 0
+FEXISTS have &quot;/apps/log.txt&quot;
+IF $have = 0 GOTO fresh
+FOPEN &quot;/apps/log.txt&quot; read
+IF $fok = 0 GOTO fresh
+FREAD text
+FCLOSE
+GOSUB str2num
+SET runs $num
+:fresh
+ADD runs 1
+FOPEN &quot;/apps/log.txt&quot; write
+IF $fok = 0 GOTO fail
+FWRITE $runs
+FWRITE &quot;run $runs at $seconds seconds&quot;
+FCLOSE
+PRINT &quot;run number $runs&quot;
+EXIT
+:fail
+PRINT &quot;couldn't write the log&quot;
+EXIT
+
+# Chapter 5.4's routine, unchanged
+:str2num
+SET num 0
+SET si 0
+LEN slen $text
+:s2n_loop
+IF $si &gt;= $slen GOTO s2n_done
+CHARAT d $text $si
+IF $d &lt; 48 GOTO s2n_done
+IF $d &gt; 57 GOTO s2n_done
+SUB d 48
+MUL num 10
+ADD num $d
+ADD si 1
+GOTO s2n_loop
+:s2n_done
+RETURN</code></pre>
+<p>(Note this rewrite drops the old entry lines — the count survives, the entries don't. Keeping both is possible but means holding every line in string variables while rewriting, and 32 string variables bounds how far that scales. Real save files stay small on purpose.)</p>
+<p><strong>11.2</strong></p>
+<pre><code class="language-text">FOPEN &quot;/apps/log.txt&quot; read
+IF $fok = 0 GOTO missing
+SET n 0
+SET longest 0
+:rl
+FREAD line
+IF $feof = 1 GOTO done
+ADD n 1
+LEN len $line
+IF $len &lt;= $longest GOTO rl
+SET longest $len
+GOTO rl
+:done
+FCLOSE
+PRINT &quot;$n lines, longest $longest chars&quot;
+EXIT
+:missing
+PRINT &quot;no such file&quot;
+EXIT</code></pre>
+<p><strong>11.3</strong> Before the ball's main loop: <code>SET delay 50</code>, then <code>FEXISTS</code> / <code>FOPEN read</code> / <code>FREAD text</code> / <code>FCLOSE</code> / <code>GOSUB str2num</code> / <code>IF $num &gt; 0</code> → <code>SET delay $num</code> — the same tolerate-everything shape as tetris's <code>loadhs</code>. Then <code>WAIT $delay</code> in the loop. (Guarding <code>$num &gt; 0</code> matters: a garbled config parsing to 0 would make <code>WAIT 0</code> — a loop the step guard will kill.)</p>
+<p><strong>11.4</strong> The handle is open for <em>writing</em> — <code>FREAD</code> against it is a programming error, so the app stops. The correct sequence: <code>FWRITE</code>, then <code>FCLOSE</code> (which is what actually commits the bytes), then <code>FOPEN ... read</code>. The close in the middle is not ceremony — until it happens, the data may not be on flash at all.</p>
+<p>Chapters 8–9's remaining exercises, and everything in Chapter 10, are games — their answer is the shipped <code>tetris.dapp</code>, and yours will be better.</p>
+<hr>
+<p><em>Written for the DOLL-OS shell's .dapp runtime. The reference card is <code>/docs/dapp.txt</code> on the device; the worked example is <code>run tetris</code>.</em></p>
+      </article>
+
+      <footer class="book-end">
+        <span>END OF FILE</span>
+        <a href="#book-top">BACK TO TOP</a>
+        <a href="index.html">OPEN IDE</a>
+      </footer>
+    </main>
+  </div>
+
+  <div class="toc-scrim" id="toc-scrim" hidden></div>
+  <script type="module" src="book.js"></script>
+</body>
+</html>

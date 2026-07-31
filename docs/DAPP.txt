@@ -1,6 +1,6 @@
-DS .dapp Apps
+DOLL-OS .dapp Apps
 
-.dapp files are text executables for the DS shell. DS looks for them in both
+.dapp files are text executables for the DOLL-OS shell. DOLL-OS looks for them in both
 places:
 
 /sd/apps   on the SD card (upload with FTP into /apps)
@@ -25,7 +25,7 @@ Example:
 
 # /sd/apps/hello.dapp
 COLOR cyan
-PRINT "hello from a DS app"
+PRINT "hello from a DOLL-OS app"
 PRINT "cwd=$cwd ip=$ip battery=$battery%"
 INPUT name "name> "
 PRINT "hi, $name"
@@ -150,7 +150,7 @@ Keys and games:
 INPUT blocks until Enter, which makes it useless for anything that has to keep
 moving while nobody is typing. KEY reads at most one keypress and returns
 immediately with 0 when nothing is waiting, from either the telnet client or a
-BLE keyboard on the DS-Slave link:
+BLE keyboard on the companion DOLL-OS keyboard bridge:
 
 :loop
 KEY k
@@ -163,7 +163,7 @@ Printable keys come back as their ASCII code (65 for A, 32 for space), and
 these built-ins name the rest: $kup, $kdown, $kleft, $kright, $kenter, $kesc,
 $kback, $ktab, $kspace. They are numbers, not text -- compare against them,
 don't PRINT them. Ctrl+C and Ctrl+T both read as $kesc, so the chord that
-leaves every other DS screen also leaves yours. Ctrl+X is never delivered to
+leaves every other DOLL-OS screen also leaves yours. Ctrl+X is never delivered to
 the script: it aborts the running app, from KEY, WAIT, or a blocked INPUT.
 
 CANVAS replaces the scrolling terminal with a grid you address by cell. PUT

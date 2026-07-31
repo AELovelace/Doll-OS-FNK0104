@@ -1,6 +1,6 @@
 //   Ssh.ino
 //   SSH client for the "ssh" command. Almost all protocol/crypto work is handled
-//   by libssh_esp32, so this file only wires it into DS's telnet session -- the
+//   by libssh_esp32, so this file only wires it into DOLL-OS's telnet session -- the
 //   same modal pattern Motoko.ino uses for PubSubClient, plus the RemoteSession
 //   framework for the raw interactive-shell phase.
 //

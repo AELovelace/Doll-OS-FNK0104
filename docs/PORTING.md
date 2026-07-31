@@ -1,8 +1,9 @@
-# Porting DOLL-OS to DS
+# DOLL-OS Freenove Fork: Porting Notes
 
-DS is DOLL-OS ported from the M5Cardputer (sprite display + physical keyboard) to
-a Freenove ESP32-S3 display board (FNK0104-series, sold as "FNK1014B"). Telnet is
-the sole *input* path -- this is what replaces DOLL-OS's physical keyboard -- but
+This repository is a DOLL-OS fork that moves the upstream M5Cardputer build
+(sprite display + physical keyboard) to a Freenove ESP32-S3 display board
+(FNK0104-series, sold as "FNK1014B"). Telnet is the sole *input* path -- this is
+what replaces upstream DOLL-OS's physical keyboard -- but
 the board's own TFT panel still runs as a live mirror of the telnet session ("a
 second screen for the cardputer"), output-only. This document is the delta
 against DOLL-OS's own `docs/architecture.md` and `docs/api-guide.md` in the
@@ -20,7 +21,7 @@ this board needs a
 Freenove-customized fork of `TFT_eSPI` (adds the `ST77922` driver + per-panel pin
 configs stock TFT_eSPI doesn't have), but your global `libraries/TFT_eSPI` install
 is a *different*, unrelated config that `bigscreen`/`Evil-M5Project/Evil-CYD-Beta`
-depend on. The profile keeps DS's copy (`DS/libraries/TFT_eSPI`,
+depend on. The profile keeps this fork's copy (`DS/libraries/TFT_eSPI`,
 `DS/libraries/TFT_eSPI_Setups`) fully sketch-local via `sketch.yaml`, so neither
 project's config touches the other. If you ever compile via bare `arduino-cli`
 instead of the IDE, the profile applies automatically (`default_profile: esp32s3`).
@@ -39,7 +40,7 @@ calls changed (`addWrappedHistoryLine(...)` -> `outLine(...)`):
 - `SysInfo.ino`: heap instrumentation (`free`), extended with a real `battery`
   command -- see below
 - `Motoko.ino`: MQTT chat, same Q&A shape
-- `Asuka.ino`: native local LLM text chat command over DS's existing shell
+- `Asuka.ino`: native local LLM text chat command over this fork's existing shell
 - `Ssh.ino`: libssh_esp32 client, same dedicated-FreeRTOS-task pattern (mbedtls's
   handshake still needs more stack than the loop task provides, board-independent)
 
@@ -59,7 +60,7 @@ pixel-wrapped sprite history) and a physical keyboard (`hardware.ino`'s
   see "Display mirror" below for why that side of `terminal.ino` came back.
 
 - **Input** (`TelnetServer.ino`, replaces `hardware.ino` + `terminal.ino`'s
-  `drawCommandBar`): DS negotiates the connecting client into character-at-a-
+  `drawCommandBar`): this fork negotiates the connecting client into character-at-a-
   time mode with server-side echo (`IAC WILL ECHO`, `IAC WILL SUPPRESS-GO-AHEAD`)
   once per connection, then implements a real line editor against that byte
   stream -- `readLineEditedInput()` plays the exact role DOLL-OS's
@@ -87,7 +88,7 @@ pixel-wrapped sprite history) and a physical keyboard (`hardware.ino`'s
 ### Display mirror
 
 The TFT panel isn't a second *input* device -- telnet remains the only way to
-control DS -- but per the user's request it runs as a live mirror of the telnet
+control this fork -- but per the user's request it runs as a live mirror of the telnet
 session, "as if it was a second screen for the cardputer." That revived most of
 DOLL-OS's `terminal.ino` (pixel-wrapped history, wrap-on-width, per-row color)
 and `ansi.ino` (SGR interpretation for raw remote streams), now living in
@@ -147,15 +148,15 @@ this port was built and tested against.
   itself unavailable at runtime instead of blocking compilation.
 - **Networking model**: DOLL-OS only needed Wi-Fi STA mode -- losing it just
   meant losing internet access, not the UI (the screen/keyboard don't depend on
-  the network). DS at first kept an always-on SoftAP alongside STA so telnet
+  the network). This fork at first kept an always-on SoftAP alongside STA so telnet
   stayed reachable without router credentials, but AP+STA on the S3's single
   radio cost too much streaming throughput (Radio.ino audio starved once its
   buffer drained), and the panel + BLE keyboard cover the no-network case
-  anyway -- so DS went back to STA-only.
+  anyway -- so this fork went back to STA-only.
 
 ### Radio (new, not from DOLL-OS)
 
-`Radio.ino` is a port of the standalone sgcrelay firmware (`../sgcrelay/`) into DS
+`Radio.ino` is a port of the standalone sgcrelay firmware (`../sgcrelay/`) into this fork
 as a background task: `radio play [url]` streams ICY/MP3 (default: the SGCRelay
 Pi's relay, `config.h`) through the board's onboard ES8311 codec + speaker, with
 `pause`/`stop`/`vol 0..21`/`status` subcommands. The codec driver
@@ -182,8 +183,8 @@ aren't wired up.
 ### Editor (new, not from DOLL-OS)
 
 `Edit.ino` is a full-screen nano-style text editor (`edit <file>`), written for
-DS rather than ported. GNU nano itself was evaluated and rejected: its structure
-is a conversation with ncurses/terminfo, and DS has no cell-grid terminal layer
+this fork rather than ported. GNU nano itself was evaluated and rejected: its structure
+is a conversation with ncurses/terminfo, and this fork has no cell-grid terminal layer
 to shim it onto — `Display.ino`'s `ansiFilterByte()` deliberately drops cursor
 addressing (only SGR, `K`, and `G`≤1 survive), so a cursor-addressed app can't
 travel through the normal output path at all. Owning the render is far less work
@@ -228,7 +229,7 @@ Three things worth knowing:
 
 Key chords are nano's, and all of them are implemented: `^G` help, `^O` save,
 `^X` exit, `^K`/`^U` cut+paste, `^W` search, `^_` goto line, `^Z` undo, `^A`/`^E`,
-`^Y`/`^V`, `^D`, `^C` position, plus the arrow/Home/End/PgUp/PgDn cluster. DS's
+`^Y`/`^V`, `^D`, `^C` position, plus the arrow/Home/End/PgUp/PgDn cluster. DOLL-OS's
 reserved Ctrl+T (detach) and Ctrl+K (inline command) don't apply here, because a
 takeover doesn't route through `readRawUserBytes()` — which is what leaves `^K`
 free for cut-line. `^Z` is undo rather than suspend (no job control to suspend
@@ -264,7 +265,7 @@ trip; CRLF input is normalized to LF on load.
 ### ASUKA (new, not from DOLL-OS)
 
 `Asuka.ino` adds `asuka [host] [port]` as a native shell command for local LLM
-chat. It deliberately uses DS's existing telnet server, BLE-keyboard line editor,
+chat. It deliberately uses this fork's existing telnet server, BLE-keyboard line editor,
 `outLine()` history, and TFT display stream instead of starting ASUKA's old
 webserver, MQTT listener, or separate telnet console. Defaults live in `config.h`
 as `ASUKA_DEFAULT_LLM_HOST`, `ASUKA_DEFAULT_LLM_PORT`,

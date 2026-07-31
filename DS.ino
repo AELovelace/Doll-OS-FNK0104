@@ -19,7 +19,7 @@ void setup() {
     }
 
     Serial.println();
-    Serial.println("Starting DS...");
+    Serial.println("Starting DOLL-OS...");
     Serial.flush();   //force this out over UART now, in case something below hangs before the next line
 
     //report PSRAM up front -- if it's not enabled here, the ~150KB frame sprite and the
@@ -44,7 +44,7 @@ void setup() {
     reserveHotStrings();
     recordHeapCheckpoint("after reserve");
 
-    //STA only. DS used to run an always-on softAP alongside STA as a fallback
+    //STA only. DOLL-OS used to run an always-on softAP alongside STA as a fallback
     //telnet path, but AP+STA on the S3's single radio cost too much streaming
     //throughput (Radio.ino audio starved once its buffer drained) and the AP
     //went unused -- the panel + BLE keyboard already cover the no-network case.
@@ -91,10 +91,10 @@ void setup() {
     //dials in later re-runs this same sequence for its own screen (acceptTelnetClient()).
     beginShellSession();
     if (wifiIsConnected() == 1) {
-        outLine("DS ready. Station IP: " + WiFi.localIP().toString());
+        outLine("DOLL-OS ready. Station IP: " + WiFi.localIP().toString());
         outLine("Connect with: telnet " + WiFi.localIP().toString() + " 23");
     } else {
-        outLine("DS ready. WiFi not connected -- run 'wifi connect' for telnet access.");
+        outLine("DOLL-OS ready. WiFi not connected -- run 'wifi connect' for telnet access.");
     }
     outLine("");
     setActiveInput(shellPrompt(), "", false);   //panel's command bar starts on the same path-aware

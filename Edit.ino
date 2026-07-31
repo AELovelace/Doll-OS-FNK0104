@@ -1,5 +1,5 @@
 //   Edit.ino
-//   "edit" app -- a full-screen nano-style text editor, written for DS rather
+//   "edit" app -- a full-screen nano-style text editor, written for DOLL-OS rather
 //   than ported. See docs/PORTING.md ("Editor") for why nano itself didn't come
 //   over: nano's structure is a conversation with ncurses/terminfo, and shimming
 //   that is far more work than owning the render ourselves. Here there is no
@@ -22,7 +22,7 @@
 //   shows the grid in its top-left corner.
 //
 //   Key chords: because this is a takeover, input does NOT route through
-//   readRawUserBytes() (RemoteSession.ino), so DS's reserved Ctrl+T (detach) and
+//   readRawUserBytes() (RemoteSession.ino), so DOLL-OS's reserved Ctrl+T (detach) and
 //   Ctrl+K (inline command) chords don't apply here and the nano keymap is free
 //   to use them. ^X is the exit. Both input sources are drained each pass --
 //   telnet and the DS-Slave BLE keyboard, which emits real control codes and CSI
@@ -62,7 +62,7 @@ static int    editLeftCol = 0;      //first *display* column shown (horizontal s
 static int    editGoalCol = -1;     //display column Up/Down try to return to; -1 = use current
 static bool   editModified = false; //unsaved changes
 static bool   editNeedsRender = true;
-static String editPathLogical;      //the DS-namespace path, as typed -- shown in the title bar
+static String editPathLogical;      //the DOLL-OS-namespace path, as typed -- shown in the title bar
 static String editStatus;           //transient message shown in the hint bar
 
 //^K cut buffer. Consecutive ^K presses append, so ^K^K^K lifts three lines as one
@@ -628,7 +628,7 @@ static bool editDecodeByte(EditKeyState& st, uint8_t b, EditKey& key, char& ch) 
         case 0x19: key = EK_PGUP;      return true;   //^Y
         case 0x16: key = EK_PGDN;      return true;   //^V
         case 0x04: key = EK_DELETE;    return true;   //^D
-        case 0x0B: key = EK_CUT;       return true;   //^K -- free here; DS's inline-command
+        case 0x0B: key = EK_CUT;       return true;   //^K -- free here; DOLL-OS's inline-command
                                                        //reservation only applies to sessions
                                                        //that route through readRawUserBytes()
         case 0x15: key = EK_UNCUT;     return true;   //^U
@@ -1292,7 +1292,7 @@ static bool editSaveFile(const String& logicalPath, String& err) {
         return false;
     }
 
-    const String tmpPath = r.realPath + ".ds-tmp";
+    const String tmpPath = r.realPath + ".doll-os-tmp";
     File f = r.fs->open(tmpPath, "w");
     if (!f) {
         err = "cannot open " + resolved + " for writing";
@@ -1391,7 +1391,7 @@ static void editFree() {
 void handleEditCommand(const String parts[], int partCount) {
     if (partCount < 2) {
         outLine("Usage: edit <file>");
-        outLine("  Full-screen text editor. Path is a normal DS path", C_CYAN);
+        outLine("  Full-screen text editor. Path is a normal DOLL-OS path", C_CYAN);
         outLine("  (e.g. /sd/notes.txt, wifi.cfg). A missing file is", C_CYAN);
         outLine("  created on save.", C_CYAN);
         outLine("  Keys: ^G help, ^O save, ^X exit, ^K cut, ^U paste,", C_CYAN);

@@ -8,7 +8,7 @@
 //   command now), its Wi-Fi handling (WiFiManager.ino owns STA), and the WS2812/
 //   BOOT-button controls (redundant with the shell).
 //
-//   Unlike sgcrelay, playback does NOT run on the main loop: DS's modal sessions
+//   Unlike sgcrelay, playback does NOT run on the main loop: DOLL-OS's modal sessions
 //   (ssh, outbound telnet) monopolize loop() for their whole duration and
 //   drawDisplayFrame()'s full-frame SPI push adds jitter, so audio.loop() is pumped
 //   from a dedicated long-lived FreeRTOS task (same pattern as Ssh.ino's, but
@@ -75,7 +75,7 @@ static TaskHandle_t radioTaskHandle = NULL;
 //   I2S channel's DMA buffers (~28KB of DMA-capable *internal* RAM -- PSRAM can't serve
 //   DMA) and spawns its decode task, and as a global that all happened before setup(),
 //   starving the WiFi stack's bring-up of internal RAM (seen as an esp-sha OOM -> crash
-//   in ieee80211_hostap_attach, back when DS still ran a softAP). Deferring it means the
+//   in ieee80211_hostap_attach, back when DOLL-OS still ran a softAP). Deferring it means the
 //   cost is only paid after WiFi is up,
 //   and only if the radio is actually used.
 static Audio* radioAudio = nullptr;
@@ -138,7 +138,7 @@ static void radioScanI2cBus() {
 //its own I2S TX channel but needs the same codec configured behind it, and calling
 //es8311_codec_init() twice would leak a handle. es8311.cpp's register helpers use Wire
 //(see the driver_ng note there), so Wire.begin below is the only prerequisite --
-//nothing else in DS touches I2C.
+//nothing else in DOLL-OS touches I2C.
 //
 //Caller must already have clocks on the I2S pins: the codec is a slave and wants MCLK
 //running while its dividers are programmed. Not static -- AudioOut.cpp declares it.
@@ -168,7 +168,7 @@ bool audioCodecEnsure() {
 }
 
 //codec + I2S bring-up, once, lazily on the first "radio play" -- the exact sequence
-//sgcrelay's driver_es8311_init()/setup() ran, minus the parts DS already owns.
+//sgcrelay's driver_es8311_init()/setup() ran, minus the parts DOLL-OS already owns.
 static bool radioEnsureCodec() {
     if (radioCodecReady) {
         return true;

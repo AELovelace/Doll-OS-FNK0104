@@ -1,10 +1,10 @@
 # The .dapp Book
 
-*Learning to program the DS shell, one tiny executable at a time.*
+*Learning to program the DOLL-OS shell, one tiny executable at a time.*
 
 ---
 
-A `.dapp` file is a plain text program that the DS shell runs with the `run`
+A `.dapp` file is a plain text program that the DOLL-OS shell runs with the `run`
 command. The language is small on purpose: about forty commands, numbers,
 strings, arrays, and jumps. Small does not mean weak — by the end of this book
 you will have built Tetris in it — but it does mean *learnable*. Every command
@@ -45,19 +45,19 @@ stays white, `run` will reject it** — the highlighter and the interpreter agre
 about what is a command, which makes the colors a free spell-checker.
 
 Create `/sd/apps/first.dapp` with `edit`, put `PRINT "hello"` in it, save, and
-`run first`. If you see hello, your toolchain works and you are a DS programmer
+`run first`. If you see hello, your toolchain works and you are a DOLL-OS programmer
 now. The rest is vocabulary.
 
 ---
 
-## Chapter 1 — Hello, DS
+## Chapter 1 — Hello, DOLL-OS
 
 ### 1.1 PRINT and ECHO
 
 `PRINT` writes one line to the terminal (and to the panel, which mirrors it):
 
 ```text
-PRINT "hello from a DS app"
+PRINT "hello from a DOLL-OS app"
 PRINT hello too
 ECHO "same thing, different name"
 ```
@@ -97,7 +97,7 @@ WAIT 1000
 PRINT "liftoff"
 ```
 
-`SLEEP` is an alias. While waiting, DS keeps servicing the display, the radio,
+`SLEEP` is an alias. While waiting, DOLL-OS keeps servicing the display, the radio,
 and FTP — a waiting app doesn't freeze the machine.
 
 ### 1.4 CLEAR, comments, and EXIT
@@ -118,7 +118,7 @@ reads better and lets you end from the middle.
 # /sd/apps/greet.dapp
 CLEAR
 COLOR cyan
-PRINT "DS ONLINE"
+PRINT "DOLL-OS ONLINE"
 WAIT 500
 COLOR white
 PRINT "all systems nominal"
@@ -280,7 +280,7 @@ INPUT name "what is your name? "
 PRINT "hello, $name"
 ```
 
-The second argument is the prompt; leave it off and DS shows `name> `.
+The second argument is the prompt; leave it off and DOLL-OS shows `name> `.
 
 ### 3.3 A warning that will save you an evening
 
@@ -350,7 +350,7 @@ GOTO forever
 Labels are jump *targets* — execution passing through one does nothing.
 
 That example never ends by itself — press **Ctrl+X** to abort a running app,
-the same chord that exits the editor. DS also has a second line of defense: a
+the same chord that exits the editor. DOLL-OS also has a second line of defense: a
 loop that runs a million commands without ever `WAIT`ing gets stopped by the
 interpreter, on the theory that a loop that never pauses is a bug, not a
 program. (A loop *with* a `WAIT` is presumed intentional and runs forever —
@@ -795,7 +795,7 @@ KEY k
 
 `KEY` never waits. It reads **at most one** keypress into a numeric variable:
 0 if nothing was pressed, otherwise a code saying what. It hears both the
-telnet client and a BLE keyboard on the DS-Slave link.
+telnet client and a BLE keyboard on the companion DOLL-OS keyboard bridge.
 
 ### 8.2 Key codes
 
@@ -811,7 +811,7 @@ $kspace                           the space bar (same as 32)
 
 These are numbers, for comparing — `PRINT "$kup"` prints nothing useful.
 Ctrl+C and Ctrl+T also arrive as `$kesc`, so the quit-chord users already
-know from the rest of DS works in your game for free. Ctrl+X never reaches
+know from the rest of DOLL-OS works in your game for free. Ctrl+X never reaches
 your program at all — it aborts the app on the spot, which is what makes an
 infinite `KEY` loop safe to experiment with.
 
@@ -934,7 +934,7 @@ RETURN
 
 Two rules while a canvas is up: **don't `PRINT`** (it goes to the terminal
 underneath and garbles the telnet view — save your goodbye message for after
-`ENDCANVAS`), and don't forget `ENDCANVAS` on the way out (though DS restores
+`ENDCANVAS`), and don't forget `ENDCANVAS` on the way out (though DOLL-OS restores
 the terminal automatically when the app ends, even if it crashed).
 
 ### 9.3 Worked example: the bouncing ball
@@ -1930,5 +1930,5 @@ their answer is the shipped `tetris.dapp`, and yours will be better.
 
 ---
 
-*Written for the DS shell's .dapp runtime. The reference card is
+*Written for the DOLL-OS shell's .dapp runtime. The reference card is
 `/docs/dapp.txt` on the device; the worked example is `run tetris`.*
