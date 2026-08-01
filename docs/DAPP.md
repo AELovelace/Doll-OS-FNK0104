@@ -55,6 +55,17 @@ strings green, `$variables` yellow, and numbers orange. Highlighting keys off th
 `.dapp` extension, so saving under a new name with `^O` switches it on or off.
 An opcode that stays white is one `run` will reject as unknown.
 
+`edit --repo snake` downloads the compatible repository version into the editor
+without installing it first. `^O` writes it to the suggested app path, or to any
+path you type into the save prompt.
+
+## Metadata Directives
+
+Package metadata lives in leading comments such as `# @id hello`. AppRunner also
+honors `# @echo off`, which keeps `INPUT` and `INPUTSECRET` from copying the
+submitted prompt line into scrollback. Use it for chat-style apps that print the
+submitted text later through their own display flow. The default is echo on.
+
 ## Commands
 
 ```text
@@ -75,6 +86,7 @@ EXPR <name> <expr>  evaluate a full arithmetic expression
 RAND <n> <max>      set numeric variable n to 0..max-1
 RAND <n> <min> <max> set numeric variable n to min..max
 DIM <name> <size>   create a numeric array of `size` cells, all zero
+LIFE <cur> <next> <cols> <rows>  advance Conway's Life in numeric arrays
 SETSTR <name> <txt> set a string variable
 APPEND <name> <txt> append to a string variable
 CHR <name> <code>   set a string variable to one character by code
@@ -141,6 +153,11 @@ IF $well[$i] <> 0 GOTO occupied
 The index is itself a value, so `$board[$row]` and `$board[$a[1]]` both work. An
 index outside the array stops the app with the offending line number rather than
 quietly reading zero. All arrays share a pool of 8192 cells.
+
+`LIFE cur nxt 38 20` is a native Conway's Game of Life step for dense grids.
+Both arrays must be `DIM`'d with at least `cols * rows` cells. It reads `cur`,
+writes the next generation through `nxt`, then copies the result back into
+`cur`.
 
 ## Arithmetic
 

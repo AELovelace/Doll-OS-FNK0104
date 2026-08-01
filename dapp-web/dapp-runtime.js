@@ -99,6 +99,22 @@ function normalizePath(path) {
   return `/${clean.join("/")}`;
 }
 
+function applyMetadataDirective(line, runtime) {
+  let text = String(line).trim();
+  if (text.startsWith("#")) text = text.slice(1).trim();
+  else if (text.startsWith("//")) text = text.slice(2).trim();
+  else return;
+  if (!text.startsWith("@")) return;
+
+  const firstSpace = text.search(/\s/);
+  const field = (firstSpace < 0 ? text.slice(1) : text.slice(1, firstSpace)).toLowerCase();
+  const value = (firstSpace < 0 ? "" : text.slice(firstSpace).trim()).toLowerCase();
+  if (field === "echo") {
+    if (value === "off") runtime.echoInput = false;
+    else if (value === "on") runtime.echoInput = true;
+  }
+}
+
 class ExpressionParser {
   constructor(source) {
     this.source = source;
@@ -307,13 +323,19 @@ export class DappRuntime {
     this.httpHeaders = new Map();
     this.openFile = null;
     this.canvas = null;
+    this.echoInput = true;
     this.stopRequested = false;
     this.keyQueue.length = 0;
     this.startedAt = performance.now();
 
+    let reachedExecutable = false;
     for (let index = 0; index < this.lines.length; index += 1) {
       const line = this.lines[index].trim();
-      if (!line || line.startsWith("#") || line.startsWith("//")) continue;
+      if (!line || line.startsWith("#") || line.startsWith("//")) {
+        if (!reachedExecutable) applyMetadataDirective(line, this);
+        continue;
+      }
+      reachedExecutable = true;
       let name = "";
       if (line.startsWith(":")) name = line.slice(1).trim();
       else if (/^LABEL(?:\s|$)/i.test(line)) name = line.slice(5).trim();
@@ -411,6 +433,13 @@ export class DappRuntime {
       this.dim(parts[0], this.valueOf(parts[1]));
       return;
     }
+    if (op === "LIFE") {
+      const parts = splitArgs(arg, 4);
+      if (parts.length < 4) throw this.error("LIFE needs <current-array> <next-array> <cols> <rows>");
+      this.lifeStep(parts[0], parts[1], this.valueOf(parts[2]), this.valueOf(parts[3]));
+      this.steps = 0;
+      return;
+    }
     if (op === "SETSTR" || op === "APPEND") {
       const parts = splitArgs(arg, 2);
       if (parts.length < 2) throw this.error(`${op} needs <name> <text>`);
@@ -496,7 +525,7 @@ export class DappRuntime {
       const prompt = parts.length > 1 ? this.expandText(parts[1]) : `${parts[0]}> `;
       const value = await new Promise((resolve, reject) => {
         this.inputCancel = () => reject(new DappStop());
-        this.io.input(prompt, resolve, op === "INPUTSECRET");
+        this.io.input(prompt, resolve, op === "INPUTSECRET", this.echoInput);
       });
       this.inputCancel = null;
       this.setString(parts[0], value);
@@ -951,6 +980,42 @@ export class DappRuntime {
     if (this.arrayCells + count > LIMITS.arrayCells) throw this.error(`out of array space (max ${LIMITS.arrayCells} cells total)`);
     this.arrays.set(name, new Array(count).fill(0));
     this.arrayCells += count;
+  }
+
+  lifeStep(currentName, nextName, cols, rows) {
+    const width = Math.trunc(cols);
+    const height = Math.trunc(rows);
+    if (width < 1 || height < 1 || width > LIMITS.canvasCols || height > LIMITS.canvasRows) {
+      throw this.error(`LIFE size must be 1..${LIMITS.canvasCols} by 1..${LIMITS.canvasRows}`);
+    }
+
+    const current = this.getArray(currentName.replace(/^\$/, "").trim());
+    const next = this.getArray(nextName.replace(/^\$/, "").trim());
+    const cells = width * height;
+    if (current.length < cells || next.length < cells) {
+      throw this.error(`LIFE arrays must each have at least ${cells} cells`);
+    }
+
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        let neighbours = 0;
+        for (let dy = -1; dy <= 1; dy += 1) {
+          const ny = y + dy;
+          if (ny < 0 || ny >= height) continue;
+          for (let dx = -1; dx <= 1; dx += 1) {
+            if (dx === 0 && dy === 0) continue;
+            const nx = x + dx;
+            if (nx < 0 || nx >= width) continue;
+            neighbours += current[ny * width + nx] !== 0 ? 1 : 0;
+          }
+        }
+
+        const alive = current[y * width + x] !== 0;
+        next[y * width + x] = neighbours === 3 || (alive && neighbours === 2) ? 1 : 0;
+      }
+    }
+
+    for (let i = 0; i < cells; i += 1) current[i] = next[i];
   }
 
   jump(label, subroutine) {

@@ -1,9 +1,10 @@
 # @dapp-format 1
 # @id dappchat
 # @name DappChat
-# @version 1.0.0
+# @version 1.0.1
 # @boards fnk0104
-# @runtime >=1.4.0 <2.0.0
+# @runtime >=1.4.2 <2.0.0
+# @echo off
 # @summary Chat with other DOLL-OS/DS units over the Sad Girls Club backend
 # /apps/dappchat.dapp
 # Turn-based network chat: log in (first use of a username creates the

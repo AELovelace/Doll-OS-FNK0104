@@ -132,7 +132,7 @@ function setStatus(state, label) {
   runStatus.textContent = label;
 }
 
-function showInput(prompt, resolve, masked = false) {
+function showInput(prompt, resolve, masked = false, echoInput = true) {
   inputPrompt.textContent = prompt;
   inputForm.hidden = false;
   programInput.type = masked ? "password" : "text";
@@ -142,7 +142,7 @@ function showInput(prompt, resolve, masked = false) {
   inputForm.onsubmit = event => {
     event.preventDefault();
     const value = programInput.value;
-    appendOutput(`${prompt}${masked ? "[hidden]" : value}`, "white");
+    if (echoInput) appendOutput(`${prompt}${masked ? "[hidden]" : value}`, "white");
     inputForm.hidden = true;
     programInput.type = "text";
     inputForm.onsubmit = null;

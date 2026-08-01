@@ -18,6 +18,7 @@ dapper install <id>[@version] [--force] [--internal|--sd]
 dapper update [id|--all]
 dapper remove <id>
 dapper doctor
+edit --repo <id>[@version] [--internal|--sd]
 ```
 
 Examples:
@@ -27,6 +28,7 @@ dapper search game
 dapper info snake
 dapper install snake
 run snake
+edit --repo snake
 dapper doctor
 dapper update --all
 dapper remove snake
@@ -42,6 +44,12 @@ When an SD card is mounted, `dapper install` asks whether to save the app to
 internal flash (`/apps/<id>.dapp`) or the SD card (`/sd/apps/<id>.dapp`). Use
 `--internal` or `--sd` to skip the prompt. `dapper update` preserves each managed
 app's current location.
+
+`edit --repo <id>[@version]` downloads the same verified repository artifact
+into the editor without installing it or registering it as managed. The save
+prompt is prefilled with `/sd/apps/<id>.dapp` when an SD card is mounted, or
+`/apps/<id>.dapp` otherwise. Use `--internal` or `--sd` to choose that prefilled
+path up front.
 
 ## Verification and recovery
 

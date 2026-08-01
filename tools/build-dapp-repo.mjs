@@ -258,10 +258,17 @@ function analyzeSource(text, knownBuiltins) {
   const builtins = new Set();
   const syntaxFeatures = new Set();
   let labels = 0;
+  let reachedExecutable = false;
 
   for (const rawLine of lines) {
     const line = rawLine.trim();
-    if (!line || line.startsWith("#") || line.startsWith("//")) continue;
+    if (!line || line.startsWith("#") || line.startsWith("//")) {
+      if (!reachedExecutable && /^(?:#|\/\/)\s*@echo\s+off\s*$/i.test(line)) {
+        syntaxFeatures.add("echo-off");
+      }
+      continue;
+    }
+    reachedExecutable = true;
     if (line.startsWith(":")) {
       labels += 1;
       continue;

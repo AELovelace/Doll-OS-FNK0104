@@ -269,6 +269,7 @@ struct DappProgram {
     int labelCount = 0;
     int arrayPoolUsed = 0;
     int callDepth = 0;
+    bool echoInput = true;
 
     //out-of-band error channel. Value lookup happens several frames deep inside text
     //expansion (appExpandText -> appStringValueOf -> appArrayCell), where there is no way
@@ -299,7 +300,7 @@ struct DappKeyState {
 
 //shared helpers used across app/file command tabs
 #define DOLL_BOARD_ID "fnk0104"
-#define DAPP_RUNTIME_VERSION "1.4.0"
+#define DAPP_RUNTIME_VERSION "1.4.2"
 
 //Runtime-owned PCM synth used by the .dapp WAVE/WAVESTOP opcodes. It borrows
 //the same ES8311/I2S output surface as Game Boy and releases it on app exit.
@@ -324,6 +325,9 @@ bool ensureSystemConfDirectory();
 void handleAliasCommand(const String parts[], int partCount);
 void handleAppsCommand(const String parts[], int partCount);
 void handleDapperCommand(const String parts[], int partCount);
+bool dapperFetchPackageForEdit(const String& request, const String& targetPreference,
+                               String& sourcePath, String& suggestedSavePath,
+                               String& loadedLabel, String& error);
 void handleRunCommand(const String parts[], int partCount);
 void handleAsukaCommand(const String parts[], int partCount);
 void handleUnaliasCommand(const String parts[], int partCount);

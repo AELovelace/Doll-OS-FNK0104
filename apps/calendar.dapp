@@ -11,7 +11,10 @@
 # h returns to the startup date, escape quits. Reminders are stored in
 # /apps/calendar.dat. The runtime has no clock API, so startup is explicit.
 
-CANVAS 80 24
+# 56x24 rather than a full 80 columns: the panel scales the grid to fill the
+# terminal area, and 80 columns leaves each cell narrower than the 6px font, so
+# the whole month squeezes together. 56 gives square-ish cells at 7 per weekday.
+CANVAS 56 24
 SET year 2026
 SET month 7
 SET day 31
@@ -20,12 +23,12 @@ SET homem 7
 SET homed 31
 SET quit 0
 SET maxevents 32
-SET textwidth 80
+SET textwidth 48
 DIM ey 32
 DIM em 32
 DIM ed 32
 DIM elen 32
-DIM etext 2560
+DIM etext 1536
 SETSTR msg "arrows move   a/d month   n reminder"
 GOSUB load
 GOSUB clampday
@@ -150,7 +153,7 @@ IF $n = 0 GOTO editcancel
 GOSUB storetext
 GOSUB save
 SETSTR msg "reminder saved"
-CANVAS 80 24
+CANVAS 56 24
 RETURN
 :editcancel
 # If this was a newly reserved slot, release it again.
@@ -158,7 +161,7 @@ IF $found >= 0 GOTO editcancelview
 SUB count 1
 :editcancelview
 SETSTR msg "cancelled"
-CANVAS 80 24
+CANVAS 56 24
 RETURN
 :eventfull
 SETSTR msg "reminder list full (32)"
@@ -201,11 +204,11 @@ RETURN
 CLS
 GOSUB monthname
 COLOR pink
-PUT 3 1 "DOLL-OS DS CALENDAR"
+PUT 2 1 "DOLL-OS DS CALENDAR"
 COLOR yellow
-PUT 33 1 "$mname $year"
+PUT 38 1 "$mname $year"
 COLOR cyan
-PUT 5 4 "SUN       MON       TUE       WED       THU       FRI       SAT"
+PUT 3 4 "SUN    MON    TUE    WED    THU    FRI    SAT"
 GOSUB firstweekday
 GOSUB monthdays
 SET d 1
@@ -216,8 +219,8 @@ SET col $cell
 MOD col 7
 SET row $cell
 DIV row 7
-EXPR x 6 + $col * 10
-EXPR y 7 + $row * 2
+EXPR x 3 + $col * 7
+EXPR y 6 + $row * 2
 SET yearfind $year
 SET monthfind $month
 SET dayfind $d
@@ -242,26 +245,26 @@ GOTO drawdays
 
 :drawselectedtext
 COLOR cyan
-PUT 3 20 "Selected: $year-$month-$day"
+PUT 2 19 "Selected: $year-$month-$day"
 GOSUB findevent
 IF $found < 0 GOTO shownone
 SET idx $found
 GOSUB fetchtext
 COLOR green
-PUT 3 21 "$line"
+PUT 2 20 "$line"
 GOTO showhelp
 :shownone
 COLOR blue
-PUT 3 21 "(no reminder)"
+PUT 2 20 "(no reminder)"
 :showhelp
 COLOR white
-PUT 3 23 "arrows day/week  a/d month  n note  x delete  h home  esc quit"
+PUT 1 23 "arrows day  a/d month  n note  x del  h home  esc quit"
 IFNE $msg "" GOTO showmsg
 FLIP
 RETURN
 :showmsg
 COLOR pink
-PUT 48 20 "$msg"
+PUT 2 21 "$msg"
 FLIP
 RETURN
 

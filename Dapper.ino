@@ -749,6 +749,73 @@ static bool dapperValidateDownloadedPackage(const DapperRecord& record, String& 
     return true;
 }
 
+bool dapperFetchPackageForEdit(const String& request, const String& targetPreference,
+                               String& sourcePath, String& suggestedSavePath,
+                               String& loadedLabel, String& error) {
+    String id = request;
+    String version;
+    int at = request.indexOf('@');
+    if (at >= 0) {
+        id = request.substring(0, at);
+        version = request.substring(at + 1);
+    }
+    int versionParts[3];
+    if (!dapperValidId(id) || (version.length() > 0 && !dapperParseStableVersion(version, versionParts))) {
+        error = "invalid package ID or version";
+        return false;
+    }
+
+    String preference = targetPreference;
+    preference.toLowerCase();
+    if (preference.length() > 0 && preference != "internal" && preference != "flash" && preference != "sd") {
+        error = "unknown edit target preference: " + targetPreference;
+        return false;
+    }
+
+    if (!dapperPrepareCatalog()) {
+        error = "catalog is unavailable";
+        return false;
+    }
+
+    DapperRecord record;
+    String failure;
+    if (!dapperFindBest(id, version, record, failure)) {
+        error = failure;
+        return false;
+    }
+
+    if (!dapperEnsureStorage(error)) {
+        return false;
+    }
+
+    bool preferSd = preference == "sd" || (preference.length() == 0 && sdCardMounted);
+    if (preferSd && !sdCardMounted) {
+        error = "SD not mounted";
+        return false;
+    }
+    suggestedSavePath = preferSd ? dapperSdAppPath(record.id) : dapperInternalAppPath(record.id);
+    if (!dapperEnsureAppDirectoryForTarget(suggestedSavePath, error)) {
+        return false;
+    }
+
+    outLine("Dapper: loading " + record.id + " " + record.version + " into editor...", C_CYAN);
+    String actualHash;
+    if (!dapperFetchToFile(String(DAPPER_REPOSITORY_BASE_URL) + record.url,
+                           DAPPER_PACKAGE_PART_PATH, DAPPER_MAX_PACKAGE_BYTES,
+                           record.size, record.sha256, actualHash, error)) {
+        return false;
+    }
+    if (!dapperValidateDownloadedPackage(record, error)) {
+        ledPulseStorageWrite(false);
+        LittleFS.remove(DAPPER_PACKAGE_PART_PATH);
+        return false;
+    }
+
+    sourcePath = DAPPER_PACKAGE_PART_PATH;
+    loadedLabel = record.id + " " + record.version;
+    return true;
+}
+
 static bool dapperHashFile(const String& path, String& hash, size_t& size) {
     RoutedPath r = routePath(path);
     if (r.isSd && !sdCardMounted) return false;

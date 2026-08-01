@@ -117,6 +117,18 @@
                                                     "httptruncated",
                                                     "jsonok"
                                                 ]
+                               },
+                     "1.4.1":  {
+                                   "extends":  "1.4.0",
+                                   "opcodes":  [
+                                                   "LIFE"
+                                               ]
+                               },
+                     "1.4.2":  {
+                                   "extends":  "1.4.1",
+                                   "syntax_features":  [
+                                                           "echo-off"
+                                                       ]
                                }
                  },
     "boards":  {
@@ -137,7 +149,7 @@
                                                   }
                                    },
                    "fnk0104":  {
-                                   "runtime":  "1.4.0",
+                                   "runtime":  "1.4.2",
                                    "limits":  {
                                                   "lines":  4000,
                                                   "labels":  256,

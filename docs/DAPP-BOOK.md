@@ -1828,6 +1828,7 @@ EXPR <name> <formula>  full expression; rounds to nearest — floor() to chop
 RAND <n> <max>         0..max-1
 RAND <n> <min> <max>   min..max inclusive
 DIM <name> <size>      make an array; $name[i] reads, name[i] writes
+LIFE <cur> <next> <w> <h>  advance Conway's Life in numeric arrays
 
 ── strings ─────────────────────────────────────────────────────────
 SETSTR <name> <text>   assign            APPEND <name> <text>  concatenate

@@ -60,6 +60,23 @@ END`);
   assert.deepEqual([...files.read("/apps/test.bin")].map(ch => ch.charCodeAt(0)), [0, 10, 17, 65]);
 });
 
+test("@echo off tells the input UI not to echo submitted lines", async () => {
+  const echoFlags = [];
+  const io = {
+    output() {}, clear() {}, status() {}, canvas() {}, endCanvas() {}, waveStop() {},
+    input(_prompt, resolve, _masked, echoInput) {
+      echoFlags.push(echoInput);
+      resolve("quiet");
+    }
+  };
+  const runtime = new DappRuntime(io, new MemoryFiles());
+  const result = await runtime.run("# @echo off\nINPUT line\nEND");
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(echoFlags, [false]);
+  assert.equal(runtime.strings.get("line"), "quiet");
+});
+
 test("HTTPGET bounds the decoded body and reports status", async (t) => {
   const previousFetch = globalThis.fetch;
   t.after(() => { globalThis.fetch = previousFetch; });
@@ -140,6 +157,28 @@ test("WAVE exposes three-channel settings and app exit always stops audio", asyn
   assert.equal(result.ok, true);
   assert.deepEqual(events.waves, [{ channel: 2, waveform: "triangle", frequency: 330, level: 25 }]);
   assert.equal(events.stops, 1);
+});
+
+test("LIFE advances a Conway grid in native runtime code", async () => {
+  const runtime = runtimeFor(new MemoryFiles());
+  const result = await runtime.run(`
+DIM cur 25
+DIM nxt 25
+SET cur[7] 1
+SET cur[12] 1
+SET cur[17] 1
+LIFE cur nxt 5 5
+SET a $cur[11]
+SET b $cur[12]
+SET c $cur[13]
+SET d $cur[7]
+END`);
+
+  assert.equal(result.ok, true);
+  assert.equal(runtime.numbers.get("a"), 1);
+  assert.equal(runtime.numbers.get("b"), 1);
+  assert.equal(runtime.numbers.get("c"), 1);
+  assert.equal(runtime.numbers.get("d"), 0);
 });
 
 test("the shipped synth app renders and exits through its normal key loop", async () => {

@@ -124,7 +124,7 @@ test("current repository sources validate", async () => {
 test("FNK0104 compatibility contract matches AppRunner source", async () => {
   const compatibility = JSON.parse(await readFile(projectCompatibility, "utf8"));
   const source = await readFile(path.join(projectRoot, "AppRunner.ino"), "utf8");
-  assert.deepEqual(sourceOpcodes(source), resolvedRuntimeOpcodes(compatibility, "1.4.0"));
+  assert.deepEqual(sourceOpcodes(source), resolvedRuntimeOpcodes(compatibility, "1.4.2"));
   assertLimitsMatch(source, compatibility.boards.fnk0104.limits, {
     DAPP_MAX_LINES: "lines",
     DAPP_MAX_LABELS: "labels",
@@ -233,6 +233,23 @@ test("rejects conditional GOSUB under the 1.0 runtime contract", async (t) => {
     buildRepository({ configPath: fixture.configPath, checkOnly: true }),
     (error) =>
       error instanceof RepositoryValidationError && error.message.includes("source requires >=1.1.0"),
+  );
+});
+
+test("rejects @echo off under a pre-echo-control runtime contract", async (t) => {
+  const fixture = await makeFixture(t, {
+    "apps/quiet.dapp": packageText({
+      id: "quiet",
+      name: "Quiet",
+      boards: "fnk0104",
+      runtime: ">=1.4.1 <2.0.0",
+      body: "# @echo off\nINPUT line",
+    }),
+  });
+  await assert.rejects(
+    buildRepository({ configPath: fixture.configPath, checkOnly: true }),
+    (error) =>
+      error instanceof RepositoryValidationError && error.message.includes("source requires >=1.4.2"),
   );
 });
 

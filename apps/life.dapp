@@ -1,9 +1,9 @@
 # @dapp-format 1
 # @id life
 # @name Life
-# @version 1.0.0
+# @version 1.0.1
 # @boards fnk0104
-# @runtime >=1.1.0 <2.0.0
+# @runtime >=1.4.1 <2.0.0
 # @summary Conway's Game of Life with a cursor editor and pattern library
 # /apps/life.dapp
 # Conway's Game of Life for the DOLL-OS canvas. Arrows move the cursor,
@@ -13,15 +13,11 @@
 # it is stamped at a fixed corner instead. g saves the field, l loads it.
 # Escape quits.
 #
-# The field is two 38x20 grids, `cur` and `nxt`. A generation computes
-# `nxt` from `cur` by an unrolled neighbour count (three GOSUBs per row
-# rather than a nested dx/dy loop, because edges need clamping and that is
-# easier to get right written once per offset than twice-nested), then
-# copies `nxt` back over `cur` -- .dapp arrays are addressed by name, not
-# aliasable, so there is no way to just relabel which buffer is "current"
-# the way a pointer swap would. The board does not wrap: an edge cell has
-# fewer neighbours, which is the standard convention and keeps a glider
-# from reappearing on the far side mid-flight.
+# The field is two 38x20 grids, `cur` and `nxt`. A generation uses the
+# runtime-native LIFE opcode, which computes `nxt` from `cur` and copies it
+# back. The board does not wrap: an edge cell has fewer neighbours, which is
+# the standard convention and keeps a glider from reappearing on the far side
+# mid-flight.
 #
 # Patterns are "dx,dy dx,dy ..." text parsed with a small signed-integer
 # reader, applied relative to the cursor for the four small patterns and
@@ -36,7 +32,7 @@ SET curx 19
 SET cury 10
 SET running 0
 SET gen 0
-SET stepms 120
+SET stepms 60
 SET quit 0
 SETSTR msg "space toggles - enter runs"
 # set once here rather than inline where it is used: the main loop never
@@ -271,82 +267,9 @@ ADD ci 1
 IF $ci < 760 GOTO cf_cell
 RETURN
 
-# any-of-eight neighbour count via clamped rows above/at/below, then the
-# usual rule: a live cell needs 2 or 3 to survive, a dead one needs
-# exactly 3 to be born
 :step
-SET y 0
-:st_row
-SET x 0
-:st_col
-GOSUB neighbours
-EXPR ci $y * 38 + $x
-SET alive $cur[$ci]
-SET keep 0
-IF $n = 3 GOTO st_born
-IF $alive = 1 GOTO st_check2
-GOTO st_write
-:st_check2
-IF $n = 2 GOTO st_born
-GOTO st_write
-:st_born
-SET keep 1
-:st_write
-SET nxt[$ci] $keep
-ADD x 1
-IF $x < 38 GOTO st_col
-ADD y 1
-IF $y < 20 GOTO st_row
-
-GOSUB copynxt
+LIFE cur nxt 38 20
 ADD gen 1
-RETURN
-
-:copynxt
-SET ci 0
-:cn_loop
-SET cur[$ci] $nxt[$ci]
-ADD ci 1
-IF $ci < 760 GOTO cn_loop
-RETURN
-
-# in: x,y -- out: n, the live count of the eight cells around (x,y)
-:neighbours
-SET n 0
-EXPR ny $y - 1
-IF $ny < 0 GOTO nb_row2
-GOSUB rown
-:nb_row2
-SET ny $y
-GOSUB rowmid
-EXPR ny $y + 1
-IF $ny > 19 GOTO nb_done
-GOSUB rown
-:nb_done
-RETURN
-
-:rown
-EXPR nx $x - 1
-GOSUB addcell
-SET nx $x
-GOSUB addcell
-EXPR nx $x + 1
-GOSUB addcell
-RETURN
-
-:rowmid
-EXPR nx $x - 1
-GOSUB addcell
-EXPR nx $x + 1
-GOSUB addcell
-RETURN
-
-:addcell
-IF $nx < 0 GOTO ac_done
-IF $nx > 37 GOTO ac_done
-EXPR ni $ny * 38 + $nx
-ADD n $cur[$ni]
-:ac_done
 RETURN
 
 # ---------------------------------------------------------------- drawing

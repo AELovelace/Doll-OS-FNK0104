@@ -1411,9 +1411,12 @@ static void editFree() {
 void handleEditCommand(const String parts[], int partCount) {
     if (partCount < 2) {
         outLine("Usage: edit <file>");
+        outLine("       edit --repo <id>[@version] [--internal|--sd]");
         outLine("  Full-screen text editor. Path is a normal DOLL-OS path", C_CYAN);
         outLine("  (e.g. /sd/notes.txt, wifi.cfg). A missing file is", C_CYAN);
         outLine("  created on save.", C_CYAN);
+        outLine("  --repo downloads a verified Dapper package into the", C_CYAN);
+        outLine("  buffer; ^O saves it as /apps/<id>.dapp or /sd/apps/<id>.dapp.", C_CYAN);
         outLine("  Keys: ^G help, ^O save, ^X exit, ^K cut, ^U paste,", C_CYAN);
         outLine("        ^W find, ^_ goto line, ^Z undo, ^A/^E, ^Y/^V, ^D.", C_CYAN);
         outLine("  ^G lists the rest. Ctrl+Up/Down nudges radio volume.", C_CYAN);
@@ -1424,8 +1427,55 @@ void handleEditCommand(const String parts[], int partCount) {
         return;
     }
 
+    bool loadingFromRepo = false;
+    String loadPath = parts[1];
+    String loadedLabel;
+    if (parts[1] == "--repo" || parts[1] == "repo") {
+        if (partCount < 3) {
+            outLine("Usage: edit --repo <id>[@version] [--internal|--sd]", C_RED);
+            return;
+        }
+        String targetPreference;
+        for (int i = 3; i < partCount; i++) {
+            if (parts[i] == "--internal" || parts[i] == "--flash") {
+                if (targetPreference.length() > 0) {
+                    outLine("edit: choose only one repository save target", C_RED);
+                    return;
+                }
+                targetPreference = "internal";
+            } else if (parts[i] == "--sd") {
+                if (targetPreference.length() > 0) {
+                    outLine("edit: choose only one repository save target", C_RED);
+                    return;
+                }
+                targetPreference = "sd";
+            } else {
+                outLine("edit: unknown repository option: " + parts[i], C_RED);
+                return;
+            }
+        }
+
+        String sourcePath;
+        String suggestedSavePath;
+        String error;
+        if (!dapperFetchPackageForEdit(parts[2], targetPreference, sourcePath,
+                                       suggestedSavePath, loadedLabel, error)) {
+            outLine("edit: " + error, C_RED);
+            return;
+        }
+        loadPath = sourcePath;
+        editPathLogical = suggestedSavePath;
+        loadingFromRepo = true;
+    } else {
+        editPathLogical = parts[1];
+    }
+
     if (!editAlloc()) {
         outLine("edit: out of memory", C_RED);
+        if (loadingFromRepo) {
+            RoutedPath r = routePath(loadPath);
+            if (!r.isSd) r.fs->remove(r.realPath);
+        }
         editFree();
         return;
     }
@@ -1437,7 +1487,6 @@ void handleEditCommand(const String parts[], int partCount) {
     editCols = max(8, (DISPLAY_WIDTH - 2 * DISPLAY_PADDING) / editCharW);
     editRows = max(1, (DISPLAY_HEIGHT - EDIT_TITLE_H - EDIT_HINT_H - 4) / editLineH);
 
-    editPathLogical = parts[1];
     editSyntaxDapp = editPathIsDapp(editPathLogical);
     editTopLine = 0;
     editLeftCol = 0;
@@ -1453,15 +1502,26 @@ void handleEditCommand(const String parts[], int partCount) {
     editLastKeyWasCut = false;
 
     String err;
-    if (!editLoadFile(editPathLogical, err)) {
+    if (!editLoadFile(loadPath, err)) {
         outLine("edit: " + err, C_RED);
+        if (loadingFromRepo) {
+            RoutedPath r = routePath(loadPath);
+            if (!r.isSd) r.fs->remove(r.realPath);
+        }
         editFree();
         return;
     }
+    if (loadingFromRepo) {
+        RoutedPath r = routePath(loadPath);
+        if (!r.isSd) r.fs->remove(r.realPath);
+    }
     //loading writes editBuf directly rather than going through editInsertBytes, so
     //nothing was recorded and an empty undo stack is exactly the on-disk state
-    editSavedUndoDepth = 0;
+    editSavedUndoDepth = loadingFromRepo ? -1 : 0;
     editRefreshModified();
+    if (loadingFromRepo) {
+        editStatus = "Loaded " + loadedLabel + "; ^O writes " + editPathLogical;
+    }
 
     //take the telnet screen; the panel is taken by the first editRender() below.
     //Note we deliberately do NOT call radioService() in the loop that follows --

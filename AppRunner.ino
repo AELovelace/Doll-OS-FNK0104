@@ -10,6 +10,7 @@
 #include <WiFiClientSecure.h>
 #include <esp_heap_caps.h>
 #include <esp_system.h>
+#include <esp_task_wdt.h>
 #include <new>
 //EXPR hands whole arithmetic expressions to the same evaluator the "calc" shell command
 //uses (Calc.ino). The script language deliberately has no expression grammar of its own --
@@ -62,6 +63,29 @@ const int DAPP_CANVAS_MAX_ROWS = 60;
 const int DAPP_MAX_STEPS = 1000000;
 const int DAPP_STEPS_PER_YIELD = 256;
 
+static void appPollAbortChord();
+
+static void appRuntimeYield(bool serviceUi) {
+    esp_task_wdt_reset();
+    if (serviceUi) {
+        appPollAbortChord();
+        ftpService();
+        radioService();
+        maintainInternetConnection();
+        ledService();
+        //Canvas apps build a frame through CLS/PUT and make it visible with FLIP.
+        //Pushing here paints that half-built frame and reads as a screen flash.
+        if (!dappCanvasActive) {
+            drawDisplayFrame();
+        }
+    }
+    delay(1);
+}
+
+static void appRuntimeYield() {
+    appRuntimeYield(true);
+}
+
 //placement-new over one PSRAM block per array: heap_caps_calloc gives raw bytes, and
 //these elements hold Strings that need their constructors run. Returns false with
 //everything released if any block can't be had.
@@ -95,7 +119,10 @@ bool DappProgram::alloc() {
     arrayPool = (long*)poolMem;
     callStack = (int*)callMem;
 
-    for (int i = 0; i < DAPP_MAX_LINES; i++) new (&lines[i]) DappLine();
+    for (int i = 0; i < DAPP_MAX_LINES; i++) {
+        new (&lines[i]) DappLine();
+        if ((i & 0x7f) == 0x7f) appRuntimeYield(false);
+    }
     for (int i = 0; i < DAPP_MAX_LABELS; i++) new (&labels[i]) DappLabel();
     for (int i = 0; i < DAPP_MAX_VARS; i++) new (&vars[i]) DappVar();
     for (int i = 0; i < DAPP_MAX_STRING_VARS; i++) new (&stringVars[i]) DappStringVar();
@@ -109,7 +136,10 @@ bool DappProgram::alloc() {
 
 DappProgram::~DappProgram() {
     if (lines) {
-        for (int i = 0; i < DAPP_MAX_LINES; i++) lines[i].~DappLine();
+        for (int i = 0; i < DAPP_MAX_LINES; i++) {
+            lines[i].~DappLine();
+            if ((i & 0xff) == 0xff) appRuntimeYield(false);
+        }
         heap_caps_free(lines);
     }
     if (labels) {
@@ -164,6 +194,29 @@ static String stripMatchingQuotes(String value) {
 static bool isAppCommentOrBlank(const String& rawLine) {
     String line = trimCopy(rawLine);
     return line.length() == 0 || line.startsWith("#") || line.startsWith("//");
+}
+
+static void appApplyMetadataDirective(const String& rawLine, DappProgram& program) {
+    String line = trimCopy(rawLine);
+    if (line.startsWith("#")) {
+        line = trimCopy(line.substring(1));
+    } else if (line.startsWith("//")) {
+        line = trimCopy(line.substring(2));
+    } else {
+        return;
+    }
+
+    if (!line.startsWith("@")) return;
+    int space = line.indexOf(' ');
+    String field = space >= 0 ? line.substring(1, space) : line.substring(1);
+    String value = space >= 0 ? trimCopy(line.substring(space + 1)) : "";
+    field.toLowerCase();
+    value.toLowerCase();
+
+    if (field == "echo") {
+        if (value == "off") program.echoInput = false;
+        else if (value == "on") program.echoInput = true;
+    }
 }
 
 static int appColorByName(String name) {
@@ -448,6 +501,7 @@ static bool appDimArray(DappProgram& program, const String& name, long size) {
         }
         for (int i = 0; i < program.arrays[existing].size; i++) {
             program.arrays[existing].values[i] = 0;
+            if ((i & 0xff) == 0xff) appRuntimeYield();
         }
         return true;
     }
@@ -467,6 +521,7 @@ static bool appDimArray(DappProgram& program, const String& name, long size) {
         program.arrays[i].size = (int)size;
         for (int c = 0; c < (int)size; c++) {
             program.arrays[i].values[c] = 0;
+            if ((c & 0xff) == 0xff) appRuntimeYield();
         }
         program.arrayPoolUsed += (int)size;
         return true;
@@ -474,6 +529,60 @@ static bool appDimArray(DappProgram& program, const String& name, long size) {
 
     outLine("run: too many arrays (max " + String(DAPP_MAX_ARRAYS) + ")", C_RED);
     return false;
+}
+
+static bool appLifeStep(DappProgram& program, String currentName, String nextName, int cols, int rows) {
+    currentName.trim();
+    nextName.trim();
+    if (currentName.startsWith("$")) currentName.remove(0, 1);
+    if (nextName.startsWith("$")) nextName.remove(0, 1);
+
+    if (cols < 1 || rows < 1 || cols > DAPP_CANVAS_MAX_COLS || rows > DAPP_CANVAS_MAX_ROWS) {
+        outLine("run: LIFE size must be 1.." + String(DAPP_CANVAS_MAX_COLS) + " by 1.." +
+                String(DAPP_CANVAS_MAX_ROWS), C_RED);
+        return false;
+    }
+
+    int currentSlot = appFindArray(program, currentName);
+    int nextSlot = appFindArray(program, nextName);
+    if (currentSlot < 0 || nextSlot < 0) {
+        outLine("run: LIFE needs two DIM'd arrays", C_RED);
+        return false;
+    }
+
+    int cells = cols * rows;
+    DappArray& current = program.arrays[currentSlot];
+    DappArray& next = program.arrays[nextSlot];
+    if (current.size < cells || next.size < cells) {
+        outLine("run: LIFE arrays must each have at least " + String(cells) + " cells", C_RED);
+        return false;
+    }
+
+    for (int y = 0; y < rows; y++) {
+        for (int x = 0; x < cols; x++) {
+            int neighbours = 0;
+            for (int dy = -1; dy <= 1; dy++) {
+                int ny = y + dy;
+                if (ny < 0 || ny >= rows) continue;
+                for (int dx = -1; dx <= 1; dx++) {
+                    if (dx == 0 && dy == 0) continue;
+                    int nx = x + dx;
+                    if (nx < 0 || nx >= cols) continue;
+                    neighbours += current.values[ny * cols + nx] != 0 ? 1 : 0;
+                }
+            }
+
+            bool alive = current.values[y * cols + x] != 0;
+            next.values[y * cols + x] = (neighbours == 3 || (alive && neighbours == 2)) ? 1 : 0;
+        }
+        appRuntimeYield();
+    }
+
+    for (int i = 0; i < cells; i++) {
+        current.values[i] = next.values[i];
+        if ((i & 0xff) == 0xff) appRuntimeYield();
+    }
+    return true;
 }
 
 //splits "board[$i+1]" into "board" and "$i+1". Takes the first '[' and the last ']' so a
@@ -493,6 +602,7 @@ static bool appParseSubscript(const String& token, String& nameOut, String& inde
 static int appScanSubscript(const String& text, int openIdx) {
     int depth = 0;
     for (int i = openIdx; i < (int)text.length(); i++) {
+        if (((i - openIdx) & 0x7f) == 0x7f) appRuntimeYield(false);
         if (text[i] == '[') {
             depth++;
         } else if (text[i] == ']') {
@@ -660,6 +770,7 @@ static String appExpandText(String text, DappProgram& program) {
     text = stripMatchingQuotes(text);
     String out = "";
     for (int i = 0; i < (int)text.length(); i++) {
+        if ((i & 0x7f) == 0x7f) appRuntimeYield(false);
         if (text[i] != '$') {
             out += text[i];
             continue;
@@ -683,6 +794,7 @@ static String appExpandText(String text, DappProgram& program) {
 static String appExpandNumericText(const String& text, DappProgram& program) {
     String out = "";
     for (int i = 0; i < (int)text.length(); i++) {
+        if ((i & 0x7f) == 0x7f) appRuntimeYield(false);
         if (text[i] != '$') {
             out += text[i];
             continue;
@@ -751,6 +863,7 @@ static void appCanvasClear() {
     for (int i = 0; i < dappCanvasCols * dappCanvasRows; i++) {
         dappCanvasCells[i].ch = ' ';
         dappCanvasCells[i].color = C_WHITE;
+        if ((i & 0xff) == 0xff) appRuntimeYield(false);
     }
 }
 
@@ -824,6 +937,7 @@ static void appCanvasPut(int col, int row, const String& text, int color) {
         DappCanvasCell& cell = dappCanvasCells[row * dappCanvasCols + x];
         cell.ch = text[i];
         cell.color = (uint8_t)color;
+        if ((i & 0x7f) == 0x7f) appRuntimeYield(false);
     }
 }
 
@@ -847,6 +961,7 @@ static void appCanvasFlip() {
     for (int row = 0; row < dappCanvasRows; row++) {
         int runColor = -1;
         for (int col = 0; col < dappCanvasCols; col++) {
+            if (((row * dappCanvasCols + col) & 0xff) == 0xff) appRuntimeYield(false);
             const DappCanvasCell& cell = dappCanvasCells[row * dappCanvasCols + col];
             if ((int)cell.color != runColor) {
                 runColor = cell.color;
@@ -941,6 +1056,7 @@ static String appFileReadLine() {
         }
         if (line.length() < DAPP_MAX_STRING_LEN) {
             line += ch;
+            if ((line.length() & 0x7f) == 0x7f) appRuntimeYield();
         }
     }
     if (line.endsWith("\r")) {
@@ -977,7 +1093,10 @@ public:
     size_t write(const uint8_t* buffer, size_t size) override {
         size_t room = body.length() < maximumBytes ? maximumBytes - body.length() : 0;
         size_t accepted = size < room ? size : room;
-        for (size_t i = 0; i < accepted; i++) body += (char)buffer[i];
+        for (size_t i = 0; i < accepted; i++) {
+            body += (char)buffer[i];
+            if ((i & 0x7f) == 0x7f) appRuntimeYield(false);
+        }
         if (accepted < size) truncated = true;
         return accepted;
     }
@@ -1025,6 +1144,7 @@ static bool appJsonEscape(const String& input, String& output) {
     output = "";
     output.reserve(input.length());
     for (size_t i = 0; i < input.length(); i++) {
+        if ((i & 0x7f) == 0x7f) appRuntimeYield(false);
         uint8_t ch = (uint8_t)input[i];
         String addition;
         if (ch == '"') addition = "\\\"";
@@ -1069,6 +1189,7 @@ static bool appJsonGetPath(const String& json, const String& requestedPath, Stri
             String indexText = path.substring(position + 1, close);
             if (indexText.length() == 0) return false;
             for (size_t i = 0; i < indexText.length(); i++) {
+                if ((i & 0x7f) == 0x7f) appRuntimeYield(false);
                 if (!isDigit(indexText[i])) return false;
             }
             current = current[(size_t)indexText.toInt()];
@@ -1078,7 +1199,10 @@ static bool appJsonGetPath(const String& json, const String& requestedPath, Stri
         }
 
         int end = position;
-        while (end < (int)path.length() && path[end] != '.' && path[end] != '[') end++;
+        while (end < (int)path.length() && path[end] != '.' && path[end] != '[') {
+            end++;
+            if (((end - position) & 0x7f) == 0x7f) appRuntimeYield(false);
+        }
         if (end == position || !current.is<JsonObjectConst>()) return false;
         String key = path.substring(position, end);
         current = current[key.c_str()];
@@ -1144,13 +1268,16 @@ static void appHttpRequest(const String& method, const String& requestedUrl,
         http.addHeader(dappHttpHeaderNames[i], dappHttpHeaderValues[i]);
     }
     ledPulseNetwork();
+    appRuntimeYield();
     int status = method == "POST"
         ? http.POST((uint8_t*)requestBody.c_str(), requestBody.length())
         : http.GET();
+    appRuntimeYield();
     dappHttpCode = status;
     if (status > 0) {
         DappHttpBodySink sink(maximumBytes);
         int copied = http.writeToStream(&sink);
+        appRuntimeYield();
         response = sink.body;
         dappHttpLength = response.length();
         dappHttpTruncated = sink.truncated ? 1 : 0;
@@ -1255,7 +1382,9 @@ static long appPollKeySource(int (*readByte)(), DappKeyState& st) {
     }
 
     int b;
+    int scanned = 0;
     while ((b = readByte()) >= 0) {
+        if ((++scanned & 0x3f) == 0) appRuntimeYield(false);
         //^X aborts the app rather than reaching the script -- KEY never returns it
         if (st.phase == DKEY_NORMAL && (uint8_t)b == DAPP_ABORT_BYTE) {
             dappAbort = true;
@@ -1286,20 +1415,14 @@ static void appResetKeyState() {
 static void appDelay(unsigned long waitMs) {
     unsigned long started = millis();
     while (millis() - started < waitMs) {
-        appPollAbortChord();
+        appRuntimeYield();
         if (dappAbort) {
             return;   //appExecute notices the flag right after this op
         }
-        ftpService();
-        radioService();
-        maintainInternetConnection();
-        ledService();
-        drawDisplayFrame();
-        delay(1);
     }
 }
 
-static String appReadInput(const String& prompt, bool masked) {
+static String appReadInput(const String& prompt, bool masked, bool echoInput) {
     String input = "";
     commandCursorPos = 0;
 
@@ -1320,21 +1443,17 @@ static String appReadInput(const String& prompt, bool masked) {
             r = readKeyboardLineEditedInput(input);
         }
         setActiveInput(prompt, input, masked);
-        ftpService();
-        radioService();
-        maintainInternetConnection();
-        ledService();
-        drawDisplayFrame();
+        appRuntimeYield();
 
         if (r == LINE_SUBMITTED) {
             String submitted = input;
             submitted.trim();
             commandCursorPos = 0;
-            outLine(prompt + (masked ? "[hidden]" : submitted), C_CYAN);
+            if (echoInput) {
+                outLine(prompt + (masked ? "[hidden]" : submitted), C_CYAN);
+            }
             return submitted;
         }
-
-        delay(1);
     }
 }
 
@@ -1367,6 +1486,7 @@ static bool appLoad(File& file, DappProgram& program) {
     DappLabel* labels = program.labels;
     int& lineCount = program.lineCount;
     int& labelCount = program.labelCount;
+    bool reachedExecutable = false;
     lineCount = 0;
     labelCount = 0;
 
@@ -1382,7 +1502,12 @@ static bool appLoad(File& file, DappProgram& program) {
         }
 
         String trimmed = trimCopy(line);
-        if (!isAppCommentOrBlank(trimmed)) {
+        if (isAppCommentOrBlank(trimmed)) {
+            if (!reachedExecutable) {
+                appApplyMetadataDirective(trimmed, program);
+            }
+        } else {
+            reachedExecutable = true;
             if (trimmed.startsWith(":") && labelCount < DAPP_MAX_LABELS) {
                 labels[labelCount++] = { trimmed.substring(1), lineCount };
             } else {
@@ -1399,6 +1524,7 @@ static bool appLoad(File& file, DappProgram& program) {
         }
 
         lines[lineCount++].text = line;
+        if ((lineCount & 0x1f) == 0) appRuntimeYield(false);
     }
 
     return true;
@@ -1424,7 +1550,7 @@ static bool appExecute(DappProgram& program) {
             return false;
         }
         if (steps % DAPP_STEPS_PER_YIELD == 0) {
-            delay(0);   //hand the scheduler a slot so a long loop can't starve the watchdog
+            appRuntimeYield();   //service the board so a long loop can't starve the watchdog
         }
 
         String line = trimCopy(lines[pc].text);
@@ -1555,6 +1681,19 @@ static bool appExecute(DappProgram& program) {
             if (!appDimArray(program, parts[0], appValueOf(parts[1], program))) {
                 return false;
             }
+        } else if (op == "LIFE") {
+            String parts[4];
+            int count = splitCommand(arg, parts, 4);
+            if (count < 4) {
+                outLine("run: LIFE needs <current-array> <next-array> <cols> <rows>", C_RED);
+                return false;
+            }
+            if (!appLifeStep(program, parts[0], parts[1],
+                             (int)appValueOf(parts[2], program),
+                             (int)appValueOf(parts[3], program))) {
+                return false;
+            }
+            steps = 0;   //native LIFE work yields internally, so it is not a runaway loop
         } else if (op == "SETSTR") {
             String parts[2];
             int count = splitCommand(arg, parts, 2);
@@ -1690,7 +1829,7 @@ static bool appExecute(DappProgram& program) {
                 return false;
             }
             String prompt = count >= 2 ? appExpandText(parts[1], program) : parts[0] + "> ";
-            appSetStringValue(stringVars, slot, appReadInput(prompt, op == "INPUTSECRET"));
+            appSetStringValue(stringVars, slot, appReadInput(prompt, op == "INPUTSECRET", program.echoInput));
             steps = 0;   //waiting on a human is not a runaway loop
         } else if (op == "KEY") {
             if (arg.length() == 0) {

@@ -127,7 +127,7 @@ Run `help` on the device for the live list.
 | `clear` | clear the screen |
 | `dapper` | search, install, update, remove, and verify `.dapp` packages |
 | `dice` | dice roller |
-| `edit` | text editor |
+| `edit` | text editor, including `edit --repo <id>` for repository apps |
 | `free` | heap / PSRAM report |
 | `ftp` | serve the SD card over FTP |
 | `gb` | Game Boy emulator |
