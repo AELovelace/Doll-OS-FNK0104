@@ -1,9 +1,10 @@
 # @dapp-format 1
 # @id plot
 # @name Plot
-# @version 1.0.0
+# @version 1.0.1
 # @boards fnk0104
-# @runtime >=1.1.0 <2.0.0
+# @runtime >=1.4.2 <2.0.0
+# @echo off
 # @summary Graph a typed formula of x, with pan, zoom and auto-fit
 # /apps/plot.dapp
 # Type a formula in x -- sin(x/8)*10, x^2-3, sqrt(x)*2 -- and it is graphed

@@ -104,6 +104,22 @@ HTTPGET <name> <url> [max]  bounded HTTP/HTTPS GET into a string
 HTTPPOST <name> <url> <body> [max]  bounded POST response into a string
 HTTPHEADER <name> <value>  set/replace one of up to eight request headers
 HTTPCLEAR           clear request headers
+HTTPGETBUF <url> [max]  GET straight into the byte buffer, past the 4096 cap
+BUFNEW [bytes]      allocate the byte buffer (default 65536, maximum 262144)
+BUFFREE             release it; BUFCLEAR empties it without reallocating
+BUFAT <n> <pos>     byte at pos into a numeric variable, 0 past the end
+BUFSUB <name> <pos> <count>  copy a slice into a string variable
+BUFWRITE <pos> <text>  copy text into the buffer at pos
+BUFSCAN <n> <pos> [stops]  advance past bytes until one in stops; "" means space
+BUFTAKE <s> <n> <pos> [stops]  same, and copy what was passed into a string
+BUFSAVE <path>      write the buffer to a file; BUFLOAD reads one back
+HTMLTEXT <url> <textpath> <linkpath|-> [wrap] [maxlinks]  fetch and render a page
+HTMLOPEN <textpath> <linkpath|-> <base> [wrap] [maxlinks]  start a render
+HTMLFEED url <url> | buf [pos count] | text <string>  add a source to the render
+HTMLCLOSE           finish the render and close its files
+HTMLSTR <name> url <url> | buf | text <s>  render into a string variable
+URLABS <name> <base> <href>  absolute URL, or "" if it is not followable
+URLPART <name> <url> scheme|origin|host|path|dir  one piece of a URL
 JSONESC <name> <text>  escape text for insertion inside a JSON string
 JSONGET <name> <json> <path>  extract a JSON value; $jsonok reports success
 FOPEN <path> <mode> open a file: read, write, append, or update
@@ -315,9 +331,75 @@ does the same with a request body. `HTTPHEADER` sets or replaces one of eight
 headers for later requests, and `HTTPCLEAR` removes them. Headers are reset when
 an app starts and ends. The request
 does not stop the app when the network or server fails; inspect `$httpok`,
-`$httpcode`, `$httplen`, and `$httptruncated`. Redirects are followed and
-compressed responses are declined. This is a text response surface, not a
-binary downloader.
+`$httpcode`, `$httplen`, and `$httptruncated`. Up to five redirects are followed
+and compressed responses are declined.
+
+Successive requests to the same origin reuse one connection, so a script that
+fetches several pages from a host pays for the TLS handshake once. The connection
+is dropped when the origin changes, when a response is truncated, and when the
+app exits.
+
+## Buffers
+
+`HTTPGET` stores into a string variable and so cannot exceed 4096 bytes. The byte
+buffer is the way past that: one flat block of up to 262144 bytes that holds raw
+bytes rather than text.
+
+```text
+BUFNEW 131072
+HTTPGETBUF "https://example.com/big.csv"
+PRINT "got $buflen of $bufcap bytes"
+```
+
+`BUFAT` reads one byte and `BUFSUB` copies a slice into a string, but walking a
+document one `BUFAT` at a time costs an interpreter step per byte. `BUFSCAN` and
+`BUFTAKE` stop on a character class instead, so a scan costs a step per *token*:
+
+```text
+SET pos 0
+:word
+BUFTAKE w pos $pos " ,"
+IF $w = "" GOTO done
+PRINT "$w"
+ADD pos 1
+IF $pos < $buflen GOTO word
+:done
+```
+
+An empty stop set means whitespace. `BUFSAVE` and `BUFLOAD` move the buffer to
+and from a file, and both need the script's own file handle closed first. The
+buffer is released when the app exits.
+
+## HTML
+
+`HTMLTEXT` fetches a page and renders it to readable text in one instruction:
+
+```text
+HTMLTEXT "https://example.com/" "/page.txt" "/page.lnk" 76 200
+PRINT "$htmllines lines, $htmllinks links, $htmlbytes bytes"
+```
+
+The response body is streamed through the renderer as it arrives, so the page is
+never held anywhere and its size is bounded by the filesystem rather than by any
+runtime limit. `/page.txt` gets word-wrapped text with each link marked `[n]` in
+place; `/page.lnk` gets one `<n> <absolute-url>` line per link, in marker order,
+so link *n* is line *n*. Pass `-` as the link path to skip link collection.
+
+`HTMLOPEN`/`HTMLFEED`/`HTMLCLOSE` are the same renderer with the pieces exposed,
+for rendering several sources into one file or for HTML a script already holds.
+`HTMLSTR` renders into a string variable for pages small enough to want no file
+at all. `$htmlok` reports whether the render started.
+
+Relative links are resolved against the page's own URL, so what lands in the link
+file is directly fetchable. `URLABS` and `URLPART` expose that resolution on its
+own — `URLABS` returns `""` for anything not followable over http(s), including
+fragments, `mailto:`, and `javascript:`.
+
+The renderer skips `<script>`, `<style>`, and comments; understands entities and
+UTF-8; and transliterates non-ASCII to ASCII, because the panel font draws
+nothing above 126. There is no JS, CSS, imagery, or form handling. Because the
+renderer opens two files of its own and the runtime allows the script only one,
+`HTMLOPEN` and `HTMLTEXT` refuse to start while a script file is open.
 
 `JSONESC safe $prompt` protects quotes, backslashes, and control characters
 before text is inserted between JSON quotes. `JSONGET answer $response
@@ -345,8 +427,11 @@ PSRAM, so the caps are roomy:
 1          open file at a time
 120 x 60   largest canvas
 4096       characters per string variable
+262144     bytes in the byte buffer (BUFNEW), default 65536
 1000000    executed steps between waits before the loop guard trips
 ```
+
+`HTMLTEXT` is not on that list: it streams to disk and never holds the page.
 
 Hitting one is reported on the terminal rather than failing silently. The step
 guard counts instructions since the last `WAIT` or `INPUT`, on the grounds that a
@@ -372,6 +457,13 @@ $httpcode
 $httplen
 $httptruncated
 $jsonok
+$buflen
+$bufcap
+$bufok
+$htmlok
+$htmllines
+$htmllinks
+$htmlbytes
 ```
 
 Numeric only (see Keys and games): `$kup`, `$kdown`, `$kleft`, `$kright`,

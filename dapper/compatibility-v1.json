@@ -129,6 +129,38 @@
                                    "syntax_features":  [
                                                            "echo-off"
                                                        ]
+                               },
+                     "1.5.0":  {
+                                   "extends":  "1.4.2",
+                                   "opcodes":  [
+                                                   "BUFAT",
+                                                   "BUFCLEAR",
+                                                   "BUFFREE",
+                                                   "BUFLOAD",
+                                                   "BUFNEW",
+                                                   "BUFSAVE",
+                                                   "BUFSCAN",
+                                                   "BUFSUB",
+                                                   "BUFTAKE",
+                                                   "BUFWRITE",
+                                                   "HTMLCLOSE",
+                                                   "HTMLFEED",
+                                                   "HTMLOPEN",
+                                                   "HTMLSTR",
+                                                   "HTMLTEXT",
+                                                   "HTTPGETBUF",
+                                                   "URLABS",
+                                                   "URLPART"
+                                               ],
+                                   "builtins":  [
+                                                    "bufcap",
+                                                    "buflen",
+                                                    "bufok",
+                                                    "htmlbytes",
+                                                    "htmllines",
+                                                    "htmllinks",
+                                                    "htmlok"
+                                                ]
                                }
                  },
     "boards":  {
@@ -149,7 +181,7 @@
                                                   }
                                    },
                    "fnk0104":  {
-                                   "runtime":  "1.4.2",
+                                   "runtime":  "1.5.0",
                                    "limits":  {
                                                   "lines":  4000,
                                                   "labels":  256,
@@ -161,7 +193,8 @@
                                                   "call_depth":  64,
                                                   "canvas_columns":  120,
                                                   "canvas_rows":  60,
-                                                  "steps":  1000000
+                                                  "steps":  1000000,
+                                                  "buffer_bytes":  262144
                                               }
                                }
                }

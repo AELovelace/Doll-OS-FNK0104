@@ -75,8 +75,12 @@ the JSON body itself, not the status code.
 - `POST /send` `{"room","text"}`, header `Authorization: Bearer <token>` --
   posts one message. `text` is trimmed to 200 characters server-side.
 - `GET /poll?room=<room>&since=<last id seen>` -- up to 10 messages newer
-  than `since`, plus `last_id` to pass as `since` on the next poll. No auth
-  required (reading a room doesn't need an account, only posting to one
+  than `since`, plus `last_id` to pass as `since` on the next poll. `since=0`
+  is the no-cursor case a client joins with, and returns the ten *most
+  recent* messages rather than the ten oldest, so a joiner lands at the end
+  of the conversation instead of fifty polls behind it. A caller that wants
+  everything it missed keeps polling while a response comes back full. No
+  auth required (reading a room doesn't need an account, only posting to one
   does).
 
 Usernames and room names match `[A-Za-z0-9_-]{1,20}` (usernames need at

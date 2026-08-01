@@ -1,7 +1,7 @@
 # @dapp-format 1
 # @id dappchat
 # @name DappChat
-# @version 1.0.1
+# @version 1.0.2
 # @boards fnk0104
 # @runtime >=1.4.2 <2.0.0
 # @echo off
@@ -52,7 +52,6 @@ SETSTR body ""
 IF $httpok = 0 GOTO auth_http_error
 
 JSONGET authok $raw "ok"
-PRINT "debug ok=[$authok] jsonok=$jsonok len=$httplen"
 IFEQ $authok "true" GOTO auth_ok
 JSONGET err $raw "error"
 COLOR red
@@ -141,7 +140,16 @@ GOTO chat
 # out: prints any messages newer than $since, then advances $since to the
 # server's last_id. A quiet network hiccup just means the next poll shows
 # a bit more -- it does not stop the chat.
+#
+# The server answers at most 10 messages per request, and since=0 (joining)
+# means "the 10 most recent". A response that comes back full means there is
+# more waiting, so keep asking -- otherwise a room that moved faster than one
+# message per turn would stay permanently behind, and you'd only ever see the
+# backlog creep forward each time you sent something. $pround caps the catch-up
+# at 50 messages so joining a busy room can't fill the screen forever.
 :poll
+SET pround 0
+:poll_round
 SETSTR url "$endpoint/poll?room=$room&since=$since"
 HTTPGET praw $url 4096
 IF $httpok = 0 GOTO poll_return
@@ -161,6 +169,9 @@ IF $jsonok = 0 GOTO poll_return
 SETSTR text $newsince
 GOSUB str2num
 SET since $num
+IF $pi < 10 GOTO poll_return
+ADD pround 1
+IF $pround < 5 GOTO poll_round
 :poll_return
 RETURN
 

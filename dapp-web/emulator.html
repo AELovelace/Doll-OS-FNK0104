@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#ff0f7f">
+  <meta name="description" content="Run a behaviorally faithful DOLL-OS machine in your browser.">
+  <title>DOLL-OS // web emulator</title>
+  <script src="emulator-mode.js"></script>
+  <link rel="stylesheet" href="emulator.css">
+</head>
+<body>
+  <div class="noise" aria-hidden="true"></div>
+  <header class="masthead">
+    <a class="wordmark" href="emulator.html"><span>:(</span> DOLL-OS</a>
+    <p>FNK0104 BEHAVIORAL EMULATOR // NO HARDWARE REQUIRED</p>
+    <nav aria-label="Site navigation">
+      <a href="index.html">DAPP IDE</a>
+      <a href="book.html">BOOK</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div>
+        <p class="eyebrow">DOLL-SCREEN / BROWSER UNIT 01</p>
+        <h1>A tiny computer,<br><em>without the tiny computer.</em></h1>
+      </div>
+      <p class="lede">This is a behavioral emulator of the shell, display, filesystem, and app runtime. Hardware-only commands identify their browser limits honestly.</p>
+    </section>
+
+    <section class="workbench" aria-label="DOLL-OS app studio">
+      <article class="app-lab" aria-label="DAPP source editor">
+        <div class="panel-title"><span>DAPP WORKBENCH</span><span id="studio-state">LOCAL DRAFT</span></div>
+        <div class="studio-toolbar">
+          <label for="studio-app-select">OPEN FROM DEVICE</label>
+          <select id="studio-app-select">
+            <option value="">Select an installed app…</option>
+          </select>
+          <label for="studio-filename">SAVE AS /apps/</label>
+          <input id="studio-filename" type="text" value="untitled.dapp" maxlength="80" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="studio-editor-shell">
+          <pre id="studio-line-numbers" class="studio-line-numbers" aria-hidden="true">1
+2
+3
+4</pre>
+          <div class="studio-code-layer">
+            <pre id="studio-highlight" class="studio-highlight" aria-hidden="true"></pre>
+            <textarea id="studio-editor" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="DAPP source code"># untitled.dapp
+COLOR pink
+PRINT "hello from DOLL-OS"
+END</textarea>
+          </div>
+        </div>
+        <div class="studio-meta">
+          <span id="studio-stats">4 LINES</span>
+          <span>CTRL/CMD + ENTER TO RUN</span>
+        </div>
+        <div class="studio-actions">
+          <button id="studio-new" type="button">NEW</button>
+          <button id="studio-save" type="button">SAVE TO DEVICE</button>
+          <button id="studio-run" class="primary" type="button" disabled>&gt; RUN ON DOLL-OS</button>
+        </div>
+        <p class="studio-note">Apps execute inside the bounded AppRunner 1.4.2 environment. Saving here writes to the emulated device, never to the hosting server.</p>
+      </article>
+
+      <article class="device-column" aria-label="Emulated DOLL-OS device">
+        <div class="device">
+          <div class="device-label"><strong>FREENOVE // FNK0104</strong><span id="power-label">POWERED</span></div>
+          <button class="screen-button" id="screen-button" type="button" aria-label="Focus the emulated display">
+            <canvas id="display" width="400" height="320" style="--screen-ratio: 400 / 320" aria-describedby="screen-reader-log"></canvas>
+          </button>
+          <div class="device-lower">
+            <span class="led" id="device-led" aria-label="Rear LED"></span>
+            <span>DOLL-SCREEN</span>
+            <span>ESP32-S3 // WEB</span>
+          </div>
+        </div>
+
+        <label class="input-label" for="command-input"><span id="input-mode">SHELL INPUT</span><span>ENTER TO SEND</span></label>
+        <div class="command-dock">
+          <input id="command-input" type="text" name="doll-os-command-input" maxlength="256" autocomplete="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-form-type="other" aria-label="DOLL-OS keyboard input">
+          <button id="stop-app" type="button" disabled>STOP APP</button>
+        </div>
+        <p class="keyboard-help">↑/↓ history · Ctrl+C clears input · running canvas apps receive keys directly</p>
+      </article>
+
+      <aside class="control-panel">
+        <div class="panel-title"><span>MACHINE STATE</span><span id="runtime-state">BOOTING</span></div>
+
+        <div class="button-grid">
+          <button id="power-button" type="button">POWER</button>
+          <button id="reboot-button" type="button">REBOOT</button>
+          <button id="export-button" type="button">EXPORT DISK</button>
+          <button id="import-button" type="button">IMPORT DISK</button>
+        </div>
+        <input id="import-file" type="file" accept="application/json,.json" hidden>
+
+        <label class="control-row" for="panel-select">
+          <span>PANEL</span>
+          <select id="panel-select">
+            <option value="400x320">3.2&quot; // 400×320</option>
+            <option value="320x240">2.8&quot; // 320×240</option>
+            <option value="480x320">3.5/4.0&quot; // 480×320</option>
+          </select>
+        </label>
+        <label class="control-row" for="battery-range">
+          <span>BATTERY <output id="battery-output">100%</output></span>
+          <input id="battery-range" type="range" min="0" max="100" value="100">
+        </label>
+        <label class="toggle-row"><span>WI-FI CONNECTED</span><input id="wifi-toggle" type="checkbox" checked></label>
+        <label class="toggle-row"><span>SD CARD INSERTED</span><input id="sd-toggle" type="checkbox" checked></label>
+        <label class="toggle-row"><span>APP NETWORK ACCESS</span><input id="network-toggle" type="checkbox" checked></label>
+
+        <div class="quick-head"><span>QUICK COMMANDS</span><span>CLICK TO RUN</span></div>
+        <div class="quick-commands">
+          <button type="button" data-command="help">help</button>
+          <button type="button" data-command="ls /system/apps">apps</button>
+          <button type="button" data-command="status">status</button>
+          <button type="button" data-command="run snake">run snake</button>
+          <button type="button" data-command="dapper search game">dapper</button>
+          <button type="button" data-command="free details">memory</button>
+        </div>
+
+        <div class="storage-head"><span>VIRTUAL STORAGE</span><button id="refresh-files" type="button">REFRESH</button></div>
+        <div id="storage-summary" class="storage-summary">Loading filesystem…</div>
+        <button class="danger" id="factory-reset" type="button">FACTORY RESET</button>
+      </aside>
+    </section>
+
+  </main>
+
+  <div id="screen-reader-log" class="sr-only" role="log" aria-live="polite"></div>
+
+  <dialog id="editor-dialog">
+    <form method="dialog" class="editor-window">
+      <div class="editor-title"><strong id="editor-path">EDIT://</strong><button value="cancel" aria-label="Close editor">×</button></div>
+      <textarea id="file-editor" spellcheck="false" aria-label="File contents"></textarea>
+      <div class="editor-actions">
+        <span>Saved to the virtual device</span>
+        <button value="cancel">CANCEL</button>
+        <button id="save-file" value="default">SAVE</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script type="module" src="emulator.js?v=20260801c"></script>
+</body>
+</html>

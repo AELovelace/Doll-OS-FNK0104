@@ -1,9 +1,10 @@
 # @dapp-format 1
 # @id page
 # @name Page
-# @version 1.0.0
+# @version 1.0.1
 # @boards fnk0104
-# @runtime >=1.1.0 <2.0.0
+# @runtime >=1.4.2 <2.0.0
+# @echo off
 # @summary A full-screen text pager with line jump and search
 # /apps/page.dapp
 # Pages any text file a screenful at a time. Space/down next page, up

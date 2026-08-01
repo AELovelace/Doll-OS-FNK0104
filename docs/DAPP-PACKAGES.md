@@ -23,7 +23,7 @@ Three versions are independent and must not be substituted for one another.
 | --- | --- | --- |
 | Package format | `1` | Syntax and required fields of the metadata header and repository records |
 | App version | `1.3.0` | Version of one app, assigned by its publisher |
-| AppRunner API | `1.4.2` | Language behavior, opcodes, built-ins, and runtime contract implemented by the firmware |
+| AppRunner API | `1.5.0` | Language behavior, opcodes, built-ins, and runtime contract implemented by the firmware |
 
 Firmware versions are deliberately not package compatibility versions. A
 firmware release may change Wi-Fi, display, or shell code without changing the
@@ -85,11 +85,11 @@ The initial version assignments are:
 | Firmware family | Board ID | Initial AppRunner API |
 | --- | --- | --- |
 | M5Cardputer DOLL-OS | `m5cardputer` | `1.3.0` |
-| Freenove FNK0104 DOLL-OS | `fnk0104` | `1.4.2` |
+| Freenove FNK0104 DOLL-OS | `fnk0104` | `1.5.0` |
 
 These assignments describe the checked-in implementations summarized in
 section 4. The FNK0104 implementation contains the complete `1.0.0` command set
-plus the `1.1.0`, `1.2.0`, `1.3.0`, `1.4.0`, `1.4.1`, and `1.4.2`
+plus the `1.1.0`, `1.2.0`, `1.3.0`, `1.4.0`, `1.4.1`, `1.4.2`, and `1.5.0`
 extensions.
 
 ## 2. Board identity

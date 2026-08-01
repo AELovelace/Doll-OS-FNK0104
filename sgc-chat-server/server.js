@@ -126,14 +126,23 @@ app.post('/send', (req, res) => {
 // Reading a room requires no account -- only posting does. Cursor-based
 // polling (?since=<last id seen>) keeps each response to just the new
 // messages instead of replaying the room every call.
+//
+// since=0 means "I have no cursor yet" -- a client joining a room. It gets the
+// most recent MAX_POLL_LIMIT messages, not the oldest ones: walking a 500
+// message room forward from the start ten at a time would take fifty polls
+// before a joiner saw anything anyone said recently.
 app.get('/poll', (req, res) => {
   const room = typeof req.query.room === 'string' && ROOM_RE.test(req.query.room)
     ? req.query.room : 'lobby';
   const since = Number.parseInt(req.query.since, 10) || 0;
 
-  const rows = db.prepare(
-    'SELECT id, username, text FROM messages WHERE room = ? AND id > ? ORDER BY id ASC LIMIT ?'
-  ).all(room, since, MAX_POLL_LIMIT);
+  const rows = since > 0
+    ? db.prepare(
+        'SELECT id, username, text FROM messages WHERE room = ? AND id > ? ORDER BY id ASC LIMIT ?'
+      ).all(room, since, MAX_POLL_LIMIT)
+    : db.prepare(
+        'SELECT id, username, text FROM messages WHERE room = ? ORDER BY id DESC LIMIT ?'
+      ).all(room, MAX_POLL_LIMIT).reverse();
 
   res.json({
     ok: true,

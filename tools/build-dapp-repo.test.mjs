@@ -36,7 +36,11 @@ function sourceOpcodes(source) {
 
 function sourceIntegerConstants(source) {
   return new Map(
-    [...source.matchAll(/const (?:int|unsigned long) (DAPP_[A-Z0-9_]+)\s*=\s*(\d+)\s*;/g)].map(
+    // size_t and a leading `static` are both in use for these caps now, so the shape is
+    // matched loosely rather than by listing every spelling
+    [...source.matchAll(
+      /(?:static\s+)?const (?:int|unsigned long|size_t) (DAPP_[A-Z0-9_]+)\s*=\s*(\d+)\s*;/g
+    )].map(
       (match) => [match[1], Number(match[2])],
     ),
   );
@@ -124,7 +128,10 @@ test("current repository sources validate", async () => {
 test("FNK0104 compatibility contract matches AppRunner source", async () => {
   const compatibility = JSON.parse(await readFile(projectCompatibility, "utf8"));
   const source = await readFile(path.join(projectRoot, "AppRunner.ino"), "utf8");
-  assert.deepEqual(sourceOpcodes(source), resolvedRuntimeOpcodes(compatibility, "1.4.2"));
+  // resolved against whatever runtime the board declares, so a runtime bump does not
+  // also need this assertion edited to match
+  const declared = compatibility.boards.fnk0104.runtime;
+  assert.deepEqual(sourceOpcodes(source), resolvedRuntimeOpcodes(compatibility, declared));
   assertLimitsMatch(source, compatibility.boards.fnk0104.limits, {
     DAPP_MAX_LINES: "lines",
     DAPP_MAX_LABELS: "labels",
@@ -137,6 +144,7 @@ test("FNK0104 compatibility contract matches AppRunner source", async () => {
     DAPP_CANVAS_MAX_COLS: "canvas_columns",
     DAPP_CANVAS_MAX_ROWS: "canvas_rows",
     DAPP_MAX_STEPS: "steps",
+    DAPP_BUF_MAX_BYTES: "buffer_bytes",
   });
 });
 

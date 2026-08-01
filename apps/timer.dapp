@@ -1,9 +1,10 @@
 # @dapp-format 1
 # @id timer
 # @name Countdown Timer
-# @version 1.0.0
+# @version 1.0.1
 # @boards fnk0104
-# @runtime >=1.3.0 <2.0.0
+# @runtime >=1.4.2 <2.0.0
+# @echo off
 # @summary Countdown timer with pause/cancel and optional LED alarm
 # /apps/timer.dapp
 # Enter minutes and seconds, then run a countdown.

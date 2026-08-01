@@ -1,9 +1,10 @@
 # @dapp-format 1
 # @id hex
 # @name Hex Editor
-# @version 1.0.0
+# @version 1.0.1
 # @boards fnk0104
-# @runtime >=1.4.0 <2.0.0
+# @runtime >=1.4.2 <2.0.0
+# @echo off
 # @summary Inspect and patch files byte-for-byte without losing NULs or newlines
 
 INPUT path "file> "

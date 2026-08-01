@@ -33,6 +33,433 @@ function clampByte(value) {
   return Math.trunc(n);
 }
 
+const BUFFER_LIMITS = {
+  defaultBytes: 65536,
+  maxBytes: 262144
+};
+
+// --- URL pieces (mirrors appUrlSplit/appUrlNormalizePath/appHtmlResolveUrl in AppRunner.ino)
+// Deliberately hand-rolled rather than built on the URL class: the firmware cannot use one,
+// and the two implementations have to agree character for character or a .dapp that follows
+// links correctly on hardware will follow different ones in the emulator.
+
+function urlSplit(url) {
+  const schemeEnd = url.indexOf("://");
+  if (schemeEnd < 0) return { scheme: "", origin: "", path: "" };
+  const hostStart = schemeEnd + 3;
+  const hostEnd = url.indexOf("/", hostStart);
+  if (hostEnd < 0) return { scheme: url.slice(0, schemeEnd), origin: url, path: "/" };
+  return {
+    scheme: url.slice(0, schemeEnd),
+    origin: url.slice(0, hostEnd),
+    path: url.slice(hostEnd)
+  };
+}
+
+// collapses "." and ".." so a chain of relative links cannot walk off the root
+function urlNormalizePath(path) {
+  const segments = [];
+  for (const segment of path.split("/")) {
+    if (segment === "" || segment === ".") continue;
+    if (segment === "..") {
+      segments.pop();
+      continue;
+    }
+    if (segments.length < 32) segments.push(segment);
+  }
+  let out = segments.length ? `/${segments.join("/")}` : "";
+  if (out === "" || (path.length > 0 && path.endsWith("/"))) out += "/";
+  return out;
+}
+
+// "" means "not a followable http(s) target" -- callers test the result rather than
+// carrying a separate ok flag
+function resolveUrl(base, href) {
+  let target = String(href).trim();
+  if (!target) return "";
+  const lowered = target.toLowerCase();
+  if (lowered.startsWith("http://") || lowered.startsWith("https://")) return target;
+  if (target.startsWith("#")) return "";
+  const colon = target.indexOf(":");
+  const slash = target.indexOf("/");
+  if (colon > 0 && (slash < 0 || colon < slash) && !target.startsWith("//")) return "";
+
+  const { scheme, origin, path } = urlSplit(String(base));
+  if (!origin) return "";
+  if (target.startsWith("//")) return `${scheme}:${target}`;
+
+  let basePath = path;
+  if (target.startsWith("?")) {
+    const cut = basePath.indexOf("?");
+    if (cut >= 0) basePath = basePath.slice(0, cut);
+    return origin + basePath + target;
+  }
+
+  // the query is carried across untouched: a "/" inside one is not a segment boundary
+  let query = "";
+  const q = target.indexOf("?");
+  if (q >= 0) {
+    query = target.slice(q);
+    target = target.slice(0, q);
+  }
+  if (target.startsWith("/")) return origin + urlNormalizePath(target) + query;
+
+  const cut = basePath.indexOf("?");
+  if (cut >= 0) basePath = basePath.slice(0, cut);
+  const lastSlash = basePath.lastIndexOf("/");
+  const dir = lastSlash >= 0 ? basePath.slice(0, lastSlash + 1) : "/";
+  return origin + urlNormalizePath(dir + target) + query;
+}
+
+// --- HTML to text (mirrors DappHtmlRender in AppRunner.ino)
+
+const HTML_BLOCK_TAGS = new Set([
+  "p", "div", "br", "hr", "li", "tr", "ul", "ol", "dl", "dt", "dd",
+  "h1", "h2", "h3", "h4", "h5", "h6", "pre", "table", "title", "form",
+  "nav", "main", "aside", "header", "footer", "figure", "option",
+  "article", "section", "blockquote", "body", "head"
+]);
+
+const HTML_NAMED_ENTITIES = {
+  amp: 38, lt: 60, gt: 62, quot: 34, apos: 39, nbsp: 0xa0,
+  mdash: 0x2014, ndash: 0x2013, hellip: 0x2026, lsquo: 0x2018, rsquo: 0x2019,
+  ldquo: 0x201c, rdquo: 0x201d, bull: 0x2022, middot: 0xb7, copy: 0xa9,
+  reg: 0xae, trade: 0x2122, laquo: 0xab, raquo: 0xbb, times: 0xd7,
+  deg: 0xb0, pound: 0xa3, euro: 0x20ac,
+  szlig: 0xdf, aelig: 0xe6
+};
+
+const ACCENT_SUFFIXES = ["acute", "grave", "circ", "tilde", "uml", "ring", "cedil", "slash"];
+
+// "eacute", "uuml", "ntilde" and the rest of the Latin-1 accent names all transliterate to
+// their base letter, so they are matched by shape rather than listed one by one. Case comes
+// from the source name so &Eacute; still yields "E".
+function accentEntity(name) {
+  if (name.length < 4) return -1;
+  const base = name[0];
+  if (!"aeiouncyAEIOUNCY".includes(base)) return -1;
+  return ACCENT_SUFFIXES.includes(name.slice(1).toLowerCase()) ? base.charCodeAt(0) : -1;
+}
+
+// the panel font cannot draw anything above 126, so the renderer transliterates rather
+// than emitting characters the display would turn into '?'
+const LATIN1_FOLD =
+  "AAAAAAECEEEEIIII" +
+  "DNOOOOOxOUUUUYPs" +
+  "aaaaaaeceeeeiiii" +
+  "dnooooo/ouuuuypy";
+
+function foldCodepoint(cp) {
+  if (cp < 32) return "";
+  if (cp < 127) return String.fromCharCode(cp);
+  // the ligatures and the sharp s are two letters, so they cannot come from the table
+  if (cp === 0xdf) return "ss";
+  if (cp === 0xc6) return "AE";
+  if (cp === 0xe6) return "ae";
+  if (cp >= 0xc0 && cp <= 0xff) return LATIN1_FOLD[cp - 0xc0];
+  switch (cp) {
+    case 0xa0: return " ";
+    case 0xa3: return "GBP";
+    case 0xa9: return "(c)";
+    case 0xab: case 0xbb: return '"';
+    case 0xae: return "(r)";
+    case 0xb7: case 0x2022: return "*";
+    case 0xd7: return "x";
+    case 0x2018: case 0x2019: case 0x201b: return "'";
+    case 0x201c: case 0x201d: case 0x201e: return '"';
+    case 0x2013: case 0x2014: case 0x2212: return "-";
+    case 0x2026: return "...";
+    case 0x20ac: return "EUR";
+    case 0x2122: return "(tm)";
+    default: return "";
+  }
+}
+
+const HTML_TEXT = 0;
+const HTML_TAG = 1;
+const HTML_COMMENT = 2;
+const HTML_SKIP_LT = 3;
+
+class HtmlRenderer {
+  constructor({ base = "", wrapcol = 76, maxlinks = 200, collectLinks = true } = {}) {
+    this.base = base;
+    this.wrapcol = wrapcol >= 16 && wrapcol <= 240 ? wrapcol : 76;
+    this.maxlinks = Math.max(0, maxlinks);
+    this.collectLinks = collectLinks;
+
+    this.textLines = [];
+    this.linkLines = [];
+    this.lines = 0;
+    this.links = 0;
+    this.bytes = 0;
+
+    this.state = HTML_TEXT;
+    this.skip = false;
+    this.skipTag = "";
+    this.inEntity = false;
+    this.entity = "";
+    this.tagbuf = "";
+    this.tagn = 0;
+    this.dash1 = 0;
+    this.dash2 = 0;
+    this.line = "";
+    this.word = "";
+    this.utf8Need = 0;
+    this.utf8Cp = 0;
+  }
+
+  flushLine() {
+    if (!this.line) return;
+    this.textLines.push(this.line);
+    this.lines += 1;
+    this.line = "";
+  }
+
+  flushWord() {
+    if (!this.word) return;
+    if (!this.line) {
+      this.line = this.word;
+    } else if (this.line.length + 1 + this.word.length > this.wrapcol) {
+      this.flushLine();
+      this.line = this.word;
+    } else {
+      this.line += ` ${this.word}`;
+    }
+    this.word = "";
+  }
+
+  emitCp(cp) {
+    if (this.skip) return;
+    if (cp === 0xa0) {
+      this.flushWord();
+      return;
+    }
+    this.word += foldCodepoint(cp);
+    if (this.word.length >= this.wrapcol) this.flushWord();
+  }
+
+  resolveEntity() {
+    const name = this.entity;
+    this.entity = "";
+    if (this.skip) return;
+    const lowered = name.toLowerCase();
+    let cp = -1;
+    if (lowered.startsWith("#x")) cp = parseInt(lowered.slice(2), 16);
+    else if (lowered.startsWith("#")) cp = parseInt(lowered.slice(1), 10);
+    else if (lowered in HTML_NAMED_ENTITIES) cp = HTML_NAMED_ENTITIES[lowered];
+    else cp = accentEntity(name);
+    if (Number.isFinite(cp) && cp > 0) {
+      this.emitCp(cp);
+      return;
+    }
+    // not an entity after all -- put the source text back verbatim, semicolon included,
+    // since that character was consumed getting here
+    this.emitCp(38);
+    for (const ch of name) this.emitCp(ch.charCodeAt(0));
+    this.emitCp(59);
+  }
+
+  // in: tagbuf, everything between < and >
+  endTag() {
+    if (!this.tagbuf) return;
+    const first = this.tagbuf[0];
+    if (first === "!" || first === "?") return;
+    const closing = first === "/";
+    let i = closing ? 1 : 0;
+    let name = "";
+    while (i < this.tagbuf.length && name.length < 12 && /[a-z0-9]/i.test(this.tagbuf[i])) {
+      name += this.tagbuf[i].toLowerCase();
+      i += 1;
+    }
+    if (!name) return;
+
+    if (name === "script" || name === "style" || name === "template") {
+      if (closing) {
+        if (this.skipTag === name) {
+          this.skip = false;
+          this.skipTag = "";
+        }
+      } else {
+        this.skip = true;
+        this.skipTag = name;
+      }
+      return;
+    }
+    if (this.skip) return;
+
+    if (name === "a") {
+      this.anchorTag(closing);
+      return;
+    }
+    if (HTML_BLOCK_TAGS.has(name)) {
+      this.flushWord();
+      this.flushLine();
+      return;
+    }
+    if (name === "td" || name === "th") this.flushWord();
+  }
+
+  // the closing </a> flushes nothing on purpose, so "link</a>." keeps its punctuation
+  anchorTag(closing) {
+    if (closing) return;
+    if (!this.collectLinks || this.links >= this.maxlinks) return;
+    const href = this.tagAttribute("href");
+    if (!href) return;
+    const absolute = resolveUrl(this.base, href);
+    if (!absolute) return;
+    this.flushWord();
+    this.links += 1;
+    this.word = `[${this.links}]`;
+    this.flushWord();
+    this.linkLines.push(`${this.links} ${absolute}`);
+  }
+
+  tagAttribute(wanted) {
+    const source = this.tagbuf;
+    for (let i = 0; i < source.length; i += 1) {
+      // an attribute name only starts after whitespace, so href inside another value
+      // (?href=...) is not mistaken for the attribute itself
+      if (i > 0 && !/\s/.test(source[i - 1])) continue;
+      if (source.slice(i, i + wanted.length).toLowerCase() !== wanted) continue;
+      let j = i + wanted.length;
+      while (j < source.length && /\s/.test(source[j])) j += 1;
+      if (source[j] !== "=") continue;
+      j += 1;
+      while (j < source.length && /\s/.test(source[j])) j += 1;
+      if (j >= source.length) return "";
+      let quote = "";
+      if (source[j] === '"' || source[j] === "'") {
+        quote = source[j];
+        j += 1;
+      }
+      let value = "";
+      while (j < source.length && value.length < 300) {
+        const ch = source[j];
+        if (quote ? ch === quote : /\s/.test(ch) || ch === ">") break;
+        value += ch;
+        j += 1;
+      }
+      return value.replaceAll("&amp;", "&");
+    }
+    return "";
+  }
+
+  feedByte(byte) {
+    this.bytes += 1;
+
+    if (this.state === HTML_COMMENT) {
+      if (byte === 62 && this.dash1 === 45 && this.dash2 === 45) {
+        this.state = HTML_TEXT;
+      } else {
+        this.dash2 = this.dash1;
+        this.dash1 = byte;
+      }
+      return;
+    }
+
+    if (this.state === HTML_SKIP_LT) {
+      // inside <script>, only "</" can begin a tag -- "if (a<b)" must stay text
+      if (byte === 47) {
+        this.state = HTML_TAG;
+        this.tagbuf = "/";
+        this.tagn = 1;
+      } else {
+        this.state = HTML_TEXT;
+      }
+      return;
+    }
+
+    if (this.state === HTML_TAG) {
+      if (byte === 62) {
+        this.state = HTML_TEXT;
+        this.endTag();
+        this.tagbuf = "";
+        this.tagn = 0;
+        return;
+      }
+      if (this.tagn < 400) {
+        this.tagbuf += String.fromCharCode(byte);
+        this.tagn += 1;
+        if (this.tagn === 3 && this.tagbuf === "!--") {
+          this.state = HTML_COMMENT;
+          this.dash1 = 0;
+          this.dash2 = 0;
+        }
+      }
+      return;
+    }
+
+    if (this.inEntity) {
+      if (byte === 59) {
+        this.inEntity = false;
+        this.resolveEntity();
+      } else if (byte <= 32 || this.entity.length >= 12) {
+        this.inEntity = false;
+        const replay = this.entity;
+        this.entity = "";
+        this.emitCp(38);
+        for (const ch of replay) this.emitCp(ch.charCodeAt(0));
+        this.feedByte(byte);
+      } else {
+        this.entity += String.fromCharCode(byte);
+      }
+      return;
+    }
+
+    if (byte === 60) {
+      this.state = this.skip ? HTML_SKIP_LT : HTML_TAG;
+      if (!this.skip) {
+        this.tagbuf = "";
+        this.tagn = 0;
+      }
+      return;
+    }
+    if (byte === 38) {
+      this.inEntity = true;
+      this.entity = "";
+      return;
+    }
+
+    if (this.utf8Need > 0) {
+      if ((byte & 0xc0) === 0x80) {
+        this.utf8Cp = (this.utf8Cp << 6) | (byte & 0x3f);
+        this.utf8Need -= 1;
+        if (this.utf8Need === 0) this.emitCp(this.utf8Cp);
+        return;
+      }
+      this.utf8Need = 0;
+    }
+    if (byte >= 0x80) {
+      if ((byte & 0xe0) === 0xc0) {
+        this.utf8Need = 1;
+        this.utf8Cp = byte & 0x1f;
+      } else if ((byte & 0xf0) === 0xe0) {
+        this.utf8Need = 2;
+        this.utf8Cp = byte & 0x0f;
+      } else if ((byte & 0xf8) === 0xf0) {
+        this.utf8Need = 3;
+        this.utf8Cp = byte & 0x07;
+      }
+      return;
+    }
+
+    if (byte <= 32) {
+      this.flushWord();
+      return;
+    }
+    this.emitCp(byte);
+  }
+
+  feed(bytes) {
+    for (let i = 0; i < bytes.length; i += 1) this.feedByte(bytes[i]);
+  }
+
+  finish() {
+    this.flushWord();
+    this.flushLine();
+  }
+}
+
 class DappRuntimeError extends Error {
   constructor(message, line = 0) {
     super(message);
@@ -237,10 +664,15 @@ class ExpressionParser {
   }
 }
 
+export function evaluateExpression(source) {
+  return new ExpressionParser(String(source)).parse();
+}
+
 export class DappRuntime {
-  constructor(io, fileSystem) {
+  constructor(io, fileSystem, environment = {}) {
     this.io = io;
     this.fileSystem = fileSystem;
+    this.environment = environment;
     this.running = false;
     this.stopRequested = false;
     this.keyQueue = [];
@@ -293,6 +725,9 @@ export class DappRuntime {
       this.inputCancel = null;
       this.delayCancel = null;
       this.closeFile();
+      this.htmlClose();
+      this.buf = null;
+      this.bufLen = 0;
       this.io.waveStop?.();
       this.endCanvas();
     }
@@ -320,6 +755,15 @@ export class DappRuntime {
     this.httptruncated = 0;
     this.httpok = 0;
     this.jsonok = 0;
+    this.buf = null;
+    this.bufLen = 0;
+    this.bufOk = 0;
+    this.html = null;
+    this.htmlTarget = null;
+    this.htmlok = 0;
+    this.htmllines = 0;
+    this.htmllinks = 0;
+    this.htmlbytes = 0;
     this.httpHeaders = new Map();
     this.openFile = null;
     this.canvas = null;
@@ -686,10 +1130,30 @@ export class DappRuntime {
       this.httptruncated = 0;
       this.httpok = 0;
       try {
-        const response = await fetch(this.stringOperand(parts[1]), {
+        const rawUrl = this.stringOperand(parts[1]);
+        const baseUrl = globalThis.location?.href || "https://browser.invalid/";
+        const url = new URL(rawUrl, baseUrl);
+        if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("unsupported URL protocol");
+        const request = {
+          url: url.href,
           method: op === "HTTPPOST" ? "POST" : "GET",
           headers: Object.fromEntries(this.httpHeaders),
           body: op === "HTTPPOST" ? this.stringOperand(parts[2]) : undefined
+        };
+        if (this.io.authorizeHttp && !await this.io.authorizeHttp(request)) {
+          this.setString(parts[0], "");
+          this.httpcode = -2;
+          this.io.output("HTTP request blocked by browser policy", "yellow");
+          this.steps = 0;
+          return;
+        }
+        const response = await fetch(request.url, {
+          method: request.method,
+          headers: request.headers,
+          body: request.body,
+          credentials: "omit",
+          referrerPolicy: "no-referrer",
+          cache: "no-store"
         });
         const bytes = new Uint8Array(await response.arrayBuffer());
         const accepted = bytes.slice(0, maximum);
@@ -703,6 +1167,244 @@ export class DappRuntime {
         this.httpcode = -1;
       }
       this.steps = 0;
+      return;
+    }
+    if (op === "BUFNEW") {
+      const bytes = arg ? this.valueOf(arg) : BUFFER_LIMITS.defaultBytes;
+      if (bytes < 1 || bytes > BUFFER_LIMITS.maxBytes) {
+        throw this.error(`BUFNEW size must be 1..${BUFFER_LIMITS.maxBytes}`);
+      }
+      this.buf = new Uint8Array(Math.trunc(bytes));
+      this.bufLen = 0;
+      this.bufOk = 1;
+      return;
+    }
+    if (op === "BUFFREE") {
+      this.buf = null;
+      this.bufLen = 0;
+      this.bufOk = 1;
+      return;
+    }
+    if (op === "BUFCLEAR") {
+      this.bufLen = 0;
+      this.bufOk = this.buf ? 1 : 0;
+      return;
+    }
+    if (op === "BUFAT") {
+      const parts = splitArgs(arg, 2);
+      if (parts.length < 2) throw this.error("BUFAT needs <name> <position>");
+      const position = this.valueOf(parts[1]);
+      // out of range reads 0 rather than stopping: a scan loop tests $buflen itself
+      const value = this.buf && position >= 0 && position < this.bufLen ? this.buf[position] : 0;
+      this.writeTarget(parts[0], value);
+      return;
+    }
+    if (op === "BUFSUB") {
+      const parts = splitArgs(arg, 3);
+      if (parts.length < 3) throw this.error("BUFSUB needs <name> <position> <count>");
+      const position = this.valueOf(parts[1]);
+      let count = this.valueOf(parts[2]);
+      let piece = "";
+      if (this.buf && position >= 0 && position < this.bufLen && count > 0) {
+        count = Math.min(count, LIMITS.stringLength, this.bufLen - position);
+        for (let i = 0; i < count; i += 1) {
+          const byte = this.buf[position + i];
+          // the buffer holds bytes and a NUL cannot survive the print path
+          if (byte === 0) break;
+          piece += String.fromCharCode(byte);
+        }
+      }
+      this.setString(parts[0], piece);
+      return;
+    }
+    if (op === "BUFWRITE") {
+      const parts = splitArgs(arg, 2);
+      if (parts.length < 2) throw this.error("BUFWRITE needs <position> <text>");
+      const position = this.valueOf(parts[0]);
+      const text = this.stringOperand(parts[1]);
+      this.bufOk = 0;
+      if (this.buf && position >= 0 && position + text.length <= this.buf.length) {
+        for (let i = 0; i < text.length; i += 1) {
+          this.buf[position + i] = text.charCodeAt(i) & 255;
+        }
+        this.bufLen = Math.max(this.bufLen, position + text.length);
+        this.bufOk = 1;
+      }
+      return;
+    }
+    if (op === "BUFSCAN" || op === "BUFTAKE") {
+      // token-at-a-time scanning: a per-byte loop in script costs ~25 interpreter steps
+      // per byte, and stopping on a character class makes the script pay per token
+      const take = op === "BUFTAKE";
+      const parts = splitArgs(arg, 4);
+      const needed = take ? 3 : 2;
+      if (parts.length < needed) {
+        throw this.error(take
+          ? "BUFTAKE needs <strname> <numname> <position> [stopset]"
+          : "BUFSCAN needs <numname> <position> [stopset]");
+      }
+      let position = Math.max(0, this.valueOf(parts[take ? 2 : 1]));
+      // an empty stop set means whitespace, which is what most scans want
+      const stops = parts.length > needed ? this.stringOperand(parts[needed]) : "";
+      let piece = "";
+      while (this.buf && position < this.bufLen) {
+        const byte = this.buf[position];
+        const stop = stops === "" ? byte <= 32 : stops.includes(String.fromCharCode(byte));
+        if (stop) break;
+        if (take && piece.length < LIMITS.stringLength) piece += String.fromCharCode(byte);
+        position += 1;
+      }
+      this.writeTarget(parts[take ? 1 : 0], position);
+      if (take) this.setString(parts[0], piece);
+      return;
+    }
+    if (op === "BUFSAVE" || op === "BUFLOAD") {
+      if (!arg) throw this.error(`${op} needs <path>`);
+      if (this.openFile) throw this.error(`${op} needs the script's file handle closed (FCLOSE)`);
+      const path = normalizePath(this.expandText(arg));
+      this.bufOk = 0;
+      if (!this.buf) return;
+      if (op === "BUFSAVE") {
+        let text = "";
+        for (let i = 0; i < this.bufLen; i += 1) text += String.fromCharCode(this.buf[i]);
+        this.fileSystem.write(path, text);
+        this.bufOk = 1;
+      } else {
+        const text = this.fileSystem.read(path);
+        if (text == null) return;
+        const want = Math.min(text.length, this.buf.length);
+        for (let i = 0; i < want; i += 1) this.buf[i] = text.charCodeAt(i) & 255;
+        this.bufLen = want;
+        this.bufOk = 1;
+      }
+      return;
+    }
+    if (op === "HTTPGETBUF") {
+      const parts = splitArgs(arg, 2);
+      if (parts.length < 1) throw this.error("HTTPGETBUF needs <http-or-https-url> [max-bytes]");
+      if (!this.buf) this.buf = new Uint8Array(BUFFER_LIMITS.defaultBytes);
+      let maximum = parts.length > 1 ? this.valueOf(parts[1]) : this.buf.length;
+      if (maximum < 1 || maximum > this.buf.length) maximum = this.buf.length;
+      this.bufLen = 0;
+      const bytes = await this.fetchBytes(this.stringOperand(parts[0]));
+      if (bytes) {
+        const accepted = Math.min(bytes.length, maximum);
+        this.buf.set(bytes.subarray(0, accepted), 0);
+        this.bufLen = accepted;
+        this.httptruncated = bytes.length > maximum ? 1 : 0;
+      }
+      this.httplen = this.bufLen;
+      this.steps = 0;
+      return;
+    }
+    if (op === "URLABS") {
+      const parts = splitArgs(arg, 3);
+      if (parts.length < 3) throw this.error("URLABS needs <name> <base-url> <href>");
+      // "" means "not a followable http(s) target" -- the caller tests the result
+      this.setString(parts[0], resolveUrl(this.stringOperand(parts[1]), this.stringOperand(parts[2])));
+      return;
+    }
+    if (op === "URLPART") {
+      const parts = splitArgs(arg, 3);
+      if (parts.length < 3) throw this.error("URLPART needs <name> <url> scheme|origin|host|path|dir");
+      const { scheme, origin, path } = urlSplit(this.stringOperand(parts[1]));
+      const which = this.stringOperand(parts[2]).toLowerCase();
+      let value;
+      if (which === "scheme") value = scheme;
+      else if (which === "origin") value = origin;
+      else if (which === "host") value = origin.slice(scheme.length + 3);
+      else if (which === "path") value = path;
+      else if (which === "dir") {
+        const q = path.indexOf("?");
+        const clean = q >= 0 ? path.slice(0, q) : path;
+        const lastSlash = clean.lastIndexOf("/");
+        value = origin + (lastSlash >= 0 ? clean.slice(0, lastSlash + 1) : "/");
+      } else {
+        throw this.error("URLPART part must be scheme, origin, host, path or dir");
+      }
+      this.setString(parts[0], value);
+      return;
+    }
+    if (op === "HTMLOPEN") {
+      const parts = splitArgs(arg, 5);
+      if (parts.length < 3) {
+        throw this.error("HTMLOPEN needs <textpath> <linkpath|-> <base-url> [wrapcol] [maxlinks]");
+      }
+      // the firmware has one script file handle and the renderer needs two of its own,
+      // so it refuses to start while the script is holding a file -- matched here so a
+      // .dapp that works in the emulator works on hardware
+      if (this.openFile) throw this.error("HTMLOPEN needs the script's file handle closed (FCLOSE)");
+      this.htmlBegin({
+        textPath: normalizePath(this.expandText(parts[0])),
+        linkPath: this.expandText(parts[1]),
+        base: this.stringOperand(parts[2]),
+        wrapcol: parts.length > 3 ? this.valueOf(parts[3]) : 76,
+        maxlinks: parts.length > 4 ? this.valueOf(parts[4]) : 200
+      });
+      return;
+    }
+    if (op === "HTMLFEED") {
+      if (!this.html) throw this.error("HTMLFEED without HTMLOPEN");
+      const parts = splitArgs(arg, 3);
+      if (parts.length < 1) throw this.error("HTMLFEED needs url <url> | buf [pos count] | text <string>");
+      await this.htmlFeedSource(op, parts);
+      return;
+    }
+    if (op === "HTMLCLOSE") {
+      this.htmlClose();
+      return;
+    }
+    if (op === "HTMLTEXT") {
+      const parts = splitArgs(arg, 5);
+      if (parts.length < 3) {
+        throw this.error("HTMLTEXT needs <url> <textpath> <linkpath|-> [wrapcol] [maxlinks]");
+      }
+      if (this.openFile) throw this.error("HTMLTEXT needs the script's file handle closed (FCLOSE)");
+      const url = this.stringOperand(parts[0]);
+      // the page's own URL is the base every relative href resolves against
+      this.htmlBegin({
+        textPath: normalizePath(this.expandText(parts[1])),
+        linkPath: this.expandText(parts[2]),
+        base: url,
+        wrapcol: parts.length > 3 ? this.valueOf(parts[3]) : 76,
+        maxlinks: parts.length > 4 ? this.valueOf(parts[4]) : 200
+      });
+      const bytes = await this.fetchBytes(url);
+      if (bytes) this.html.feed(bytes);
+      this.syncHtml();
+      this.httplen = this.htmlbytes;
+      this.htmlClose();
+      this.steps = 0;
+      return;
+    }
+    if (op === "HTMLSTR") {
+      const parts = splitArgs(arg, 3);
+      if (parts.length < 2) throw this.error("HTMLSTR needs <name> url <url> | buf | text <string>");
+      this.ensureString(parts[0]);
+      // links need a file to number against, so a string render never collects them
+      this.html = new HtmlRenderer({ base: "", collectLinks: false });
+      this.htmlTarget = null;
+      this.htmlok = 1;
+      const kind = parts[1].toLowerCase();
+      if (kind === "url") {
+        if (parts.length < 3) throw this.error("HTMLSTR url needs <url>");
+        this.html.base = this.stringOperand(parts[2]);
+        const bytes = await this.fetchBytes(this.html.base);
+        if (bytes) this.html.feed(bytes);
+        this.steps = 0;
+      } else if (kind === "buf") {
+        if (this.buf) this.html.feed(this.buf.subarray(0, this.bufLen));
+      } else if (kind === "text") {
+        if (parts.length < 3) throw this.error("HTMLSTR text needs <string>");
+        this.html.feed(new TextEncoder().encode(this.stringOperand(parts[2])));
+      } else {
+        this.html = null;
+        throw this.error("HTMLSTR source must be url, buf or text");
+      }
+      this.html.finish();
+      this.syncHtml();
+      this.setString(parts[0], this.html.textLines.join("\n").slice(0, LIMITS.stringLength));
+      this.html = null;
       return;
     }
     if (op === "FEXISTS") {
@@ -810,6 +1512,13 @@ export class DappRuntime {
       httptruncated: this.httptruncated,
       httpok: this.httpok,
       jsonok: this.jsonok,
+      buflen: this.bufLen,
+      bufcap: this.buf ? this.buf.length : 0,
+      bufok: this.bufOk,
+      htmlok: this.htmlok,
+      htmllines: this.htmllines,
+      htmllinks: this.htmllinks,
+      htmlbytes: this.htmlbytes,
       kup: 1,
       kdown: 2,
       kleft: 3,
@@ -821,6 +1530,11 @@ export class DappRuntime {
       kspace: 32
     };
     const key = name.toLowerCase();
+    if (key in this.environment) {
+      const configured = this.environment[key];
+      const value = typeof configured === "function" ? configured() : configured;
+      return asString ? String(value ?? "") : Number(value) || 0;
+    }
     if (!(key in values)) return asString ? "" : 0;
     if (asString && key.startsWith("k")) return "";
     return asString ? String(values[key]) : Number(values[key]) || 0;
@@ -1122,5 +1836,109 @@ export class DappRuntime {
 
   closeFile() {
     this.openFile = null;
+  }
+
+  // shared by HTTPGETBUF/HTMLTEXT/HTMLFEED url/HTMLSTR url. Returns the raw body or null,
+  // and leaves $httpcode/$httpok set either way. Unlike the firmware there is no session
+  // to pool here: fetch() and the browser own connection reuse.
+  async fetchBytes(rawUrl) {
+    this.httpcode = 0;
+    this.httplen = 0;
+    this.httptruncated = 0;
+    this.httpok = 0;
+    try {
+      const baseUrl = globalThis.location?.href || "https://browser.invalid/";
+      const url = new URL(rawUrl, baseUrl);
+      if (url.protocol !== "http:" && url.protocol !== "https:") {
+        throw new Error("unsupported URL protocol");
+      }
+      const request = {
+        url: url.href,
+        method: "GET",
+        headers: Object.fromEntries(this.httpHeaders)
+      };
+      if (this.io.authorizeHttp && !await this.io.authorizeHttp(request)) {
+        this.httpcode = -2;
+        this.io.output("HTTP request blocked by browser policy", "yellow");
+        return null;
+      }
+      const response = await fetch(request.url, {
+        method: "GET",
+        headers: request.headers,
+        credentials: "omit",
+        referrerPolicy: "no-referrer",
+        cache: "no-store"
+      });
+      this.httpcode = response.status;
+      this.httpok = response.ok ? 1 : 0;
+      return new Uint8Array(await response.arrayBuffer());
+    } catch {
+      this.httpcode = -1;
+      return null;
+    }
+  }
+
+  syncHtml() {
+    if (!this.html) return;
+    this.htmllines = this.html.lines;
+    this.htmllinks = this.html.links;
+    this.htmlbytes = this.html.bytes;
+  }
+
+  htmlBegin({ textPath, linkPath, base, wrapcol, maxlinks }) {
+    this.htmlClose();
+    const collectLinks = linkPath !== "-";
+    this.html = new HtmlRenderer({ base, wrapcol, maxlinks, collectLinks });
+    this.htmlTarget = { textPath, linkPath: collectLinks ? normalizePath(linkPath) : null };
+    this.htmllines = 0;
+    this.htmllinks = 0;
+    this.htmlbytes = 0;
+    this.htmlok = 1;
+  }
+
+  async htmlFeedSource(op, parts) {
+    const kind = parts[0].toLowerCase();
+    if (kind === "url") {
+      if (parts.length < 2) throw this.error(`${op} url needs <url>`);
+      const bytes = await this.fetchBytes(this.stringOperand(parts[1]));
+      if (bytes) this.html.feed(bytes);
+      this.syncHtml();
+      this.httplen = this.htmlbytes;
+      this.steps = 0;
+      return;
+    }
+    if (kind === "buf") {
+      let position = parts.length > 1 ? Math.max(0, this.valueOf(parts[1])) : 0;
+      let length = parts.length > 2 ? this.valueOf(parts[2]) : this.bufLen - position;
+      length = Math.min(length, this.bufLen - position);
+      if (this.buf && length > 0) this.html.feed(this.buf.subarray(position, position + length));
+      this.syncHtml();
+      return;
+    }
+    if (kind === "text") {
+      if (parts.length < 2) throw this.error(`${op} text needs <string>`);
+      this.html.feed(new TextEncoder().encode(this.stringOperand(parts[1])));
+      this.syncHtml();
+      return;
+    }
+    throw this.error(`${op} source must be url, buf or text`);
+  }
+
+  htmlClose() {
+    if (!this.html || !this.htmlTarget) {
+      this.html = null;
+      this.htmlTarget = null;
+      return;
+    }
+    this.html.finish();
+    this.syncHtml();
+    const trailing = this.html.textLines.length ? "\n" : "";
+    this.fileSystem.write(this.htmlTarget.textPath, this.html.textLines.join("\n") + trailing);
+    if (this.htmlTarget.linkPath) {
+      const linkTrailing = this.html.linkLines.length ? "\n" : "";
+      this.fileSystem.write(this.htmlTarget.linkPath, this.html.linkLines.join("\n") + linkTrailing);
+    }
+    this.html = null;
+    this.htmlTarget = null;
   }
 }

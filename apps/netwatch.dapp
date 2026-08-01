@@ -1,9 +1,10 @@
 # @dapp-format 1
 # @id netwatch
 # @name Netwatch
-# @version 1.0.0
+# @version 1.0.1
 # @boards fnk0104
-# @runtime >=1.1.0 <2.0.0
+# @runtime >=1.4.2 <2.0.0
+# @echo off
 # @summary Live wifi/IP change watcher with persistent event log
 # /apps/netwatch.dapp
 # Watches wifi and IP changes and appends events to /apps/netwatch.log.

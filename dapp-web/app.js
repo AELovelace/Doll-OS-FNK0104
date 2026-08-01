@@ -1,4 +1,5 @@
 import { DappRuntime } from "./dapp-runtime.js";
+import { highlightDappSource } from "./dapp-highlight.js";
 import { commandGroups, examples } from "./examples.js";
 
 const $ = selector => document.querySelector(selector);
@@ -22,6 +23,7 @@ const editorTitle = $("#editor-title");
 const STORAGE_KEY = "dapp-playground-source-v1";
 const FILES_KEY = "dapp-playground-files-v1";
 const FILENAME_KEY = "dapp-playground-filename-v1";
+const approvedNetworkOrigins = new Set();
 
 class BrowserFileSystem {
   constructor() {
@@ -57,34 +59,10 @@ class BrowserFileSystem {
   }
 }
 
-function escapeHtml(value) {
-  return String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
-}
-
-function highlightLine(raw) {
-  if (/^\s*(#|\/\/)/.test(raw)) return `<span class="tok-comment">${escapeHtml(raw)}</span>`;
-
-  let line = escapeHtml(raw);
-  const strings = [];
-  line = line.replace(/(".*?"|'.*?')/g, value => {
-    strings.push(value);
-    return `\u0000${strings.length - 1}\u0000`;
-  });
-  line = line.replace(/^(\s*)(:[a-z_][a-z0-9_]*|LABEL\s+[a-z_][a-z0-9_]*)/i, "$1<span class=\"tok-label\">$2</span>");
-  line = line.replace(/^(\s*)([A-Z][A-Z0-9_]*)/i, "$1<span class=\"tok-command\">$2</span>");
-  line = line.replace(/(\$[a-z_][a-z0-9_]*(?:\[[^\]]+\])?)/gi, "<span class=\"tok-var\">$1</span>");
-  line = line.replace(/(^|[\s([])([+-]?\d+(?:\.\d+)?)(?=$|[\s,)\]])/g, "$1<span class=\"tok-number\">$2</span>");
-  line = line.replace(/\u0000(\d+)\u0000/g, (_, index) => `<span class="tok-string">${strings[Number(index)]}</span>`);
-  return line;
-}
-
 function paintEditor() {
   const source = editor.value;
   const lines = source.split("\n");
-  highlight.innerHTML = `${lines.map(highlightLine).join("\n")}\n`;
+  highlight.innerHTML = highlightDappSource(source);
   lineNumbers.textContent = lines.map((_, index) => index + 1).join("\n");
   editorStats.textContent = `${lines.length} LINE${lines.length === 1 ? "" : "S"} / ${source.length} CHARS`;
 }
@@ -132,10 +110,19 @@ function setStatus(state, label) {
   runStatus.textContent = label;
 }
 
+function configureProgramInputAutofill(masked) {
+  programInput.setAttribute("autocomplete", masked ? "new-password" : "off");
+  programInput.name = masked ? "dapp-runtime-secret-input" : "dapp-runtime-input";
+  programInput.setAttribute("data-lpignore", "true");
+  programInput.setAttribute("data-1p-ignore", "true");
+  programInput.setAttribute("data-form-type", "other");
+}
+
 function showInput(prompt, resolve, masked = false, echoInput = true) {
   inputPrompt.textContent = prompt;
   inputForm.hidden = false;
   programInput.type = masked ? "password" : "text";
+  configureProgramInputAutofill(masked);
   programInput.value = "";
   programInput.focus();
 
@@ -251,7 +238,19 @@ const io = {
   canvas: renderCanvas,
   endCanvas,
   wave: setWave,
-  waveStop: stopAllWaves
+  waveStop: stopAllWaves,
+  authorizeHttp({ url, method }) {
+    const target = new URL(url);
+    if (approvedNetworkOrigins.has(target.origin)) return true;
+    const sameOriginWarning = target.origin === window.location.origin
+      ? "\n\nThis is the same origin as the hosting website. Cookies will not be sent."
+      : "";
+    const approved = window.confirm(
+      `Allow this .dapp to send credentialless ${method} requests to:\n${target.origin}?${sameOriginWarning}\n\nApproval lasts until this page is reloaded.`
+    );
+    if (approved) approvedNetworkOrigins.add(target.origin);
+    return approved;
+  }
 };
 
 const runtime = new DappRuntime(io, new BrowserFileSystem());

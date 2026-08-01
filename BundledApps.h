@@ -1794,7 +1794,7 @@ EXIT
 static const char BUNDLED_APP_DAPPCHAT[] = R"DOLLAPP(# @dapp-format 1
 # @id dappchat
 # @name DappChat
-# @version 1.0.1
+# @version 1.0.2
 # @boards fnk0104
 # @runtime >=1.4.2 <2.0.0
 # @echo off
@@ -1845,7 +1845,6 @@ SETSTR body ""
 IF $httpok = 0 GOTO auth_http_error
 
 JSONGET authok $raw "ok"
-PRINT "debug ok=[$authok] jsonok=$jsonok len=$httplen"
 IFEQ $authok "true" GOTO auth_ok
 JSONGET err $raw "error"
 COLOR red
@@ -1934,7 +1933,16 @@ GOTO chat
 # out: prints any messages newer than $since, then advances $since to the
 # server's last_id. A quiet network hiccup just means the next poll shows
 # a bit more -- it does not stop the chat.
+#
+# The server answers at most 10 messages per request, and since=0 (joining)
+# means "the 10 most recent". A response that comes back full means there is
+# more waiting, so keep asking -- otherwise a room that moved faster than one
+# message per turn would stay permanently behind, and you'd only ever see the
+# backlog creep forward each time you sent something. $pround caps the catch-up
+# at 50 messages so joining a busy room can't fill the screen forever.
 :poll
+SET pround 0
+:poll_round
 SETSTR url "$endpoint/poll?room=$room&since=$since"
 HTTPGET praw $url 4096
 IF $httpok = 0 GOTO poll_return
@@ -1954,6 +1962,9 @@ IF $jsonok = 0 GOTO poll_return
 SETSTR text $newsince
 GOSUB str2num
 SET since $num
+IF $pi < 10 GOTO poll_return
+ADD pround 1
+IF $pround < 5 GOTO poll_round
 :poll_return
 RETURN
 
@@ -2079,6 +2090,22 @@ HTTPGET <n> <url> [max] bounded HTTP/HTTPS GET into string variable n
 HTTPPOST <n> <url> <body> [max] bounded POST response into string variable n
 HTTPHEADER <name> <value> set/replace one of up to eight request headers
 HTTPCLEAR             clear all request headers
+HTTPGETBUF <url> [max] GET into the byte buffer, past the 4096-byte string cap
+BUFNEW [bytes]        allocate the byte buffer (default 65536, maximum 262144)
+BUFFREE / BUFCLEAR    release the buffer / empty it without reallocating
+BUFAT <n> <pos>       byte at pos into numeric variable n, 0 past the end
+BUFSUB <n> <pos> <ct> copy a slice of the buffer into string variable n
+BUFWRITE <pos> <text> copy text into the buffer at pos
+BUFSCAN <n> <pos> [stops] advance past bytes until one in stops ("" = space)
+BUFTAKE <s> <n> <pos> [stops] same, and copy what was passed into string s
+BUFSAVE <path>        write the buffer to a file; BUFLOAD reads one back
+HTMLTEXT <url> <textpath> <linkpath|-> [wrap] [maxlinks] fetch and render a page
+HTMLOPEN <textpath> <linkpath|-> <base> [wrap] [maxlinks] start a render
+HTMLFEED url <url> | buf [pos ct] | text <s>  add a source to the open render
+HTMLCLOSE             finish the render and close its files
+HTMLSTR <n> url <url> | buf | text <s>  render into string variable n
+URLABS <n> <base> <href> absolute URL into n, or "" if it is not followable
+URLPART <n> <url> scheme|origin|host|path|dir  one piece of a URL
 JSONESC <n> <text>    escape text for insertion inside a JSON string
 JSONGET <n> <json> <path> extract a JSON value; $jsonok reports success
 FOPEN <path> <mode>  open a file: read, write, append, or update
@@ -2251,7 +2278,49 @@ HTTPGET body "https://example.com/data.json" 2048 stores a bounded text body.
 HTTPPOST adds a request body; HTTPHEADER/HTTPCLEAR manage up to eight headers.
 $httpok, $httpcode, $httplen, and $httptruncated report the result. HTTPS is
 encrypted but generic script URLs are not certificate-authenticated; Dapper's
-verified package-download path is separate.
+verified package-download path is separate. Up to five redirects are followed.
+Successive requests to the same origin reuse one connection, so a script that
+fetches repeatedly from a host pays for the TLS handshake once; the connection
+is dropped when the origin changes, on a truncated response, and at app exit.
+
+Buffers:
+
+A string variable caps at 4096 bytes, so HTTPGET cannot hold a document. BUFNEW
+allocates one flat block of up to 262144 raw bytes and HTTPGETBUF fills it from
+the network. $buflen and $bufcap report the fill and the size.
+
+BUFAT reads one byte and BUFSUB copies a slice, but walking a document one BUFAT
+at a time costs an interpreter step per byte. BUFSCAN and BUFTAKE stop on a
+character class instead, so a scan costs a step per token rather than per byte.
+An empty stop set means whitespace. BUFSAVE/BUFLOAD move the buffer to and from
+a file and need the script's own file handle closed. The buffer is released when
+the app exits.
+
+HTML:
+
+HTMLTEXT "https://example.com/" "/page.txt" "/page.lnk" 76 200 fetches a page and
+renders it to readable text in one instruction. The body is streamed through the
+renderer as it arrives, so the page is never held anywhere and its size is capped
+by the filesystem rather than by any runtime limit.
+
+/page.txt holds word-wrapped text with each link marked [n] in place; /page.lnk
+holds one "<n> <absolute-url>" line per link in marker order, so link n is line n.
+Pass - as the link path to skip link collection. $htmllines, $htmllinks,
+$htmlbytes, and $htmlok report the render.
+
+HTMLOPEN/HTMLFEED/HTMLCLOSE are the same renderer with the pieces exposed, for
+rendering several sources into one file or for HTML the script already holds.
+HTMLSTR renders into a string variable when no file is wanted.
+
+Relative links are resolved against the page's own URL, so the link file is
+directly fetchable. URLABS and URLPART expose that resolution on its own; URLABS
+returns "" for anything not followable over http(s).
+
+The renderer skips <script>, <style>, and comments, understands entities and
+UTF-8, and transliterates non-ASCII to ASCII because the panel font draws nothing
+above 126. No JS, CSS, images, or forms. It opens two files of its own and the
+runtime allows the script only one, so HTMLOPEN and HTMLTEXT refuse to start
+while a script file is open.
 
 JSONESC safely quotes user text before it is placed inside JSON. JSONGET walks
 paths such as choices[0].message.content. $jsonok reports malformed JSON,
@@ -2271,7 +2340,10 @@ from PSRAM, so the caps are roomy:
 1          open file at a time
 120 x 60   largest canvas
 4096       characters per string variable
+262144     bytes in the byte buffer (BUFNEW), default 65536
 1000000    executed steps between waits before the loop guard trips
+
+HTMLTEXT is not on that list: it streams to disk and never holds the page.
 
 Hitting one is reported on the terminal rather than failing silently. The step
 guard counts instructions since the last WAIT or INPUT, on the grounds that a
@@ -2296,6 +2368,13 @@ $httpcode
 $httplen
 $httptruncated
 $jsonok
+$buflen
+$bufcap
+$bufok
+$htmlok
+$htmllines
+$htmllinks
+$htmlbytes
 
 Numeric only (see Keys and games): $kup, $kdown, $kleft, $kright, $kenter,
 $kesc, $kback, $ktab, $kspace; plus the file-op status pair $fok (last

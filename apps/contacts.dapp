@@ -1,9 +1,10 @@
 # @dapp-format 1
 # @id contacts
 # @name Contacts
-# @version 1.0.0
+# @version 1.0.1
 # @boards fnk0104
-# @runtime >=1.1.0 <2.0.0
+# @runtime >=1.4.2 <2.0.0
+# @echo off
 # @summary A persistent 36-entry address book using DS's larger memory budget
 # /apps/contacts.dapp
 # Each contact has a 40-character name and an 80-character detail line for

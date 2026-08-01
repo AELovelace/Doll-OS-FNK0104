@@ -1,9 +1,10 @@
 # @dapp-format 1
 # @id todo
 # @name Todo List
-# @version 1.0.0
+# @version 1.0.1
 # @boards fnk0104
-# @runtime >=1.1.0 <2.0.0
+# @runtime >=1.4.2 <2.0.0
+# @echo off
 # @summary Persistent task list manager backed by /apps/todo.txt
 # /apps/todo.dapp
 # Minimal persistent todo list utility.

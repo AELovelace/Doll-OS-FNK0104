@@ -27,7 +27,7 @@ usable with no network.
 - **Storage** — unified LittleFS + SD path namespace (`/` flash, `/sd` card),
   `ls`/`cd`/`cp`/`mv`/`rm`/`cat`
 - **`.dapp` apps** — text executables with their own scripting language; see
-  [docs/DAPP.md](docs/DAPP.md) and the [browser playground](dapp-web/)
+  [docs/DAPP.md](docs/DAPP.md) and the [browser emulator + playground](dapp-web/)
 - **Editor** — full-screen text editor (`edit`)
 - **Networking** — telnet server + client, SSH client, FTP server, ping/ARP
   sweep, IP tools, MQTT (`motoko`)
@@ -168,7 +168,7 @@ EXIT
 
 - [docs/DAPP.md](docs/DAPP.md) — language reference
 - [docs/DAPP-BOOK.md](docs/DAPP-BOOK.md) — the long-form guide
-- [dapp-web/](dapp-web/) — browser IDE + runtime, no build step
+- [dapp-web/](dapp-web/) — DOLL-OS web emulator + `.dapp` IDE/runtime, no build step
 
 ---
 
@@ -193,7 +193,7 @@ sketch.yaml          board profile + pinned libraries
 apps/                bundled .dapp sources
 docs/                language reference, porting notes
 tools/               book generator, bundled-app regen
-dapp-web/            browser playground
+dapp-web/            browser emulator + `.dapp` playground
 ```
 
 ---

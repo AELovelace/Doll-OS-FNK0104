@@ -1,9 +1,10 @@
 # @dapp-format 1
 # @id calendar
 # @name Calendar
-# @version 1.0.0
+# @version 1.0.2
 # @boards fnk0104
-# @runtime >=1.1.0 <2.0.0
+# @runtime >=1.4.2 <2.0.0
+# @echo off
 # @summary A full month calendar with persistent day reminders for DS
 # /apps/calendar.dapp
 # DS month planner for years 2000-2099. Arrows move the selected day,
