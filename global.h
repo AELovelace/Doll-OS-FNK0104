@@ -300,7 +300,7 @@ struct DappKeyState {
 
 //shared helpers used across app/file command tabs
 #define DOLL_BOARD_ID "fnk0104"
-#define DAPP_RUNTIME_VERSION "1.5.0"
+#define DAPP_RUNTIME_VERSION "1.6.0"
 
 //Runtime-owned PCM synth used by the .dapp WAVE/WAVESTOP opcodes. It borrows
 //the same ES8311/I2S output surface as Game Boy and releases it on app exit.

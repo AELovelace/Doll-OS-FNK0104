@@ -159,8 +159,14 @@
                                                     "htmlbytes",
                                                     "htmllines",
                                                     "htmllinks",
-                                                    "htmlok"
+                                                   "htmlok"
                                                 ]
+                               },
+                     "1.6.0":  {
+                                   "extends":  "1.5.0",
+                                   "opcodes":  [
+                                                   "DAPPER"
+                                               ]
                                }
                  },
     "boards":  {
@@ -181,7 +187,7 @@
                                                   }
                                    },
                    "fnk0104":  {
-                                   "runtime":  "1.5.0",
+                                       "runtime":  "1.6.0",
                                    "limits":  {
                                                   "lines":  4000,
                                                   "labels":  256,

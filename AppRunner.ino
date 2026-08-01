@@ -3278,6 +3278,17 @@ static bool appExecute(DappProgram& program) {
             dappHtml.active = false;
             appSetStringValue(stringVars, slot, dappHtml.out);
             dappHtml.out = "";
+        } else if (op == "DAPPER") {
+            //A deliberately narrow bridge to the verified package manager. This is not
+            //a shell escape: the only reachable actions are the subcommands accepted by
+            //handleDapperCommand(), so package validation, rollback and path ownership
+            //stay in Dapper.ino rather than being reimplemented in script.
+            String commandLine = "dapper ";
+            commandLine += appExpandText(arg, program);
+            String commandParts[8];
+            int commandPartCount = splitCommand(commandLine, commandParts, 8);
+            handleDapperCommand(commandParts, commandPartCount);
+            steps = 0;  //downloads and catalog walks service the runtime internally
         } else if (op == "RAND") {
             String parts[3];
             int count = splitCommand(arg, parts, 3);
