@@ -95,6 +95,7 @@ void seedBundledApps() {
         { "/system/apps/tetris.dapp", BUNDLED_APP_TETRIS },
         { "/system/apps/snake.dapp", BUNDLED_APP_SNAKE },
         { "/system/apps/dappchat.dapp", BUNDLED_APP_DAPPCHAT },
+        { "/system/apps/dappstore.dapp", BUNDLED_APP_DAPPSTORE },
         { "/docs/dapp.txt", BUNDLED_DOC_DAPP },
     };
 
@@ -112,6 +113,16 @@ void seedBundledApps() {
             ledPulseStorageWrite(false);
             LittleFS.remove(legacy.path);
         }
+    }
+
+    // /system/apps is firmware-owned. Remove retired bundle paths so an ordinary
+    // sketch reflash completes app identity renames without leaving duplicates.
+    const char* retiredBundledApps[] = {
+        "/system/apps/dapper-store.dapp",
+    };
+    for (const char* path : retiredBundledApps) {
+        ledPulseStorageWrite(false);
+        LittleFS.remove(path);
     }
 
     for (const BundledAsset& app : bundledApps) {

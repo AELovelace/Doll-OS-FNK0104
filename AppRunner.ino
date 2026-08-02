@@ -179,8 +179,15 @@ static String trimCopy(String value) {
     return value;
 }
 
+//   Deliberately does not trim. Both callers hand over an already-trimmed token -- the
+//   opcode's `arg` is trimCopy'd where it is parsed, and splitCommand splits on spaces so
+//   its parts never carry any -- which left the trim doing nothing useful and one thing
+//   actively wrong. splitCommand removes an argument's quotes as it splits, so a literal
+//   like `APPEND pad " "` reaches here as a bare space with no quotes left to protect it,
+//   and trimming turned it into the empty string: the append silently added nothing. That
+//   is invisible in the browser runtime, whose splitter keeps the quotes on until after
+//   this step, so padding built out of " " worked there and vanished on hardware.
 static String stripMatchingQuotes(String value) {
-    value.trim();
     if (value.length() >= 2) {
         char first = value[0];
         char last = value[value.length() - 1];
@@ -1066,6 +1073,45 @@ static void appFileOpen(const String& path, const char* fsMode, bool readable, b
     dappFok = 1;
 }
 
+//Writes one immediate child per line as D|name|0 or F|name|bytes. A snapshot file
+//keeps directory iteration separate from the script's single open file handle.
+static bool appFileListToFile(const String& requestedPath, const String& requestedOutput) {
+    appFileClose();
+    dappFok = 0;
+    RoutedPath source;
+    RoutedPath destination;
+    if (!appFileRoute(requestedPath, source) || !appFileRoute(requestedOutput, destination)) return false;
+    File dir = source.fs->open(source.realPath);
+    if (!dir || !dir.isDirectory()) {
+        if (dir) dir.close();
+        return false;
+    }
+    File output = destination.fs->open(destination.realPath, "w");
+    if (!output || output.isDirectory()) {
+        if (output) output.close();
+        dir.close();
+        return false;
+    }
+    File entry = dir.openNextFile();
+    while (entry) {
+        String name = entry.name();
+        int slash = name.lastIndexOf('/');
+        if (slash >= 0) name = name.substring(slash + 1);
+        output.print(entry.isDirectory() ? "D|" : "F|");
+        output.print(name);
+        output.print('|');
+        output.println(entry.isDirectory() ? 0 : (long)entry.size());
+        entry.close();
+        entry = dir.openNextFile();
+        appRuntimeYield();
+    }
+    if (!source.isSd && resolvePath(cwd, requestedPath) == "/" && sdCardMounted) output.println("D|sd|0");
+    output.close();
+    dir.close();
+    dappFok = 1;
+    return true;
+}
+
 //one line, newline consumed, CR stripped -- the same shape appLoad reads scripts with,
 //but capped per-character so a newline-free multi-megabyte file can't balloon a String.
 static String appFileReadLine() {
@@ -1427,6 +1473,9 @@ static long appHttpPerform(const String& method, const String& requestedUrl,
         if (dappHttpSessionOpen && origin != dappHttpOrigin) {
             appHttpSessionEnd();
         }
+        //whether this attempt is about to ride a socket the peer may have closed
+        //while we were parked on an INPUT prompt -- see the retry below
+        bool reusedSocket = dappHttpSessionOpen;
 
         dappHttp.setConnectTimeout(5000);
         dappHttp.setTimeout(10000);
@@ -1468,6 +1517,17 @@ static long appHttpPerform(const String& method, const String& requestedUrl,
 
         if (status <= 0) {
             appHttpSessionEnd();
+            //   A pooled socket that returns no response at all is almost always one the
+            //   peer already hung up on. Keep-alive idle timeouts are short -- node's
+            //   default is five seconds -- and a .dapp parked on an INPUT prompt blows
+            //   past that on every turn, so the first request after any human-length
+            //   pause lands on a dead connection. The server never saw it, which is what
+            //   makes replaying it safe even for POST. Without this a polling app just
+            //   quietly does nothing whenever the user took a moment to type.
+            if (reusedSocket) {
+                hop--;   //a fresh-connection retry is not a redirect, so keep the budget
+                continue;
+            }
             return -1;
         }
 
@@ -2885,6 +2945,31 @@ static bool appExecute(DappProgram& program) {
                     dappFok = 1;
                 }
             }
+        } else if (op == "FLIST") {
+            String parts[2];
+            int count = splitCommand(arg, parts, 2);
+            if (count < 2) {
+                outLine("run: FLIST needs <directory> <output-file>", C_RED);
+                return false;
+            }
+            appFileListToFile(appStringOperand(parts[0], program), appStringOperand(parts[1], program));
+        } else if (op == "FMKDIR") {
+            if (arg.length() == 0) {
+                outLine("run: FMKDIR needs <path>", C_RED);
+                return false;
+            }
+            dappFok = dappStorageMkdir(resolvePath(cwd, appStringOperand(arg, program))) ? 1 : 0;
+        } else if (op == "FCOPY" || op == "FMOVE") {
+            String parts[2];
+            int count = splitCommand(arg, parts, 2);
+            if (count < 2) {
+                outLine("run: " + op + " needs <source> <destination>", C_RED);
+                return false;
+            }
+            String source = resolvePath(cwd, appStringOperand(parts[0], program));
+            String destination = resolvePath(cwd, appStringOperand(parts[1], program));
+            dappFok = (op == "FCOPY" ? dappStorageCopy(source, destination)
+                                      : dappStorageMove(source, destination)) ? 1 : 0;
         } else if (op == "HTTPCLEAR") {
             appHttpClearHeaders();
         } else if (op == "HTTPHEADER") {

@@ -5,7 +5,7 @@ This directory contains two static, browser-only experiences:
 - `emulator.html` — an integrated DAPP workbench and behavioral DOLL-OS
   emulator. Source written in the left editor is syntax-highlighted, saved into
   the device's `/apps` volume, and launched through its emulated shell and
-  AppRunner 1.5.0 runtime.
+  AppRunner 1.7.0 runtime.
 - `index.html` — the original IDE and runtime for practicing `.dapp` programs.
 
 ## Run locally
@@ -39,8 +39,9 @@ remains immutable; saving creates an editable copy under `/apps`.
 ## Rebuild bundled emulator apps
 
 `bundled-apps.js` is generated from the firmware seed table and canonical
-sources under `apps/`. It embeds only Adventure, Tetris, Snake, and DappChat;
-the other apps are fetched and verified by Dapper when a visitor installs them.
+sources under `apps/`. It embeds Adventure, Tetris, Snake, DappChat, and Dapper
+Store; the other apps are fetched and verified by Dapper when a visitor installs
+them.
 
 ```powershell
 node tools/build-web-app-bundle.mjs

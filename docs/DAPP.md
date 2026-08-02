@@ -120,6 +120,7 @@ HTMLCLOSE           finish the render and close its files
 HTMLSTR <name> url <url> | buf | text <s>  render into a string variable
 URLABS <name> <base> <href>  absolute URL, or "" if it is not followable
 URLPART <name> <url> scheme|origin|host|path|dir  one piece of a URL
+DAPPER <action> [args]  call the verified Dapper package manager
 JSONESC <name> <text>  escape text for insertion inside a JSON string
 JSONGET <name> <json> <path>  extract a JSON value; $jsonok reports success
 FOPEN <path> <mode> open a file: read, write, append, or update
@@ -133,6 +134,10 @@ FTELL <name>        current byte offset into a numeric variable
 FSIZE <name>        open file size into a numeric variable
 FEXISTS <n> <path>  1 into numeric variable n if the path exists
 FDELETE <path>      delete a file; $fok reports success
+FLIST <dir> <output> snapshot children as D|name|0 or F|name|bytes
+FMKDIR <path>       create one directory; $fok reports success
+FCOPY <src> <dst>   copy one file without overwriting
+FMOVE <src> <dst>   move one file without overwriting
 CANVAS <cols> <rows> switch the display to a character grid
 ENDCANVAS           leave canvas mode, restoring the terminal
 PUT <col> <row> <text>  draw text into the canvas in the current COLOR
@@ -289,6 +294,12 @@ card, everything else is flash, relative paths resolve against the shell's
 `cwd`, and `$variables` expand inside them. `update` (also `rw` or `r+`) opens
 an existing file without truncating it and permits both reads and writes.
 
+`FLIST` closes the script file handle and writes a stable snapshot of one
+directory. Each immediate child is `D|name|0` or `F|name|bytes`. `FMKDIR`,
+`FCOPY`, and `FMOVE` are non-recursive, and copy/move refuse to overwrite an
+existing destination. They enable file-manager apps without exposing arbitrary
+shell commands.
+
 ```text
 FOPEN "/apps/scores.txt" append
 FWRITE "$name $score"
@@ -400,6 +411,25 @@ UTF-8; and transliterates non-ASCII to ASCII, because the panel font draws
 nothing above 126. There is no JS, CSS, imagery, or form handling. Because the
 renderer opens two files of its own and the runtime allows the script only one,
 `HTMLOPEN` and `HTMLTEXT` refuse to start while a script file is open.
+
+## Dapper bridge
+
+`DAPPER` is a narrow bridge to the built-in package manager. It accepts Dapper's
+normal actions—`search`, `info`, `install`, `update`, `remove`, `refresh`,
+`doctor`, and `runtime`—but cannot invoke any other shell command:
+
+```text
+DAPPER search game
+DAPPER info snake
+DAPPER install snake --internal
+DAPPER update --all
+```
+
+The bridge uses Dapper's existing repository-identity, compatibility, HTTPS,
+SHA-256, managed-path, atomic replacement, and rollback checks. Scripts should
+confirm destructive actions such as `remove` with the user. Supplying
+`--internal` or `--sd` to `install` avoids Dapper's own interactive location
+prompt and is recommended for app front ends.
 
 `JSONESC safe $prompt` protects quotes, backslashes, and control characters
 before text is inserted between JSON quotes. `JSONGET answer $response

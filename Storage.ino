@@ -385,6 +385,31 @@ static bool copyResolvedFile(const String& sourceResolved, const String& destRes
     return true;
 }
 
+//Non-recursive filesystem primitives exposed to AppRunner. They reuse the shell's
+//routing and copy checks without exposing the shell dispatcher itself.
+bool dappStorageMkdir(const String& resolvedPath) {
+    if (resolvedPath == "/" || resolvedPath == SD_MOUNT) return false;
+    RoutedPath routed = routePath(resolvedPath);
+    if (!ensureMountedForPath("mkdir", routed) || directoryExists(resolvedPath)) return false;
+    if (!directoryExists(parentPathOf(resolvedPath))) return false;
+    ledPulseStorageWrite(routed.isSd);
+    return routed.fs->mkdir(routed.realPath);
+}
+
+bool dappStorageCopy(const String& sourceResolved, const String& destResolved) {
+    return copyResolvedFile(sourceResolved, destResolved, false);
+}
+
+bool dappStorageMove(const String& sourceResolved, const String& destResolved) {
+    if (!copyResolvedFile(sourceResolved, destResolved, false)) return false;
+    RoutedPath source = routePath(sourceResolved);
+    ledPulseStorageWrite(source.isSd);
+    if (source.fs->remove(source.realPath)) return true;
+    RoutedPath destination = routePath(destResolved);
+    destination.fs->remove(destination.realPath);
+    return false;
+}
+
 void handleLsCommand(const String parts[], int partCount) {
     String target = (partCount > 1) ? parts[1] : "";
     String resolved = resolvePath(cwd, target);

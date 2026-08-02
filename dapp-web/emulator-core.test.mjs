@@ -72,7 +72,7 @@ test("every firmware shell command has an explicit web compatibility classificat
 
 test("the static bundle contains exactly the firmware-burned app set", async () => {
   const source = await readFile(new URL("../BundledApps.ino", import.meta.url), "utf8");
-  const firmware = [...source.matchAll(/"\/system\/apps\/([a-z0-9-]+)\.dapp"/g)].map(match => match[1]);
+  const firmware = [...source.matchAll(/\{\s*"\/system\/apps\/([a-z0-9-]+)\.dapp"\s*,\s*BUNDLED_APP_[A-Z0-9_]+\s*\}/g)].map(match => match[1]);
   assert.deepEqual([...firmwareAppIds].sort(), [...new Set(firmware)].sort());
   assert.deepEqual(Object.keys(bundledApps).sort(), [...new Set(firmware)].sort());
 });

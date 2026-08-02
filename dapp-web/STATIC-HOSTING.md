@@ -33,9 +33,10 @@ policy, including requests back to the hosting origin.
 
 ## App distribution model
 
-The browser bundle contains only the four apps selected by firmware in
-`BundledApps.ino`—Adventure, Tetris, Snake, and DappChat—and seeds them into the
-immutable `/system/apps` directory. Dapper fetches the canonical repository
+The browser bundle contains only the five apps selected by firmware in
+`BundledApps.ino`—Adventure, Tetris, Snake, DappChat, and Dappstore—and seeds
+them into the immutable `/system/apps` directory. Dapper
+fetches the canonical repository
 catalog over HTTPS, then verifies the selected FNK0104 artifact's origin, size,
 SHA-256, and package metadata before writing it to `/apps`. Other app sources
 are not included in the emulator's static JavaScript bundle.

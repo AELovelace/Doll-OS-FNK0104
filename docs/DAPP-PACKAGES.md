@@ -23,7 +23,7 @@ Three versions are independent and must not be substituted for one another.
 | --- | --- | --- |
 | Package format | `1` | Syntax and required fields of the metadata header and repository records |
 | App version | `1.3.0` | Version of one app, assigned by its publisher |
-| AppRunner API | `1.5.0` | Language behavior, opcodes, built-ins, and runtime contract implemented by the firmware |
+| AppRunner API | `1.7.0` | Language behavior, opcodes, built-ins, and runtime contract implemented by the firmware |
 
 Firmware versions are deliberately not package compatibility versions. A
 firmware release may change Wi-Fi, display, or shell code without changing the
@@ -196,9 +196,12 @@ information from source so it cannot quietly drift.
 | `1.4.0` | `FREADB`, `FWRITEB`, `FSEEK`, `FTELL`, `FSIZE`, `HEX`, `INPUTSECRET`, `HTTPGET`, `HTTPPOST`, `HTTPHEADER`, `HTTPCLEAR`, `JSONESC`, `JSONGET`, `WAVE`, `WAVESTOP` |
 | `1.4.1` | `LIFE` |
 | `1.4.2` | *(no new opcodes; adds `# @echo off` syntax feature)* |
+| `1.5.0` | `BUFAT`, `BUFCLEAR`, `BUFFREE`, `BUFLOAD`, `BUFNEW`, `BUFSAVE`, `BUFSCAN`, `BUFSUB`, `BUFTAKE`, `BUFWRITE`, `HTMLCLOSE`, `HTMLFEED`, `HTMLOPEN`, `HTMLSTR`, `HTMLTEXT`, `HTTPGETBUF`, `URLABS`, `URLPART` |
+| `1.6.0` | `DAPPER` |
+| `1.7.0` | `FCOPY`, `FLIST`, `FMKDIR`, `FMOVE` |
 
 Aliases are included as opcodes because they are accepted directly by the
-interpreter. AppRunner 1.4.2 is a strict opcode superset of 1.4.0.
+interpreter. AppRunner 1.7.0 is a strict opcode superset of 1.6.0.
 
 AppRunner 1.1.0 also extends `IF`, `IFEQ`, and `IFNE` so their taken branch may
 use `GOSUB` as well as `GOTO`. A validator must check opcode syntax and not only

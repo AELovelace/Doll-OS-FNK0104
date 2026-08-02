@@ -1,0 +1,211 @@
+# @dapp-format 1
+# @id requests
+# @name Requests
+# @version 1.0.0
+# @boards fnk0104
+# @runtime >=1.5.0 <2.0.0
+# @echo off
+# @summary A pocket HTTP client with headers, JSON paths and saved responses
+# /apps/requests.dapp
+
+SETSTR url "https://example.com/"
+SETSTR method "GET"
+SETSTR body ""
+SETSTR headername ""
+SETSTR headervalue ""
+GOSUB load
+
+:menu
+CLEAR
+COLOR pink
+PRINT "REQUESTS"
+COLOR white
+PRINT "$method $url"
+PRINT ""
+PRINT "1 edit request"
+PRINT "2 send text request (4KB)"
+PRINT "3 download response to file (256KB)"
+PRINT "4 inspect JSON path in last text response"
+PRINT "5 show last response file"
+PRINT "q quit"
+INPUT choice "requests> "
+IFEQ $choice "1" GOTO editrequest
+IFEQ $choice "2" GOTO sendtext
+IFEQ $choice "3" GOTO download
+IFEQ $choice "4" GOTO jsonpath
+IFEQ $choice "5" GOTO showfile
+IFEQ $choice "q" GOTO leave
+IFEQ $choice "Q" GOTO leave
+GOTO menu
+
+:editrequest
+INPUT newmethod "GET or POST> "
+IFEQ $newmethod "POST" GOTO setpost
+IFEQ $newmethod "post" GOTO setpost
+SETSTR method "GET"
+GOTO er_url
+:setpost
+SETSTR method "POST"
+:er_url
+INPUT newurl "url> "
+LEN n $newurl
+IF $n = 0 GOTO menu
+SETSTR url $newurl
+INPUT headername "header name (blank for none)> "
+LEN n $headername
+IF $n = 0 GOTO er_body
+INPUT headervalue "header value> "
+:er_body
+IFEQ $method "GET" GOTO er_save
+INPUT body "body> "
+:er_save
+GOSUB save
+GOTO menu
+
+:headers
+HTTPCLEAR
+LEN n $headername
+IF $n = 0 GOTO hd_done
+HTTPHEADER $headername $headervalue
+:hd_done
+RETURN
+
+:sendtext
+CLEAR
+GOSUB headers
+COLOR cyan
+PRINT "$method $url"
+COLOR white
+IFEQ $method "POST" GOTO st_post
+HTTPGET response $url 4096
+GOTO st_result
+:st_post
+HTTPPOST response $url $body 4096
+:st_result
+PRINT "HTTP $httpcode  bytes=$httplen  truncated=$httptruncated"
+IF $httpok = 0 GOTO st_bad
+FOPEN "/apps/requests.last" write
+IF $fok = 0 GOTO st_print
+FWRITE "$response"
+FCLOSE
+:st_print
+PRINT ""
+PRINT "$response"
+INPUT choice "enter> "
+GOTO menu
+:st_bad
+COLOR red
+PRINT "request failed"
+COLOR white
+INPUT choice "enter> "
+GOTO menu
+
+:download
+CLEAR
+IFEQ $method "POST" GOTO dl_post
+GOSUB headers
+BUFNEW 262144
+HTTPGETBUF $url 262144
+PRINT "HTTP $httpcode  downloaded $buflen bytes"
+IF $httpok = 0 GOTO dl_bad
+BUFSAVE "/apps/requests.last"
+IF $bufok = 0 GOTO dl_bad
+COLOR green
+PRINT "saved /apps/requests.last"
+COLOR white
+INPUT choice "enter> "
+GOTO menu
+:dl_post
+COLOR yellow
+PRINT "large downloads currently use GET; use text mode for POST"
+COLOR white
+INPUT choice "enter> "
+GOTO menu
+:dl_bad
+COLOR red
+PRINT "download failed"
+COLOR white
+INPUT choice "enter> "
+GOTO menu
+
+:jsonpath
+LEN n $response
+IF $n = 0 GOTO jp_none
+INPUT path "JSON path> "
+JSONGET value $response $path
+IF $jsonok = 0 GOTO jp_bad
+PRINT "$path = $value"
+INPUT choice "enter> "
+GOTO menu
+:jp_none
+COLOR yellow
+PRINT "send a text request first"
+COLOR white
+INPUT choice "enter> "
+GOTO menu
+:jp_bad
+COLOR red
+PRINT "path not found or response is not JSON"
+COLOR white
+INPUT choice "enter> "
+GOTO menu
+
+:showfile
+FEXISTS have "/apps/requests.last"
+IF $have = 0 GOTO sf_none
+FOPEN "/apps/requests.last" read
+IF $fok = 0 GOTO sf_none
+CLEAR
+SET lines 0
+:sf_loop
+FREAD line
+IF $feof = 1 GOTO sf_done
+PRINT "$line"
+ADD lines 1
+IF $lines >= 20 GOTO sf_pause
+GOTO sf_loop
+:sf_pause
+SET lines 0
+INPUT choice "enter for more, q to stop> "
+IFEQ $choice "q" GOTO sf_done
+GOTO sf_loop
+:sf_done
+FCLOSE
+INPUT choice "enter> "
+GOTO menu
+:sf_none
+PRINT "no saved response"
+INPUT choice "enter> "
+GOTO menu
+
+:save
+FOPEN "/apps/requests.cfg" write
+IF $fok = 0 GOTO sv_done
+FWRITE "$method"
+FWRITE "$url"
+FWRITE "$headername"
+FWRITE "$headervalue"
+FWRITE "$body"
+FCLOSE
+:sv_done
+RETURN
+
+:load
+FEXISTS have "/apps/requests.cfg"
+IF $have = 0 GOTO ld_done
+FOPEN "/apps/requests.cfg" read
+IF $fok = 0 GOTO ld_done
+FREAD method
+FREAD url
+FREAD headername
+FREAD headervalue
+FREAD body
+FCLOSE
+:ld_done
+RETURN
+
+:leave
+HTTPCLEAR
+BUFFREE
+PRINT "requests: done"
+EXIT

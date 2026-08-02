@@ -719,7 +719,7 @@ static const char* const EDIT_DAPP_KEYWORDS[] = {
     "HTMLCLOSE", "HTMLSTR", "URLABS", "URLPART", "JSONESC", "JSONGET", "DAPPER",
     "CANVAS", "ENDCANVAS", "PUT", "FLIP",
     "FOPEN", "FCLOSE", "FREAD", "FREADB", "FWRITE", "FWRITEB", "FSEEK", "FTELL",
-    "FSIZE", "FEXISTS", "FDELETE",
+    "FSIZE", "FEXISTS", "FDELETE", "FLIST", "FMKDIR", "FCOPY", "FMOVE",
     "LABEL", "GOTO", "GOSUB", "RETURN", "IF", "IFEQ", "IFNE", "EXIT", "END",
 };
 static const int EDIT_DAPP_KEYWORD_COUNT =

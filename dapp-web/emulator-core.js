@@ -524,11 +524,11 @@ export class DollShell {
 
   async command_dapper(parts) {
     const action = (parts[1] || "help").toLowerCase();
-    const query = parts[2] || "";
+    const query = action === "search" ? parts.slice(2).join(" ") : (parts[2] || "");
     const dapper = this.hooks.dapper;
     if (action === "runtime") {
       this.write("Board: fnk0104-web");
-      this.write("AppRunner: 1.5.0");
+      this.write("AppRunner: 1.7.0");
       this.write("Package format: 1");
     } else if (action === "remove") {
       const id = query.replace(/@.+$/, "");

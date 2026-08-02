@@ -1418,6 +1418,42 @@ export class DappRuntime {
       this.fok = this.fileSystem.delete(normalizePath(this.expandText(arg))) ? 1 : 0;
       return;
     }
+    if (op === "FLIST") {
+      const parts = splitArgs(arg, 2);
+      if (parts.length < 2) throw this.error("FLIST needs <directory> <output-file>");
+      const directory = normalizePath(this.expandText(parts[0]));
+      const output = normalizePath(this.expandText(parts[1]));
+      const rows = this.fileSystem.list?.(directory);
+      const content = rows?.map(row => `${row.directory ? "D" : "F"}|${row.name}|${row.size || 0}`).join("\n");
+      this.fok = rows && this.fileSystem.write(output, content ? `${content}\n` : "") ? 1 : 0;
+      return;
+    }
+    if (op === "FMKDIR") {
+      if (!arg) throw this.error("FMKDIR needs <path>");
+      this.fok = this.fileSystem.mkdir?.(normalizePath(this.expandText(arg))) ? 1 : 0;
+      return;
+    }
+    if (op === "FCOPY" || op === "FMOVE") {
+      const parts = splitArgs(arg, 2);
+      if (parts.length < 2) throw this.error(`${op} needs <source> <destination>`);
+      const source = normalizePath(this.expandText(parts[0]));
+      const destination = normalizePath(this.expandText(parts[1]));
+      const result = op === "FCOPY" ? this.fileSystem.copy?.(source, destination)
+        : this.fileSystem.move?.(source, destination);
+      this.fok = result ? 1 : 0;
+      return;
+    }
+    if (op === "DAPPER") {
+      const parts = splitArgs(this.expandText(arg), 7).map(stripQuotes);
+      if (!parts.length) throw this.error("DAPPER needs a package-manager action");
+      if (typeof this.environment.dapper !== "function") {
+        this.io.output("Dapper: package-manager bridge is unavailable in this runtime", "red");
+        return;
+      }
+      await this.environment.dapper(parts);
+      this.steps = 0;
+      return;
+    }
     if (op === "RAND") {
       const parts = splitArgs(arg, 3);
       if (parts.length < 2) throw this.error("RAND needs <name> <max> or <name> <min> <max>");

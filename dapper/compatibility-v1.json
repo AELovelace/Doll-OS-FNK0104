@@ -167,6 +167,15 @@
                                    "opcodes":  [
                                                    "DAPPER"
                                                ]
+                               },
+                     "1.7.0":  {
+                                   "extends":  "1.6.0",
+                                   "opcodes":  [
+                                                   "FCOPY",
+                                                   "FLIST",
+                                                   "FMKDIR",
+                                                   "FMOVE"
+                                               ]
                                }
                  },
     "boards":  {
@@ -187,7 +196,7 @@
                                                   }
                                    },
                    "fnk0104":  {
-                                       "runtime":  "1.6.0",
+                                       "runtime":  "1.7.0",
                                    "limits":  {
                                                   "lines":  4000,
                                                   "labels":  256,

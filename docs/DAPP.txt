@@ -108,6 +108,7 @@ HTMLCLOSE             finish the render and close its files
 HTMLSTR <n> url <url> | buf | text <s>  render into string variable n
 URLABS <n> <base> <href> absolute URL into n, or "" if it is not followable
 URLPART <n> <url> scheme|origin|host|path|dir  one piece of a URL
+DAPPER <action> [args] call the verified Dapper package manager
 JSONESC <n> <text>    escape text for insertion inside a JSON string
 JSONGET <n> <json> <path> extract a JSON value; $jsonok reports success
 FOPEN <path> <mode>  open a file: read, write, append, or update
@@ -121,6 +122,10 @@ FTELL <name>         current byte offset into a numeric variable
 FSIZE <name>         open file size into a numeric variable
 FEXISTS <n> <path>   1 into numeric variable n if the path exists
 FDELETE <path>       delete a file; $fok reports success
+FLIST <dir> <output> snapshot children as D|name|0 or F|name|bytes
+FMKDIR <path>        create one directory; $fok reports success
+FCOPY <src> <dst>    copy one file without overwriting
+FMOVE <src> <dst>    move one file without overwriting
 CANVAS <cols> <rows> switch the display to a character grid
 ENDCANVAS            leave canvas mode, restoring the terminal
 PUT <col> <row> <t>  draw text into the canvas in the current COLOR
@@ -323,6 +328,15 @@ UTF-8, and transliterates non-ASCII to ASCII because the panel font draws nothin
 above 126. No JS, CSS, images, or forms. It opens two files of its own and the
 runtime allows the script only one, so HTMLOPEN and HTMLTEXT refuse to start
 while a script file is open.
+
+Dapper bridge:
+
+DAPPER calls only the built-in Dapper package manager; it is not a general shell
+escape. Actions are search, info, install, update, remove, refresh, doctor, and
+runtime. For example: DAPPER install snake --internal. Repository identity,
+compatibility, HTTPS, SHA-256, managed-path, atomic replacement, and rollback
+checks are the same ones used by the shell command. Confirm remove operations in
+the app, and pass --internal or --sd to avoid Dapper's location prompt.
 
 JSONESC safely quotes user text before it is placed inside JSON. JSONGET walks
 paths such as choices[0].message.content. $jsonok reports malformed JSON,

@@ -151,6 +151,15 @@ app.get('/poll', (req, res) => {
   });
 });
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`sgc-chat-server listening on :${PORT}, db at ${DB_PATH}`);
 });
+
+// A DOLL-OS unit spends nearly all of its time parked on an INPUT prompt waiting
+// for someone to type, then reuses its keep-alive socket for the next poll. Node's
+// five second idle default closes that socket out from under it on essentially
+// every turn, and the request that lands on the dead connection is lost. Hold idle
+// connections for a turn of conversation instead. headersTimeout must stay above
+// keepAliveTimeout or node answers slow clients with a spurious 408.
+server.keepAliveTimeout = 65000;
+server.headersTimeout = 70000;

@@ -5,14 +5,60 @@ import test from "node:test";
 import { DappRuntime } from "./dapp-runtime.js";
 
 class MemoryFiles {
-  constructor(files = {}) { this.files = { ...files }; }
+  constructor(files = {}) {
+    this.files = { ...files };
+    this.directories = new Set(["/", "/apps", "/sd", "/sd/apps"]);
+    for (const path of Object.keys(files)) {
+      const parts = path.split("/").filter(Boolean);
+      let current = "";
+      for (const part of parts.slice(0, -1)) {
+        current += `/${part}`;
+        this.directories.add(current);
+      }
+    }
+  }
   exists(path) { return Object.hasOwn(this.files, path); }
   read(path) { return this.files[path] ?? null; }
-  write(path, content) { this.files[path] = content; }
+  write(path, content) { this.files[path] = content; return true; }
   delete(path) {
     if (!this.exists(path)) return false;
     delete this.files[path];
     return true;
+  }
+  mkdir(path) {
+    const parent = path.slice(0, path.lastIndexOf("/")) || "/";
+    if (this.directories.has(path) || !this.directories.has(parent)) return false;
+    this.directories.add(path);
+    return true;
+  }
+  list(path) {
+    if (!this.directories.has(path)) return null;
+    const prefix = path === "/" ? "/" : `${path}/`;
+    const rows = new Map();
+    for (const directory of this.directories) {
+      if (!directory.startsWith(prefix) || directory === path) continue;
+      const rest = directory.slice(prefix.length);
+      if (!rest.includes("/")) rows.set(rest, { name: rest, directory: true, size: 0 });
+    }
+    for (const [file, content] of Object.entries(this.files)) {
+      if (!file.startsWith(prefix)) continue;
+      const rest = file.slice(prefix.length);
+      if (!rest.includes("/")) rows.set(rest, { name: rest, directory: false, size: content.length });
+    }
+    return [...rows.values()];
+  }
+  copy(source, destination) {
+    if (!this.exists(source) || this.exists(destination)) return null;
+    const parent = destination.slice(0, destination.lastIndexOf("/")) || "/";
+    if (!this.directories.has(parent)) return null;
+    this.files[destination] = this.files[source];
+    return destination;
+  }
+  move(source, destination) {
+    const copied = this.copy(source, destination);
+    if (!copied) return null;
+    delete this.files[source];
+    return copied;
   }
 }
 
@@ -282,85 +328,209 @@ test("the shipped LLM chat app masks its key and parses a Chat Completions reply
   assert.ok(outputs.includes("llm> Hi from the model"));
 });
 
-test("the shipped DappChat signs in, joins a room, polls, and exits", async (t) => {
-  const previousFetch = globalThis.fetch;
-  const requests = [];
-  t.after(() => { globalThis.fetch = previousFetch; });
-  globalThis.fetch = async (url, options = {}) => {
-    requests.push({ url, options });
-    const response = url.endsWith("/auth")
-      ? { ok: true, created: false, token: "chat-token" }
-      : { ok: true, last_id: 7, messages: [{ id: 7, user: "Asuka", text: "hello Doll" }] };
-    return {
-      status: 200,
-      ok: true,
-      arrayBuffer: async () => new TextEncoder().encode(JSON.stringify(response)).buffer
-    };
-  };
+function chatCanvasText(canvas) {
+  return canvas.cells.map(row => row.map(cell => cell.char).join("").trimEnd()).join("\n");
+}
 
-  const answers = ["Doll", "secret", "", "/quit"];
-  const outputs = [];
-  const io = {
-    output(text) { outputs.push(text); }, clear() {}, status() {}, canvas() {}, endCanvas() {}, waveStop() {},
-    input(_prompt, resolve) { resolve(answers.shift()); }
-  };
-  const runtime = new DappRuntime(io, new MemoryFiles());
-  const source = await readFile(new URL("../apps/dappchat.dapp", import.meta.url), "utf8");
-  const result = await runtime.run(source);
-
-  assert.equal(result.ok, true);
-  assert.equal(requests[0].url, "https://sadgirlsclub.wtf/dappchat/auth");
-  assert.equal(requests[1].url, "https://sadgirlsclub.wtf/dappchat/poll?room=lobby&since=0");
-  assert.equal(requests[1].options.headers.Authorization, "Bearer chat-token");
-  assert.ok(outputs.includes("Asuka: hello Doll"));
-  assert.ok(outputs.includes("bye"));
-});
-
-test("DappChat keeps polling while the room answers a full batch", async (t) => {
-  // The server caps a poll at 10 messages. Joining a room with a backlog used
-  // to show only the first ten and then creep forward one poll per line typed,
-  // so the recent conversation never appeared until you had sent a few
-  // messages yourself. One poll now drains what is waiting.
-  const previousFetch = globalThis.fetch;
+// Drives the shipped DappChat through its blocking login prompts and into the
+// canvas loop, against a fake room the test can mutate mid-flight. onFrame runs
+// on every FLIP and is how a test types: push("h") queues a keypress the way the
+// panel would. The frame cap keeps a broken build from hanging the suite.
+async function runDappChat({ room = [], onFrame, sendHook, answers = ["Doll", "secret", ""] } = {}) {
   const polls = [];
-  t.after(() => { globalThis.fetch = previousFetch; });
-  globalThis.fetch = async (url) => {
-    let response;
+  const sends = [];
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async (url, options = {}) => {
+    let body;
     if (url.endsWith("/auth")) {
-      response = { ok: true, created: false, token: "chat-token" };
+      body = { ok: true, created: false, token: "chat-token" };
+    } else if (url.endsWith("/send")) {
+      const sent = JSON.parse(options.body);
+      sends.push(sent);
+      body = sendHook ? sendHook(sent, room) : { ok: true, id: room.length };
     } else {
       polls.push(url);
-      // 14 messages waiting: a full batch of 10, then the remaining 4.
-      const start = polls.length === 1 ? 1 : 11;
-      const count = polls.length === 1 ? 10 : 4;
-      const messages = Array.from({ length: count }, (_, i) => (
-        { id: start + i, user: "Asuka", text: `line ${start + i}` }
-      ));
-      response = { ok: true, last_id: start + count - 1, messages };
+      const since = Number(new URL(url).searchParams.get("since")) || 0;
+      const rows = since > 0 ? room.filter(m => m.id > since) : room.slice(-10);
+      body = {
+        ok: true,
+        last_id: rows.length ? rows[rows.length - 1].id : since,
+        messages: rows
+      };
     }
     return {
       status: 200,
       ok: true,
-      arrayBuffer: async () => new TextEncoder().encode(JSON.stringify(response)).buffer
+      arrayBuffer: async () => new TextEncoder().encode(JSON.stringify(body)).buffer
     };
   };
 
-  const answers = ["Doll", "secret", "", "/quit"];
-  const outputs = [];
+  const queue = [...answers];
+  const frames = [];
+  let runtime;
   const io = {
-    output(text) { outputs.push(text); }, clear() {}, status() {}, canvas() {}, endCanvas() {}, waveStop() {},
-    input(_prompt, resolve) { resolve(answers.shift()); }
+    output() {}, clear() {}, status() {}, endCanvas() {}, waveStop() {},
+    input(_prompt, resolve) { resolve(queue.shift() ?? ""); },
+    canvas(canvas) {
+      const text = chatCanvasText(canvas);
+      // CANVAS hands back a blank grid when the screen is created, before the
+      // app has drawn anything. Only FLIP frames are worth looking at.
+      if (!text.trim()) return;
+      frames.push(text);
+      const push = key => runtime.pushKey({ key, ctrlKey: false });
+      if (frames.length > 300) { push("Escape"); return; }
+      onFrame?.(text, frames.length, push);
+    }
   };
-  const runtime = new DappRuntime(io, new MemoryFiles());
+  runtime = new DappRuntime(io, new MemoryFiles());
+  const source = await readFile(new URL("../apps/dappchat.dapp", import.meta.url), "utf8");
+  const result = await runtime.run(source);
+  globalThis.fetch = previousFetch;
+  return { result, polls, sends, frames };
+}
+
+test("DappChat refreshes the room on its own clock with nobody touching a key", async () => {
+  // The whole point of the rewrite: a message posted by someone else has to
+  // appear while this unit sits idle, with no Enter and no blank line.
+  const room = [{ id: 1, user: "Asuka", text: "hello Doll" }];
+  const { result, frames, polls } = await runDappChat({
+    room,
+    onFrame(text, frame, push) {
+      if (frame === 1) room.push({ id: 2, user: "Rei", text: "arrived later" });
+      if (text.includes("Rei: arrived later")) push("Escape");
+    }
+  });
+
+  assert.equal(result.ok, true);
+  assert.ok(frames[0].includes("Asuka: hello Doll"), "history drawn on the first frame");
+  assert.ok(frames.some(f => f.includes("Rei: arrived later")), "later message arrived unprompted");
+  assert.ok(polls.length >= 2, `expected repeat polls, got ${polls.length}`);
+  // No key was ever pressed except the Escape that ended the test.
+  assert.ok(frames.at(-1).includes("Doll>"), "prompt row still drawn");
+});
+
+test("DappChat edits its input line from KEY without blocking the room", async () => {
+  const room = [{ id: 1, user: "Asuka", text: "hello Doll" }];
+  const { result, frames, sends } = await runDappChat({
+    room,
+    onFrame(text, frame, push) {
+      if (frame === 1) { push("h"); push("i"); push("!"); }
+      if (text.includes("Doll> hi!")) push("Backspace");
+      if (text.includes("Doll> hi") && !text.includes("Doll> hi!")) push("Escape");
+    }
+  });
+
+  assert.equal(result.ok, true);
+  assert.ok(frames.some(f => f.includes("Doll> hi!")), "typed text echoed live");
+  assert.ok(frames.some(f => f.includes("Doll> hi") && !f.includes("Doll> hi!")), "backspace edits");
+  assert.equal(sends.length, 0, "nothing sent without Enter");
+});
+
+test("DappChat sends on enter and shows the message without waiting out the timer", async () => {
+  const room = [];
+  const { result, frames, sends } = await runDappChat({
+    room,
+    sendHook(sent, current) {
+      current.push({ id: current.length + 1, user: "Doll", text: sent.text });
+      return { ok: true, id: current.length };
+    },
+    onFrame(text, frame, push) {
+      if (frame === 1) { push("h"); push("e"); push("y"); }
+      if (text.includes("Doll> hey")) push("Enter");
+      if (text.includes("Doll: hey")) push("Escape");
+    }
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(sends.length, 1);
+  assert.equal(sends[0].text, "hey");
+  assert.equal(sends[0].room, "lobby");
+  assert.ok(frames.some(f => f.includes("Doll: hey")), "own message came back into the feed");
+});
+
+test("DappChat surfaces a send the server refused instead of dropping it", async () => {
+  // /send answers HTTP 200 with {"ok":false} when the token has been retired by
+  // the same account signing in elsewhere. Checking only $httpok made the
+  // message vanish with no trace anywhere.
+  const room = [];
+  const { result, frames, sends } = await runDappChat({
+    room,
+    sendHook: () => ({ ok: false, error: "unauthorized" }),
+    onFrame(text, frame, push) {
+      if (frame === 1) { push("h"); push("i"); }
+      if (text.includes("Doll> hi")) push("Enter");
+      if (text.includes("signed out")) push("Escape");
+    }
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(sends.length, 1);
+  assert.ok(frames.some(f => f.includes("signed out")), "refusal reported on the status row");
+});
+
+test("DappChat keeps polling while the room answers a full batch", async () => {
+  // The server caps a poll at 10 messages, so a backlog needs more than one
+  // request or the room stays permanently behind.
+  const room = Array.from({ length: 14 }, (_, i) => (
+    { id: i + 1, user: "Asuka", text: `line ${i + 1}` }
+  ));
+  const { result, frames, polls } = await runDappChat({
+    room,
+    onFrame(text, frame, push) { if (frame >= 1) push("Escape"); }
+  });
+
+  assert.equal(result.ok, true);
+  // since=0 returns the newest ten, and last_id lands at the end of the room.
+  assert.equal(polls[0], "https://sadgirlsclub.wtf/dappchat/poll?room=lobby&since=0");
+  assert.ok(frames[0].includes("Asuka: line 14"), "landed at the end of the conversation");
+});
+
+test("DappChat retries a poll that died on a closed keep-alive socket", async (t) => {
+  // The request after a pause routinely lands on a socket the server already
+  // timed out. Swallowing it made a live room look silent.
+  const previousFetch = globalThis.fetch;
+  const polls = [];
+  t.after(() => { globalThis.fetch = previousFetch; });
+  globalThis.fetch = async (url) => {
+    if (url.endsWith("/auth")) {
+      return {
+        status: 200, ok: true,
+        arrayBuffer: async () => new TextEncoder().encode(
+          JSON.stringify({ ok: true, created: false, token: "chat-token" })
+        ).buffer
+      };
+    }
+    polls.push(url);
+    if (polls.length === 1) throw new TypeError("Failed to fetch");
+    return {
+      status: 200, ok: true,
+      arrayBuffer: async () => new TextEncoder().encode(JSON.stringify({
+        ok: true, last_id: 3, messages: [{ id: 3, user: "Asuka", text: "still here" }]
+      })).buffer
+    };
+  };
+
+  const answers = ["Doll", "secret", ""];
+  const frames = [];
+  let runtime;
+  const io = {
+    output() {}, clear() {}, status() {}, endCanvas() {}, waveStop() {},
+    input(_prompt, resolve) { resolve(answers.shift() ?? ""); },
+    canvas(canvas) {
+      const text = chatCanvasText(canvas);
+      if (!text.trim()) return;
+      frames.push(text);
+      runtime.pushKey({ key: "Escape", ctrlKey: false });
+    }
+  };
+  runtime = new DappRuntime(io, new MemoryFiles());
   const source = await readFile(new URL("../apps/dappchat.dapp", import.meta.url), "utf8");
   const result = await runtime.run(source);
 
   assert.equal(result.ok, true);
-  // Two polls before the first prompt: the full batch, then the rest.
-  assert.equal(polls.length, 2);
-  assert.equal(polls[0], "https://sadgirlsclub.wtf/dappchat/poll?room=lobby&since=0");
-  assert.equal(polls[1], "https://sadgirlsclub.wtf/dappchat/poll?room=lobby&since=10");
-  assert.ok(outputs.includes("Asuka: line 14"));
+  assert.equal(polls.length, 2, "the dropped poll was retried");
+  assert.ok(frames.some(f => f.includes("Asuka: still here")));
+  assert.ok(!frames.some(f => f.includes("refresh failed")));
 });
 
 test("URLABS resolves relative, root, scheme-relative and dot-segment hrefs", async () => {
@@ -643,4 +813,224 @@ test("the shipped Reader saves an article, resumes it, and preserves it when ref
   ].join("\n"));
   assert.ok(outputs.some(line => line.includes("fetch failed (HTTP 503)")));
   assert.ok(outputs.includes("reader: library closed"));
+});
+
+test("DAPPER delegates only package-manager arguments to the runtime bridge", async () => {
+  const calls = [];
+  const runtime = new DappRuntime({
+    output() {}, clear() {}, status() {}, input() {}, canvas() {}, endCanvas() {}, waveStop() {}
+  }, new MemoryFiles(), {
+    dapper: async parts => calls.push(parts)
+  });
+  const result = await runtime.run('SETSTR id "snake"\nDAPPER install $id --internal\nEND');
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(calls, [["install", "snake", "--internal"]]);
+});
+
+test("the bundled Dappstore guides search and confirmed installation", async () => {
+  const calls = [];
+  const answers = ["2", "game", "", "4", "snake", "i", "INSTALL", "", "q"];
+  const outputs = [];
+  const io = {
+    output(text) { outputs.push(text); }, clear() {}, status() {}, canvas() {}, endCanvas() {}, waveStop() {},
+    input(_prompt, resolve) { resolve(answers.shift()); }
+  };
+  const runtime = new DappRuntime(io, new MemoryFiles(), {
+    dapper: async parts => calls.push(parts)
+  });
+  const source = await readFile(new URL("../apps/dappstore.dapp", import.meta.url), "utf8");
+  const result = await runtime.run(source);
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(calls, [
+    ["search", "game"],
+    ["info", "snake"],
+    ["install", "snake", "--internal"]
+  ]);
+  assert.ok(outputs.includes("Dappstore closed"));
+});
+
+test("filesystem management opcodes list, mkdir, copy and move without a shell bridge", async () => {
+  const files = new MemoryFiles({ "/apps/a.txt": "alpha" });
+  const runtime = runtimeFor(files);
+  const result = await runtime.run([
+    'FLIST "/apps" "/listing.txt"',
+    'FMKDIR "/apps/archive"',
+    'FCOPY "/apps/a.txt" "/apps/archive/a.txt"',
+    'FMOVE "/apps/archive/a.txt" "/apps/moved.txt"',
+    "END"
+  ].join("\n"));
+
+  assert.equal(result.ok, true);
+  assert.match(files.read("/listing.txt"), /F\|a\.txt\|5/);
+  assert.equal(files.read("/apps/moved.txt"), "alpha");
+  assert.equal(files.exists("/apps/archive/a.txt"), false);
+});
+
+test("the remaining ecosystem apps enter and leave through their normal UI", async () => {
+  for (const id of ["requests", "control", "data", "feeds", "today", "files"]) {
+    const files = new MemoryFiles();
+    const answers = ["q"];
+    const io = {
+      output() {}, clear() {}, status() {}, canvas() {}, endCanvas() {}, waveStop() {},
+      input(_prompt, resolve) { resolve(answers.shift()); }
+    };
+    const runtime = new DappRuntime(io, files);
+    const source = await readFile(new URL(`../apps/${id}.dapp`, import.meta.url), "utf8");
+    const result = await runtime.run(source);
+    assert.equal(result.ok, true, `${id}: ${result.error?.message || "failed"}`);
+  }
+});
+
+test("Tracker Music renders its sequencer and exits with audio released", async () => {
+  const files = new MemoryFiles();
+  let runtime;
+  let queued = false;
+  let stops = 0;
+  const io = {
+    output() {}, clear() {}, status() {}, input() {}, endCanvas() {},
+    canvas() {
+      if (!queued) {
+        queued = true;
+        runtime.pushKey({ key: "Escape", ctrlKey: false });
+      }
+    },
+    waveStop() { stops += 1; }
+  };
+  runtime = new DappRuntime(io, files);
+  const source = await readFile(new URL("../apps/tracker-music.dapp", import.meta.url), "utf8");
+  const result = await runtime.run(source);
+
+  assert.equal(result.ok, true);
+  assert.ok(stops >= 1);
+});
+
+test("Tracker Music saves per-note tones and opens help", async () => {
+  const files = new MemoryFiles();
+  const frames = [];
+  let runtime;
+  let step = 0;
+  const push = key => runtime.pushKey({ key, ctrlKey: false });
+  const io = {
+    output() {}, clear() {}, status() {}, input() {}, endCanvas() {}, waveStop() {},
+    canvas(canvas) {
+      const text = chatCanvasText(canvas);
+      if (!text.trim()) return;
+      frames.push(text);
+      if (text.includes("TRACKER MUSIC HELP")) {
+        push("x");
+        return;
+      }
+      step += 1;
+      if (step === 1) push("4");
+      else if (step === 2) push("s");
+      else if (step === 3) push("h");
+      else if (step >= 4) push("Escape");
+    }
+  };
+  runtime = new DappRuntime(io, files);
+  const source = await readFile(new URL("../apps/tracker-music.dapp", import.meta.url), "utf8");
+  const result = await runtime.run(source);
+
+  assert.equal(result.ok, true, result.error?.message);
+  assert.ok(frames.some(frame => frame.includes("TRACKER MUSIC HELP")));
+  assert.ok(frames.some(frame => frame.includes("selected tone 4")));
+  assert.equal(files.read("/apps/tracker-music.dat"), [
+    "120",
+    "3 2 3",
+    "1000000000000000",
+    "0000000000000000",
+    "0000000000000000",
+    "3000000000000000",
+    "2222222222222222",
+    "3333333333333333",
+    ""
+  ].join("\n"));
+});
+
+test("Requests, Control and Feeds exercise their network and persistence paths", async (t) => {
+  const previousFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = previousFetch; });
+
+  // Requests: bounded response is displayed and persisted.
+  globalThis.fetch = async () => ({
+    status: 200, ok: true,
+    arrayBuffer: async () => new TextEncoder().encode('{"ok":true}').buffer
+  });
+  let answers = ["2", "", "q"];
+  let outputs = [];
+  let files = new MemoryFiles();
+  let runtime = new DappRuntime({
+    output(text) { outputs.push(text); }, clear() {}, status() {}, canvas() {}, endCanvas() {}, waveStop() {},
+    input(_prompt, resolve) { resolve(answers.shift()); }
+  }, files);
+  let source = await readFile(new URL("../apps/requests.dapp", import.meta.url), "utf8");
+  let result = await runtime.run(source);
+  assert.equal(result.ok, true);
+  assert.match(files.read("/apps/requests.last"), /"ok":true/);
+
+  // Control: configured service is polled and logged.
+  answers = ["a", "1", "API", "https://example.test/health", "x", "", "q"];
+  outputs = [];
+  files = new MemoryFiles();
+  runtime = new DappRuntime({
+    output(text) { outputs.push(text); }, clear() {}, status() {}, canvas() {}, endCanvas() {}, waveStop() {},
+    input(_prompt, resolve) { resolve(answers.shift()); }
+  }, files);
+  source = await readFile(new URL("../apps/control.dapp", import.meta.url), "utf8");
+  result = await runtime.run(source);
+  assert.equal(result.ok, true);
+  assert.match(files.read("/apps/control.log"), /UP API HTTP=200/);
+
+  // Feeds: RSS items become a durable title/link index.
+  const rss = "<rss><channel><item><title>First &amp; Best</title>"
+    + "<link>https://example.test/first</link></item>"
+    + "<item><title>Second</title><link>https://example.test/second</link></item></channel></rss>";
+  globalThis.fetch = async () => ({
+    status: 200, ok: true,
+    arrayBuffer: async () => new TextEncoder().encode(rss).buffer
+  });
+  answers = ["1", "", "q", "q"];
+  files = new MemoryFiles();
+  runtime = new DappRuntime({
+    output() {}, clear() {}, status() {}, canvas() {}, endCanvas() {}, waveStop() {},
+    input(_prompt, resolve) { resolve(answers.shift()); }
+  }, files);
+  source = await readFile(new URL("../apps/feeds.dapp", import.meta.url), "utf8");
+  result = await runtime.run(source);
+  assert.equal(result.ok, true);
+  assert.equal(files.read("/apps/feeds.index"), [
+    "First & Best", "https://example.test/first", "Second", "https://example.test/second", ""
+  ].join("\n"));
+});
+
+test("Data profiles a local table and Today reads shared app files", async () => {
+  let answers = ["1", "/apps/sample.csv", "4", "", "q"];
+  let outputs = [];
+  let files = new MemoryFiles({ "/apps/sample.csv": "name,value\na,10\nb,20\n" });
+  let runtime = new DappRuntime({
+    output(text) { outputs.push(text); }, clear() {}, status() {}, canvas() {}, endCanvas() {}, waveStop() {},
+    input(_prompt, resolve) { resolve(answers.shift()); }
+  }, files);
+  let source = await readFile(new URL("../apps/data.dapp", import.meta.url), "utf8");
+  let result = await runtime.run(source);
+  assert.equal(result.ok, true);
+  assert.ok(outputs.includes("3 rows, up to 2 columns"), JSON.stringify(outputs));
+
+  answers = ["q"];
+  outputs = [];
+  files = new MemoryFiles({
+    "/apps/todo.txt": "[1] ship apps\n",
+    "/apps/control.log": "[2] UP API HTTP=200 ms=4\n"
+  });
+  runtime = new DappRuntime({
+    output(text) { outputs.push(text); }, clear() {}, status() {}, canvas() {}, endCanvas() {}, waveStop() {},
+    input(_prompt, resolve) { resolve(answers.shift()); }
+  }, files);
+  source = await readFile(new URL("../apps/today.dapp", import.meta.url), "utf8");
+  result = await runtime.run(source);
+  assert.equal(result.ok, true);
+  assert.ok(outputs.some(line => line.includes("ship apps")));
+  assert.ok(outputs.some(line => line.includes("UP API")));
 });

@@ -1,7 +1,15 @@
+# @dapp-format 1
+# @id grotto2
+# @name The Cursed Grotto II
+# @version 1.0.0
+# @boards fnk0104
+# @runtime >=1.4.2 <2.0.0
+# @summary Descend the Abyssal Depths in the canvas sequel to The Cursed Grotto
+# @echo off
 # /sd/apps/grotto2.dapp
 # The Cursed Grotto II: The Abyssal Depths
-# A DOLL-OS .dapp adventure sequel
-# @echo off
+# A DOLL-OS .dapp adventure sequel, the canvas-and-sound follow-up to
+# apps/adventure.dapp.
 
 # ── Setup ──────────────────────────────────────────────────────
 

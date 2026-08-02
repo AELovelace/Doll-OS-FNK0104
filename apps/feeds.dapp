@@ -1,0 +1,252 @@
+# @dapp-format 1
+# @id feeds
+# @name Feeds
+# @version 1.0.0
+# @boards fnk0104
+# @runtime >=1.5.0 <2.0.0
+# @echo off
+# @summary An RSS headline reader with offline index and article rendering
+# /apps/feeds.dapp
+# Parses ordinary RSS <item><title>/<link> records from the byte buffer. Atom
+# feeds that keep URLs only in link attributes need a feed-to-RSS proxy.
+
+SETSTR feedname "DOLL-OS Feed"
+SETSTR feedurl "https://hnrss.org/frontpage"
+SET limit 20
+GOSUB loadcfg
+
+:menu
+CLEAR
+COLOR pink
+PRINT "FEEDS // $feedname"
+COLOR white
+PRINT "1 refresh headlines"
+PRINT "2 read saved headlines"
+PRINT "3 change RSS URL"
+PRINT "q quit"
+INPUT choice "feeds> "
+IFEQ $choice "1" GOTO refresh
+IFEQ $choice "2" GOTO headlines
+IFEQ $choice "3" GOTO settings
+IFEQ $choice "q" GOTO leave
+GOTO menu
+
+:settings
+INPUT newname "feed name> "
+INPUT newurl "RSS URL> "
+LEN n $newname
+IF $n = 0 GOTO menu
+LEN n $newurl
+IF $n = 0 GOTO menu
+SETSTR feedname $newname
+SETSTR feedurl $newurl
+FOPEN "/apps/feeds.cfg" write
+IF $fok = 0 GOTO menu
+FWRITE "$feedname"
+FWRITE "$feedurl"
+FCLOSE
+GOTO refresh
+
+:refresh
+CLEAR
+COLOR cyan
+PRINT "fetching $feedname..."
+BUFNEW 262144
+HTTPGETBUF $feedurl 262144
+IF $httpok = 0 GOTO failed
+FOPEN "/apps/feeds.index" write
+IF $fok = 0 GOTO failed
+SET pos 0
+SET initem 0
+SET items 0
+SETSTR current ""
+SETSTR title ""
+SETSTR link ""
+:parse
+IF $pos >= $buflen GOTO parsed
+BUFTAKE content hit $pos "<"
+IFEQ $current "title" GOSUB taketitle
+IFEQ $current "link" GOSUB takelink
+SET pos $hit
+IF $pos >= $buflen GOTO parsed
+ADD pos 1
+BUFTAKE tag hit $pos ">"
+SET pos $hit
+IF $pos < $buflen GOTO pt_advance
+GOTO parsed
+:pt_advance
+ADD pos 1
+IFEQ $tag "item" GOTO itemstart
+IFEQ $tag "entry" GOTO itemstart
+IFEQ $tag "/item" GOTO itemend
+IFEQ $tag "/entry" GOTO itemend
+SETSTR current $tag
+GOTO parse
+:itemstart
+SET initem 1
+SETSTR title ""
+SETSTR link ""
+SETSTR current ""
+GOTO parse
+:itemend
+IF $initem = 0 GOTO ie_next
+LEN n $title
+IF $n = 0 GOTO ie_next
+LEN n $link
+IF $n = 0 GOTO ie_next
+FWRITE "$title"
+FWRITE "$link"
+ADD items 1
+IF $items >= $limit GOTO parsed
+:ie_next
+SET initem 0
+SETSTR current ""
+GOTO parse
+
+:taketitle
+IF $initem = 0 GOTO tt_done
+HTMLSTR clean text $content
+SETSTR title $clean
+:tt_done
+RETURN
+:takelink
+IF $initem = 0 GOTO tl_done
+SETSTR link $content
+:tl_done
+RETURN
+
+:parsed
+FCLOSE
+COLOR green
+PRINT "saved $items headlines"
+COLOR white
+INPUT choice "enter> "
+GOTO headlines
+:failed
+FCLOSE
+COLOR red
+PRINT "feeds: refresh failed (HTTP $httpcode)"
+COLOR white
+INPUT choice "enter> "
+GOTO menu
+
+:headlines
+CLEAR
+FEXISTS have "/apps/feeds.index"
+IF $have = 0 GOTO noindex
+FOPEN "/apps/feeds.index" read
+IF $fok = 0 GOTO noindex
+COLOR pink
+PRINT "$feedname"
+COLOR white
+SET item 1
+:hl_loop
+FREAD title
+IF $feof = 1 GOTO hl_done
+FREAD link
+IF $feof = 1 GOTO hl_done
+PRINT "$item  $title"
+ADD item 1
+GOTO hl_loop
+:hl_done
+FCLOSE
+INPUT text "article number, r refresh, q back> "
+IFEQ $text "r" GOTO refresh
+IFEQ $text "q" GOTO menu
+GOSUB str2num
+IF $got = 0 GOTO headlines
+SET wanted $num
+IF $wanted < 1 GOTO headlines
+GOSUB select
+IF $selected = 0 GOTO headlines
+GOTO article
+:noindex
+PRINT "no saved feed; refresh first"
+INPUT choice "enter> "
+GOTO menu
+
+:select
+SET selected 0
+FOPEN "/apps/feeds.index" read
+IF $fok = 0 GOTO sl_done
+SET item 1
+:sl_loop
+FREAD title
+IF $feof = 1 GOTO sl_done
+FREAD link
+IF $feof = 1 GOTO sl_done
+IF $item = $wanted GOTO sl_found
+ADD item 1
+GOTO sl_loop
+:sl_found
+SET selected 1
+:sl_done
+FCLOSE
+RETURN
+
+:article
+CLEAR
+COLOR cyan
+PRINT "fetching $title"
+HTMLTEXT $link "/apps/feeds.article" "-" 76 0
+IF $httpok = 0 GOTO articlefail
+FOPEN "/apps/feeds.article" read
+IF $fok = 0 GOTO articlefail
+SET shown 0
+:ar_loop
+FREAD line
+IF $feof = 1 GOTO ar_end
+PRINT "$line"
+ADD shown 1
+IF $shown < 18 GOTO ar_loop
+SET shown 0
+INPUT choice "enter more, q stop> "
+IFEQ $choice "q" GOTO ar_end
+GOTO ar_loop
+:ar_end
+FCLOSE
+INPUT choice "enter> "
+GOTO headlines
+:articlefail
+FCLOSE
+PRINT "article fetch failed: HTTP $httpcode"
+INPUT choice "enter> "
+GOTO headlines
+
+:loadcfg
+FEXISTS have "/apps/feeds.cfg"
+IF $have = 0 GOTO lc_done
+FOPEN "/apps/feeds.cfg" read
+IF $fok = 0 GOTO lc_done
+FREAD feedname
+FREAD feedurl
+FCLOSE
+:lc_done
+RETURN
+
+:str2num
+SET num 0
+SET got 0
+SET i 0
+LEN n $text
+IF $n = 0 GOTO sn_done
+SET got 1
+:sn_loop
+IF $i >= $n GOTO sn_done
+CHARAT digit $text $i
+IF $digit < 48 GOTO sn_bad
+IF $digit > 57 GOTO sn_bad
+SUB digit 48
+MUL num 10
+ADD num $digit
+ADD i 1
+GOTO sn_loop
+:sn_bad
+SET got 0
+:sn_done
+RETURN
+
+:leave
+BUFFREE
+PRINT "feeds: done"
+EXIT

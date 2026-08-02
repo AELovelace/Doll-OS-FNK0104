@@ -1136,6 +1136,7 @@ KEY &lt;name&gt;             one keypress or 0, never blocks
 LED &lt;r&gt; &lt;g&gt; &lt;b&gt;        set rear RGB LED channels (needs runtime &gt;=1.3.0)
 WAVE &lt;ch&gt; &lt;kind&gt; &lt;hz&gt; &lt;level&gt;  three-channel PCM synth (runtime &gt;=1.4.0)
 WAVESTOP               silence and release the synth
+DAPPER &lt;action&gt; [args] verified package-manager bridge (runtime &gt;=1.6.0)
 HTTPGET &lt;n&gt; &lt;url&gt; [max] bounded text GET; inspect $httpok/$httpcode
 HTTPPOST &lt;n&gt; &lt;url&gt; &lt;body&gt; [max] bounded POST response
 HTTPHEADER &lt;n&gt; &lt;value&gt; set/replace one of eight request headers
@@ -1155,6 +1156,9 @@ FTELL &lt;name&gt;           current byte offset
 FSIZE &lt;name&gt;           open file size
 FEXISTS &lt;n&gt; &lt;path&gt;     1 → numeric variable if the path exists
 FDELETE &lt;path&gt;         delete; $fok = success
+FLIST &lt;dir&gt; &lt;output&gt;   snapshot children as D|name|0 or F|name|bytes
+FMKDIR &lt;path&gt;          create one directory
+FCOPY/FMOVE &lt;s&gt; &lt;d&gt;    copy/move one file without overwriting
 
 ── canvas ──────────────────────────────────────────────────────────
 CANVAS &lt;cols&gt; &lt;rows&gt;   enter grid mode (max 120x60)

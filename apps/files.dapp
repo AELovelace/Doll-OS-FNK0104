@@ -1,0 +1,296 @@
+# @dapp-format 1
+# @id files
+# @name Files
+# @version 1.0.0
+# @boards fnk0104
+# @runtime >=1.7.0 <2.0.0
+# @echo off
+# @summary Browse, view, copy, move, create and delete files across flash and SD
+# /system/apps/files.dapp
+# FLIST snapshots a directory into /files.list as D|name|size rows. Files never
+# receives a shell escape and deletion remains file-only/non-recursive.
+
+SETSTR path "/"
+SET page 0
+
+:browse
+CLEAR
+FLIST $path "/files.list"
+IF $fok = 0 GOTO listfail
+COLOR pink
+PRINT "FILES // $path"
+COLOR white
+FOPEN "/files.list" read
+IF $fok = 0 GOTO listfail
+EXPR skip $page * 15
+SET index 0
+:skiploop
+IF $index >= $skip GOTO showloop
+FREAD line
+IF $feof = 1 GOTO empty
+ADD index 1
+GOTO skiploop
+:showloop
+SET shown 0
+:showone
+IF $shown >= 15 GOTO shownpage
+FREAD line
+IF $feof = 1 GOTO shownpage
+ADD index 1
+GOSUB parserow
+IFEQ $type "D" GOTO showdir
+PRINT "$index  $name  ($size bytes)"
+GOTO shownnext
+:showdir
+COLOR cyan
+PRINT "$index  [$name]"
+COLOR white
+:shownnext
+ADD shown 1
+GOTO showone
+:shownpage
+FCLOSE
+PRINT ""
+PRINT "number open  u up  n/p page  k mkdir  r refresh  q quit"
+INPUT text "files> "
+IFEQ $text "u" GOTO up
+IFEQ $text "n" GOTO nextpage
+IFEQ $text "p" GOTO prevpage
+IFEQ $text "k" GOTO mkdir
+IFEQ $text "r" GOTO browse
+IFEQ $text "q" GOTO leave
+GOSUB str2num
+IF $got = 0 GOTO browse
+SET wanted $num
+IF $wanted < 1 GOTO browse
+GOSUB select
+IF $selected = 0 GOTO browse
+IFEQ $type "D" GOTO enterdir
+GOTO filemenu
+:empty
+FCLOSE
+PRINT "(empty)"
+SET page 0
+GOTO shownpage
+:listfail
+FCLOSE
+COLOR red
+PRINT "files: cannot list $path"
+COLOR white
+INPUT text "enter> "
+SETSTR path "/"
+SET page 0
+GOTO browse
+
+:nextpage
+IF $shown < 15 GOTO browse
+ADD page 1
+GOTO browse
+:prevpage
+SUB page 1
+IF $page >= 0 GOTO browse
+SET page 0
+GOTO browse
+
+:up
+GOSUB parent
+SET page 0
+GOTO browse
+:enterdir
+GOSUB join
+SETSTR path $target
+SET page 0
+GOTO browse
+
+:mkdir
+INPUT name "directory name> "
+LEN n $name
+IF $n = 0 GOTO browse
+GOSUB join
+FMKDIR $target
+IF $fok = 1 GOTO browse
+PRINT "could not create $target"
+INPUT text "enter> "
+GOTO browse
+
+:filemenu
+CLEAR
+COLOR pink
+PRINT "$name"
+COLOR white
+PRINT "$size bytes in $path"
+PRINT ""
+PRINT "o view text"
+PRINT "c copy"
+PRINT "m move"
+PRINT "d delete"
+PRINT "b back"
+INPUT text "file> "
+IFEQ $text "o" GOTO view
+IFEQ $text "c" GOTO copy
+IFEQ $text "m" GOTO move
+IFEQ $text "d" GOTO delete
+GOTO browse
+
+:sourcepath
+GOSUB join
+SETSTR source $target
+RETURN
+
+:copy
+GOSUB sourcepath
+INPUT destination "copy to full path> "
+LEN n $destination
+IF $n = 0 GOTO browse
+FCOPY $source $destination
+IF $fok = 1 GOTO browse
+PRINT "copy failed"
+INPUT text "enter> "
+GOTO browse
+
+:move
+GOSUB sourcepath
+INPUT destination "move to full path> "
+LEN n $destination
+IF $n = 0 GOTO browse
+FMOVE $source $destination
+IF $fok = 1 GOTO browse
+PRINT "move failed"
+INPUT text "enter> "
+GOTO browse
+
+:delete
+GOSUB sourcepath
+INPUT confirm "type DELETE> "
+IFNE $confirm "DELETE" GOTO browse
+FDELETE $source
+GOTO browse
+
+:view
+GOSUB sourcepath
+CLEAR
+FOPEN $source read
+IF $fok = 0 GOTO viewfail
+SET lines 0
+:viewloop
+FREAD line
+IF $feof = 1 GOTO viewdone
+PRINT "$line"
+ADD lines 1
+IF $lines < 20 GOTO viewloop
+SET lines 0
+INPUT text "enter more, q stop> "
+IFEQ $text "q" GOTO viewdone
+GOTO viewloop
+:viewdone
+FCLOSE
+INPUT text "enter> "
+GOTO filemenu
+:viewfail
+FCLOSE
+PRINT "cannot open $source as text"
+INPUT text "enter> "
+GOTO filemenu
+
+:select
+SET selected 0
+FOPEN "/files.list" read
+IF $fok = 0 GOTO seldone
+SET index 1
+:selloop
+FREAD line
+IF $feof = 1 GOTO seldone
+IF $index = $wanted GOTO selfound
+ADD index 1
+GOTO selloop
+:selfound
+GOSUB parserow
+SET selected 1
+:seldone
+FCLOSE
+RETURN
+
+# line D|name|size -> type, name, size
+:parserow
+SUBSTR type $line 0 1
+LEN linelen $line
+SET i 2
+:prscan
+IF $i >= $linelen GOTO prbad
+CHARAT ch $line $i
+IF $ch = 124 GOTO prfound
+ADD i 1
+GOTO prscan
+:prfound
+EXPR count $i - 2
+SUBSTR name $line 2 $count
+ADD i 1
+EXPR count $linelen - $i
+SUBSTR size $line $i $count
+RETURN
+:prbad
+SETSTR type "?"
+SETSTR name $line
+SETSTR size "0"
+RETURN
+
+# target = path/name
+:join
+IFEQ $path "/" GOTO joinroot
+SETSTR target $path
+APPEND target "/"
+APPEND target $name
+RETURN
+:joinroot
+SETSTR target "/"
+APPEND target $name
+RETURN
+
+:parent
+IFEQ $path "/" GOTO pardone
+LEN n $path
+SET i 0
+SET last 0
+:parscan
+IF $i >= $n GOTO parcut
+CHARAT ch $path $i
+IF $ch <> 47 GOTO parnext
+SET last $i
+:parnext
+ADD i 1
+GOTO parscan
+:parcut
+IF $last > 0 GOTO parsub
+SETSTR path "/"
+RETURN
+:parsub
+SUBSTR path $path 0 $last
+:pardone
+RETURN
+
+:str2num
+SET num 0
+SET got 0
+SET i 0
+LEN n $text
+IF $n = 0 GOTO sn_done
+SET got 1
+:sn_loop
+IF $i >= $n GOTO sn_done
+CHARAT digit $text $i
+IF $digit < 48 GOTO sn_bad
+IF $digit > 57 GOTO sn_bad
+SUB digit 48
+MUL num 10
+ADD num $digit
+ADD i 1
+GOTO sn_loop
+:sn_bad
+SET got 0
+:sn_done
+RETURN
+
+:leave
+FDELETE "/files.list"
+PRINT "files: done"
+EXIT

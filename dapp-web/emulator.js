@@ -389,7 +389,8 @@ const runtime = new DappRuntime(io, fileSystem, {
   ip: () => machine.wifiConnected ? machine.ip : "0.0.0.0",
   wifi: () => Number(machine.wifiConnected),
   millis: () => machine.uptimeSeconds() * 1000,
-  seconds: () => machine.uptimeSeconds()
+  seconds: () => machine.uptimeSeconds(),
+  dapper: parts => shell.command_dapper(["dapper", ...parts])
 });
 
 async function runApp(path, source) {

@@ -18,7 +18,7 @@ for (const filename of filenames) {
   apps[id] = { source: await readFile(path.join(appsDirectory, filename), "utf8") };
 }
 
-const firmwareAppIds = [...firmwareSeedSource.matchAll(/"\/system\/apps\/([a-z0-9-]+)\.dapp"/g)]
+const firmwareAppIds = [...firmwareSeedSource.matchAll(/\{\s*"\/system\/apps\/([a-z0-9-]+)\.dapp"\s*,\s*BUNDLED_APP_[A-Z0-9_]+\s*\}/g)]
   .map(match => match[1]);
 for (const id of firmwareAppIds) {
   if (!apps[id]) throw new Error(`BundledApps.ino references missing apps/${id}.dapp`);

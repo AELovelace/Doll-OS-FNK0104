@@ -71,7 +71,11 @@ the JSON body itself, not the status code.
 
 - `POST /auth` `{"username","password"}` -- logs in, or creates the account
   on a username's first use. Returns `{"ok":true,"token","created"}` or
-  `{"ok":false,"error"}` (`bad_request`, `bad_password`).
+  `{"ok":false,"error"}` (`bad_request`, `bad_password`). An account holds
+  **one** token, replaced on every sign-in, so signing the same username in on
+  a second unit retires the first unit's token: its `/send` calls start coming
+  back `unauthorized` while its polling carries on working. Give each unit its
+  own username.
 - `POST /send` `{"room","text"}`, header `Authorization: Bearer <token>` --
   posts one message. `text` is trimmed to 200 characters server-side.
 - `GET /poll?room=<room>&since=<last id seen>` -- up to 10 messages newer
