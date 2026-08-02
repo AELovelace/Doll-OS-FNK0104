@@ -14,12 +14,85 @@
 
 //   Boot / init
 
-void pushDisplayFrame() {
+//   Partial pushes.
+//
+//   Redrawing the whole sprite every frame is cheap -- it is memory. The blit is the
+//   expensive half: 16bpp over the panel bus is ~150KB per frame at 320x240 and ~300KB at
+//   480x320, and a canvas app that moves one character was paying the full price of it on
+//   every FLIP. That transfer, not the interpreter, is what set the ceiling on how fast a
+//   dapp game could feel.
+//
+//   So the frame is diffed against a shadow copy of what the panel was last sent, and only
+//   the rows that actually differ go over the bus. A PSRAM memcmp is an order of magnitude
+//   cheaper than the transfer it avoids. The scheme cannot produce a wrong frame on its own
+//   terms: a row is either byte-identical to what the panel already holds, or it is pushed.
+//
+//   It can go wrong one way -- if something draws to the panel *without* going through the
+//   sprite, the shadow no longer describes the glass. Gameboy.ino does exactly that, so any
+//   such path has to call displayInvalidateShadow(). Allocation failure is not a failure
+//   mode: a null shadow just means every push is a full one, which is the old behaviour.
+static uint16_t* displayShadow = nullptr;
+static bool displayShadowValid = false;
+
+void displayInvalidateShadow() {
+    displayShadowValid = false;
+}
+
+static void pushDisplayRows(int y, int rowCount) {
+    if (rowCount <= 0) {
+        return;
+    }
+    uint16_t* src = (uint16_t*)frameSprite.getPointer() + (size_t)y * DISPLAY_WIDTH;
 #ifdef FNK0104N_3P5_320x480_ST77922
-    tft_st77922.Fill_Colors(0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, (uint16_t*)frameSprite.getPointer());
+    tft_st77922.Fill_Colors(0, y, DISPLAY_WIDTH, rowCount, src);
 #else
-    frameSprite.pushSprite(0, 0);
+    //mirrors what TFT_eSprite::pushSprite does for a 16bpp sprite -- the sprite's buffer is
+    //already in the panel's byte order, so the swap has to be off for the transfer
+    bool oldSwapBytes = tft.getSwapBytes();
+    tft.setSwapBytes(false);
+    tft.pushImage(0, y, DISPLAY_WIDTH, rowCount, src);
+    tft.setSwapBytes(oldSwapBytes);
 #endif
+}
+
+void pushDisplayFrame() {
+    uint16_t* frame = (uint16_t*)frameSprite.getPointer();
+    const size_t rowWords = (size_t)DISPLAY_WIDTH;
+    const size_t rowBytes = rowWords * sizeof(uint16_t);
+
+    //TFT_eSprite::pushSprite used to do this guard for us -- nothing to send before
+    //createSprite has run, and the row pointers below would be offsets from null
+    if (!frame) {
+        return;
+    }
+
+    if (!displayShadow || !displayShadowValid) {
+        pushDisplayRows(0, DISPLAY_HEIGHT);
+        if (displayShadow) {
+            memcpy(displayShadow, frame, rowBytes * DISPLAY_HEIGHT);
+            displayShadowValid = true;
+        }
+        return;
+    }
+
+    int row = 0;
+    while (row < DISPLAY_HEIGHT) {
+        const uint16_t* frameRow = frame + (size_t)row * rowWords;
+        if (memcmp(frameRow, displayShadow + (size_t)row * rowWords, rowBytes) == 0) {
+            row++;
+            continue;
+        }
+        //walk the whole run of changed rows so they go out as one transfer rather than one
+        //setAddrWindow per row
+        int start = row;
+        while (row < DISPLAY_HEIGHT &&
+               memcmp(frame + (size_t)row * rowWords,
+                      displayShadow + (size_t)row * rowWords, rowBytes) != 0) {
+            memcpy(displayShadow + (size_t)row * rowWords, frame + (size_t)row * rowWords, rowBytes);
+            row++;
+        }
+        pushDisplayRows(start, row - start);
+    }
 }
 
 void initDisplay() {
@@ -45,6 +118,18 @@ void initDisplay() {
 #endif
     Serial.printf("[psram] frameSprite: %u bytes drawn from PSRAM (0 => it fell back to internal RAM)\n",
                   (unsigned)(psramFreeBeforeSprite - ESP.getFreePsram()));
+
+    //   Same size as the sprite. Deliberately PSRAM-or-nothing rather than going through
+    //   psramOrInternalCalloc: this buffer only buys speed, and taking 150KB of the scarce
+    //   internal pool to get it would be a bad trade. A null result costs nothing but the
+    //   old full-frame push.
+    displayShadow = (uint16_t*) heap_caps_calloc(
+        (size_t)DISPLAY_WIDTH * DISPLAY_HEIGHT, sizeof(uint16_t), MALLOC_CAP_SPIRAM);
+    displayShadowValid = false;
+    Serial.printf("[psram] displayShadow: %u bytes -> %s\n",
+                  (unsigned)((size_t)DISPLAY_WIDTH * DISPLAY_HEIGHT * sizeof(uint16_t)),
+                  displayShadow ? "PSRAM (partial frame pushes enabled)"
+                                : "unavailable (full frame pushes)");
 
     frameSprite.setTextColor(TFT_WHITE, TFT_BLACK);
     frameSprite.fillSprite(TFT_BLACK);

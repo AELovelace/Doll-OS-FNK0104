@@ -1,5 +1,9 @@
 # AppRunner optimization plan
 
+> **Status: most of this is implemented.** See "What shipped" at the bottom for what landed,
+> what changed from the plan, and what is still outstanding. The analysis below is kept as
+> written because it is the reasoning the changes were made from.
+
 Goal: make bigger `.dapp` apps *feel* fast on device. Two separate things contribute to
 "feel", and they need different fixes:
 
@@ -303,3 +307,80 @@ order, or in parallel.
 - particular attention to apps using arrays and `APPEND`, since Phase 2's name interning and
   Phase 4's in-place concat are the two changes most likely to alter behaviour rather than
   just timing.
+
+---
+
+## What shipped
+
+Implemented in one pass and verified to compile clean for
+`esp32:esp32:esp32s3` at `FNK0104AB_2P8_240x320_ILI9341` (the variant currently selected in
+[config.h](config.h)). **Not yet run on hardware** — see "What to watch for" below.
+
+### Interpreter
+
+- **Load-time opcode decode.** `DappLine` ([global.h:224](global.h#L224)) now carries a
+  `uint8_t opcode`, the pre-trimmed `arg`, and a pre-resolved `jumpTarget`. `appLoad` does
+  the trim/split/uppercase/match once per line; `appExecute`'s per-instruction preamble is
+  an array index and an integer compare, where it used to be four String allocations.
+- **The ~70-deep string chain is now integer comparisons** against a generated
+  `DAPP_OP_*` enum, so `GOTO` and `IF` no longer pay for being at the bottom of it. The
+  chain was left as a chain rather than converted to a `switch`: at ~1 cycle per test the
+  ordering stopped mattering once the strcmps were gone, and keeping the structure made the
+  change reviewable.
+- **Labels resolve at load**, in a second pass (a `GOTO` can name a label defined later).
+  `appFindLabel`'s linear scan now only runs for a label that failed to resolve — which is
+  an error path anyway.
+- **Slot scans stop at the first free slot** (`appFindVar`, `appFindStringVar`,
+  `appFindArray`), instead of always walking all 64/32/16 entries.
+- **Operand normalization no longer copies.** `appValueOf`, `appStringValueOf` and
+  `appNumericTarget` take `const String&` and resolve trim/quote/`$` handling as index
+  bounds, so a clean token costs no allocation and a `$`-prefixed one costs a single
+  substring instead of three whole-string copies.
+
+### Latency
+
+- **`appRuntimeYield(false)` no longer sleeps 1ms per call.** It feeds the watchdog and
+  returns, with a real yield paced by `DAPP_YIELD_INTERVAL_MS` on the clock. This is the
+  ~3ms that every 800-cell `FLIP` was spending asleep before drawing anything.
+- **Partial frame pushes.** `pushDisplayFrame` ([Display.ino:17](Display.ino#L17)) diffs the
+  sprite against a PSRAM shadow of what the panel was last sent and transfers only the rows
+  that changed, coalesced into runs. A canvas app that moves one character now moves a few
+  rows instead of the full 150KB frame.
+
+### Strings
+
+- `appSetStringValue` skips its allocate-and-copy when the value is already under the cap.
+- `APPEND` grows the existing buffer in place via a new `appAppendStringValue`, instead of
+  building `existing + addition` and then copying that again — it was quadratic with a
+  factor of two on top.
+- Both text expanders copy literal stretches in runs into a reserved buffer, and return
+  immediately for text containing no `$` at all.
+
+### Departures from the plan above
+
+- **Phase 0's profiler was not built.** The changes were made from static analysis instead.
+  That means the speedups are un-quantified — the profiler is still the right next step, and
+  is now the only way to know which of these mattered most.
+- **Arguments are not pre-split.** Storing `String args[N]` per line would have cost
+  meaningful internal RAM at `DAPP_MAX_LINES` = 4000 for a benefit that shrank a lot once
+  the four preamble allocations were gone. `IF`/`IFEQ` still call `splitCommand` at runtime.
+- **Variable and array names are not interned to slot indices.** With the slot scans now
+  early-outing, this became a smaller win than it looked; it is still the largest remaining
+  interpreter item, particularly for `board[$i]` in a nested loop.
+- **No dirty-rect tracking in the draw layer.** The row-diff against a shadow buffer gets
+  the same transfer saving without needing every draw call to declare what it touched, and
+  it cannot produce a wrong frame. Plan items 3.3 (skip chrome redraw) and 3.4 (batch
+  same-colour runs) were therefore not needed and were skipped.
+
+### What to watch for
+
+- **The shadow buffer assumes everything reaches the panel through the sprite.**
+  `Gameboy.ino` draws straight to `tft`, so it calls `displayInvalidateShadow()` on exit.
+  Anything else added later that bypasses the sprite must do the same, or its region will
+  be left stale on screen.
+- **The `FNK0104N_3P5_320x480_ST77922` push path is `#ifdef`'d out of this build**, so the
+  partial-push change to it was not compile-checked. It is the same call shape as before
+  with a varying `sy`/`h`, but it needs a build on that variant before being trusted.
+- A `:label` line on an app that has already hit `DAPP_MAX_LABELS` (256) is now a silent
+  no-op rather than an "unknown app command" error at runtime. Reaching that cap at all is
+  the real problem in either case.

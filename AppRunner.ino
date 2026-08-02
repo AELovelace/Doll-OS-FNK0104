@@ -65,20 +65,41 @@ const int DAPP_STEPS_PER_YIELD = 256;
 
 static void appPollAbortChord();
 
+//How often the bulk-work yield below is allowed to actually sleep. Paced by the clock
+//rather than by a character or cell count, which is what the callers can cheaply count but
+//has no relationship to how long the work took.
+const unsigned long DAPP_YIELD_INTERVAL_MS = 20;
+static unsigned long dappLastYieldMs = 0;
+
 static void appRuntimeYield(bool serviceUi) {
     esp_task_wdt_reset();
-    if (serviceUi) {
-        appPollAbortChord();
-        ftpService();
-        radioService();
-        maintainInternetConnection();
-        ledService();
-        //Canvas apps build a frame through CLS/PUT and make it visible with FLIP.
-        //Pushing here paints that half-built frame and reads as a screen flash.
-        if (!dappCanvasActive) {
-            drawDisplayFrame();
+    if (!serviceUi) {
+        //Bulk-work callers -- text expansion, canvas fill, telnet frame building -- reach
+        //here every 128 characters or 256 cells. The watchdog reset above is the entire
+        //point of those calls. The unconditional delay(1) that used to follow cost a
+        //millisecond per 128 characters, so an 800-cell FLIP spent ~3ms asleep before
+        //drawing anything, and a long PRINT stalled proportionally to its length -- all of
+        //it latency with no scheduling benefit, since it is esp_task_wdt_reset that feeds
+        //the watchdog. A real yield still happens, just on a clock.
+        unsigned long now = millis();
+        if (now - dappLastYieldMs >= DAPP_YIELD_INTERVAL_MS) {
+            dappLastYieldMs = now;
+            delay(1);
         }
+        return;
     }
+
+    appPollAbortChord();
+    ftpService();
+    radioService();
+    maintainInternetConnection();
+    ledService();
+    //Canvas apps build a frame through CLS/PUT and make it visible with FLIP.
+    //Pushing here paints that half-built frame and reads as a screen flash.
+    if (!dappCanvasActive) {
+        drawDisplayFrame();
+    }
+    dappLastYieldMs = millis();
     delay(1);
 }
 
@@ -176,25 +197,6 @@ static bool endsWithIgnoreCase(String value, const String& suffix) {
 
 static String trimCopy(String value) {
     value.trim();
-    return value;
-}
-
-//   Deliberately does not trim. Both callers hand over an already-trimmed token -- the
-//   opcode's `arg` is trimCopy'd where it is parsed, and splitCommand splits on spaces so
-//   its parts never carry any -- which left the trim doing nothing useful and one thing
-//   actively wrong. splitCommand removes an argument's quotes as it splits, so a literal
-//   like `APPEND pad " "` reaches here as a bare space with no quotes left to protect it,
-//   and trimming turned it into the empty string: the append silently added nothing. That
-//   is invisible in the browser runtime, whose splitter keeps the quotes on until after
-//   this step, so padding built out of " " worked there and vanished on hardware.
-static String stripMatchingQuotes(String value) {
-    if (value.length() >= 2) {
-        char first = value[0];
-        char last = value[value.length() - 1];
-        if ((first == '"' && last == '"') || (first == '\'' && last == '\'')) {
-            return value.substring(1, value.length() - 1);
-        }
-    }
     return value;
 }
 
@@ -383,9 +385,16 @@ static int appFindLabel(const DappLabel labels[], int labelCount, String name) {
     return -1;
 }
 
+//   Slot tables are filled strictly front-to-back by the appEnsure* routines below and
+//   nothing ever releases a slot, so the first unused entry is the end of the table. The
+//   scans stop there rather than walking all DAPP_MAX_* entries: an app with four variables
+//   was paying for sixty-four comparisons on every operand of every instruction.
 static int appFindVar(DappVar vars[], const String& name) {
     for (int i = 0; i < DAPP_MAX_VARS; i++) {
-        if (vars[i].used && vars[i].name == name) {
+        if (!vars[i].used) {
+            break;
+        }
+        if (vars[i].name == name) {
             return i;
         }
     }
@@ -410,7 +419,10 @@ static int appEnsureVar(DappVar vars[], const String& name) {
 
 static int appFindStringVar(DappStringVar vars[], const String& name) {
     for (int i = 0; i < DAPP_MAX_STRING_VARS; i++) {
-        if (vars[i].used && vars[i].name == name) {
+        if (!vars[i].used) {
+            break;
+        }
+        if (vars[i].name == name) {
             return i;
         }
     }
@@ -434,8 +446,29 @@ static int appEnsureStringVar(DappStringVar vars[], const String& name) {
     return -1;
 }
 
+//   The substring is only needed when the value actually exceeds the cap, which almost
+//   never happens -- but building it unconditionally meant every string assignment, however
+//   short, paid for an allocate-and-copy it then threw away.
 static void appSetStringValue(DappStringVar vars[], int slot, const String& value) {
+    if ((int)value.length() <= DAPP_MAX_STRING_LEN) {
+        vars[slot].value = value;
+        return;
+    }
     vars[slot].value = value.substring(0, DAPP_MAX_STRING_LEN);
+}
+
+//   APPEND's path. Building `existing + addition` and handing that to appSetStringValue
+//   copied the whole accumulated string twice per append, so a script growing a line in a
+//   loop was quadratic with a factor of two on top. concat grows the existing buffer in
+//   place instead, and only the overflow case -- where the result has to be cut back to the
+//   cap anyway -- falls back to a copy.
+static void appAppendStringValue(DappStringVar vars[], int slot, const String& addition) {
+    if ((int)(vars[slot].value.length() + addition.length()) <= DAPP_MAX_STRING_LEN) {
+        vars[slot].value.concat(addition);
+        return;
+    }
+    String combined = vars[slot].value + addition;
+    vars[slot].value = combined.substring(0, DAPP_MAX_STRING_LEN);
 }
 
 static bool appIsInteger(const String& token) {
@@ -471,7 +504,10 @@ static bool appIsNameChar(char ch) {
 
 static int appFindArray(DappProgram& program, const String& name) {
     for (int i = 0; i < DAPP_MAX_ARRAYS; i++) {
-        if (program.arrays[i].used && program.arrays[i].name == name) {
+        if (!program.arrays[i].used) {
+            break;
+        }
+        if (program.arrays[i].name == name) {
             return i;
         }
     }
@@ -703,13 +739,40 @@ static long appBuiltinValue(String name) {
     return 0;
 }
 
-static long appValueOf(String token, DappProgram& program) {
-    token.trim();
-    token = stripMatchingQuotes(token);
-    if (token.startsWith("$")) {
-        token.remove(0, 1);
+//   Operand normalization -- trim, optionally drop matching quotes, drop a leading '$'.
+//
+//   The three lookups below run on every operand of every instruction, and each of them
+//   used to do this by copying: taken by value (one copy), handed to a quote stripper
+//   (another), then mutated. Reporting the result as bounds into the caller's String
+//   instead means the common token -- already trimmed and unquoted by splitCommand -- costs
+//   no allocation at all, and a '$'-prefixed one costs a single substring rather than three
+//   whole-string copies.
+//
+//   stripQuotes is off for the string-valued callers, and that asymmetry is load-bearing
+//   rather than an oversight: splitCommand removes an argument's quotes as it splits, so a
+//   literal like `APPEND pad " "` arrives here as a bare space with no quotes left to
+//   protect it. Stripping again would take a legitimate one-character value apart. (The
+//   browser runtime keeps quotes on until after this step, which is why padding built out
+//   of " " worked there and used to vanish on hardware.)
+static void appNormalizeToken(const String& token, int& begin, int& end, bool stripQuotes) {
+    begin = 0;
+    end = (int)token.length();
+    while (begin < end && isspace((unsigned char)token[begin])) begin++;
+    while (end > begin && isspace((unsigned char)token[end - 1])) end--;
+    if (stripQuotes && end - begin >= 2) {
+        char first = token[begin];
+        char last = token[end - 1];
+        if ((first == '"' && last == '"') || (first == '\'' && last == '\'')) {
+            begin++;
+            end--;
+        }
     }
+    if (begin < end && token[begin] == '$') {
+        begin++;
+    }
+}
 
+static long appValueOfNormalized(const String& token, DappProgram& program) {
     String name;
     String indexToken;
     if (appParseSubscript(token, name, indexToken)) {
@@ -727,12 +790,17 @@ static long appValueOf(String token, DappProgram& program) {
     return appBuiltinValue(token);
 }
 
-static String appStringValueOf(String token, DappProgram& program) {
-    token.trim();
-    if (token.startsWith("$")) {
-        token.remove(0, 1);
+static long appValueOf(const String& token, DappProgram& program) {
+    int begin, end;
+    appNormalizeToken(token, begin, end, true);
+    if (begin == 0 && end == (int)token.length()) {
+        return appValueOfNormalized(token, program);   //nothing to strip -- no copy at all
     }
+    String normalized = token.substring(begin, end);
+    return appValueOfNormalized(normalized, program);
+}
 
+static String appStringValueOfNormalized(const String& token, DappProgram& program) {
     String name;
     String indexToken;
     if (appParseSubscript(token, name, indexToken)) {
@@ -777,6 +845,17 @@ static String appStringValueOf(String token, DappProgram& program) {
     return "";
 }
 
+static String appStringValueOf(const String& token, DappProgram& program) {
+    int begin, end;
+    //quotes are deliberately left alone here -- see the note on stripMatchingQuotes
+    appNormalizeToken(token, begin, end, false);
+    if (begin == 0 && end == (int)token.length()) {
+        return appStringValueOfNormalized(token, program);
+    }
+    String normalized = token.substring(begin, end);
+    return appStringValueOfNormalized(normalized, program);
+}
+
 //shared scanner for the two expanders below: at text[i] == '$', works out how far the
 //reference runs (name, plus a [subscript] if one follows) and hands back the reference
 //text without the '$'. Returns the index to continue scanning from, or -1 if the '$' is
@@ -800,25 +879,49 @@ static int appScanReference(const String& text, int dollarIdx, String& refOut) {
     return end;
 }
 
-static String appExpandText(String text, DappProgram& program) {
-    text = stripMatchingQuotes(text);
-    String out = "";
-    for (int i = 0; i < (int)text.length(); i++) {
+//   Both expanders used to build their result a character at a time into an unreserved
+//   String, so a long PRINT re-grew the output buffer over and over. They now copy the
+//   literal stretches between references in whole runs, and the common case -- text with no
+//   '$' in it at all -- returns without entering the loop. Quote stripping is done with
+//   index bounds rather than by building a trimmed copy first.
+static String appExpandText(const String& text, DappProgram& program) {
+    int begin = 0;
+    int end = (int)text.length();
+    if (end - begin >= 2) {
+        char first = text[begin];
+        char last = text[end - 1];
+        if ((first == '"' && last == '"') || (first == '\'' && last == '\'')) {
+            begin++;
+            end--;
+        }
+    }
+
+    int firstDollar = text.indexOf('$', begin);
+    if (firstDollar < 0 || firstDollar >= end) {
+        return text.substring(begin, end);
+    }
+
+    const char* base = text.c_str();
+    String out;
+    out.reserve(end - begin + 16);
+    int runStart = begin;
+    for (int i = firstDollar; i < end; i++) {
         if ((i & 0x7f) == 0x7f) appRuntimeYield(false);
         if (text[i] != '$') {
-            out += text[i];
             continue;
         }
 
         String ref;
         int next = appScanReference(text, i, ref);
-        if (next < 0) {
-            out += '$';
-            continue;
+        if (next < 0 || next > end) {
+            continue;   //not a reference -- the '$' stays part of the literal run
         }
-        out += appStringValueOf(ref, program);
+        out.concat(base + runStart, i - runStart);
+        out.concat(appStringValueOf(ref, program));
         i = next - 1;
+        runStart = next;
     }
+    out.concat(base + runStart, end - runStart);
     return out;
 }
 
@@ -826,23 +929,33 @@ static String appExpandText(String text, DappProgram& program) {
 //value -- a string variable landing in the middle of an expression would only ever be a
 //syntax error, so this guarantees tinyexpr sees digits wherever the script wrote a '$'.
 static String appExpandNumericText(const String& text, DappProgram& program) {
-    String out = "";
-    for (int i = 0; i < (int)text.length(); i++) {
+    const int end = (int)text.length();
+    int firstDollar = text.indexOf('$');
+    if (firstDollar < 0) {
+        return text;
+    }
+
+    const char* base = text.c_str();
+    String out;
+    out.reserve(end + 16);
+    int runStart = 0;
+    for (int i = firstDollar; i < end; i++) {
         if ((i & 0x7f) == 0x7f) appRuntimeYield(false);
         if (text[i] != '$') {
-            out += text[i];
             continue;
         }
 
         String ref;
         int next = appScanReference(text, i, ref);
         if (next < 0) {
-            out += '$';
-            continue;
+            continue;   //not a reference -- the '$' stays part of the literal run
         }
-        out += String(appValueOf(ref, program));
+        out.concat(base + runStart, i - runStart);
+        out.concat(appValueOf(ref, program));
         i = next - 1;
+        runStart = next;
     }
+    out.concat(base + runStart, end - runStart);
     return out;
 }
 
@@ -864,12 +977,7 @@ static String appStringOperand(String token, DappProgram& program) {
 
 //resolves a write target -- "score" (a numeric variable, created on first use) or
 //"board[$i]" (a cell of an existing array). nullptr means the fault is already recorded.
-static long* appNumericTarget(DappProgram& program, String token) {
-    token.trim();
-    if (token.startsWith("$")) {
-        token.remove(0, 1);
-    }
-
+static long* appNumericTargetNormalized(DappProgram& program, const String& token) {
     String name;
     String indexToken;
     if (appParseSubscript(token, name, indexToken)) {
@@ -882,6 +990,16 @@ static long* appNumericTarget(DappProgram& program, String token) {
         return nullptr;
     }
     return &program.vars[slot].value;
+}
+
+static long* appNumericTarget(DappProgram& program, const String& token) {
+    int begin, end;
+    appNormalizeToken(token, begin, end, false);
+    if (begin == 0 && end == (int)token.length()) {
+        return appNumericTargetNormalized(program, token);
+    }
+    String normalized = token.substring(begin, end);
+    return appNumericTargetNormalized(program, normalized);
 }
 
 //   CANVAS -- a character grid addressed by cell, drawn over the terminal area of the panel
@@ -2416,6 +2534,216 @@ static long appRandomRange(long low, long high) {
     return low + (long)(esp_random() % span);
 }
 
+//   Load-time opcode decode. appExecute used to recover the opcode by substring'ing the
+//   line and walking a chain of ~70 String comparisons, on every execution of every line --
+//   with GOTO at position ~70 and IF at ~75, so the ops an inner loop leans on were the
+//   most expensive to recognise. The name is resolved to one of these once, at load, and
+//   the chain below compares integers instead.
+enum DappOpcode : uint8_t {
+    DAPP_OP_UNKNOWN = 0,
+    DAPP_OP_LABEL,
+    DAPP_OP_PRINT,
+    DAPP_OP_ECHO,
+    DAPP_OP_COLOR,
+    DAPP_OP_LED,
+    DAPP_OP_WAVE,
+    DAPP_OP_WAVESTOP,
+    DAPP_OP_CLEAR,
+    DAPP_OP_CLS,
+    DAPP_OP_WAIT,
+    DAPP_OP_SLEEP,
+    DAPP_OP_SET,
+    DAPP_OP_ADD,
+    DAPP_OP_SUB,
+    DAPP_OP_MUL,
+    DAPP_OP_DIV,
+    DAPP_OP_MOD,
+    DAPP_OP_EXPR,
+    DAPP_OP_DIM,
+    DAPP_OP_LIFE,
+    DAPP_OP_SETSTR,
+    DAPP_OP_APPEND,
+    DAPP_OP_CHR,
+    DAPP_OP_HEX,
+    DAPP_OP_JSONESC,
+    DAPP_OP_JSONGET,
+    DAPP_OP_SUBSTR,
+    DAPP_OP_LEN,
+    DAPP_OP_CHARAT,
+    DAPP_OP_INPUT,
+    DAPP_OP_INPUTSECRET,
+    DAPP_OP_KEY,
+    DAPP_OP_CANVAS,
+    DAPP_OP_ENDCANVAS,
+    DAPP_OP_PUT,
+    DAPP_OP_FLIP,
+    DAPP_OP_FOPEN,
+    DAPP_OP_FCLOSE,
+    DAPP_OP_FREAD,
+    DAPP_OP_FREADB,
+    DAPP_OP_FWRITE,
+    DAPP_OP_FWRITEB,
+    DAPP_OP_FSEEK,
+    DAPP_OP_FTELL,
+    DAPP_OP_FSIZE,
+    DAPP_OP_FEXISTS,
+    DAPP_OP_FDELETE,
+    DAPP_OP_FLIST,
+    DAPP_OP_FMKDIR,
+    DAPP_OP_FCOPY,
+    DAPP_OP_FMOVE,
+    DAPP_OP_HTTPCLEAR,
+    DAPP_OP_HTTPHEADER,
+    DAPP_OP_HTTPGET,
+    DAPP_OP_HTTPPOST,
+    DAPP_OP_BUFNEW,
+    DAPP_OP_BUFFREE,
+    DAPP_OP_BUFCLEAR,
+    DAPP_OP_BUFAT,
+    DAPP_OP_BUFSUB,
+    DAPP_OP_BUFWRITE,
+    DAPP_OP_BUFSCAN,
+    DAPP_OP_BUFTAKE,
+    DAPP_OP_BUFSAVE,
+    DAPP_OP_BUFLOAD,
+    DAPP_OP_HTTPGETBUF,
+    DAPP_OP_URLABS,
+    DAPP_OP_URLPART,
+    DAPP_OP_HTMLOPEN,
+    DAPP_OP_HTMLFEED,
+    DAPP_OP_HTMLCLOSE,
+    DAPP_OP_HTMLTEXT,
+    DAPP_OP_HTMLSTR,
+    DAPP_OP_DAPPER,
+    DAPP_OP_RAND,
+    DAPP_OP_GOTO,
+    DAPP_OP_GOSUB,
+    DAPP_OP_RETURN,
+    DAPP_OP_IF,
+    DAPP_OP_IFEQ,
+    DAPP_OP_IFNE,
+    DAPP_OP_EXIT,
+    DAPP_OP_END,
+    DAPP_OP_COUNT
+};
+
+//   Parallel to the enum above -- index with the opcode to get the source spelling back.
+//   Only the cold error paths need it; the hot path never turns an opcode back into text.
+static const char* const DAPP_OPCODE_NAMES[DAPP_OP_COUNT] = {
+    "",
+    "LABEL",
+    "PRINT",
+    "ECHO",
+    "COLOR",
+    "LED",
+    "WAVE",
+    "WAVESTOP",
+    "CLEAR",
+    "CLS",
+    "WAIT",
+    "SLEEP",
+    "SET",
+    "ADD",
+    "SUB",
+    "MUL",
+    "DIV",
+    "MOD",
+    "EXPR",
+    "DIM",
+    "LIFE",
+    "SETSTR",
+    "APPEND",
+    "CHR",
+    "HEX",
+    "JSONESC",
+    "JSONGET",
+    "SUBSTR",
+    "LEN",
+    "CHARAT",
+    "INPUT",
+    "INPUTSECRET",
+    "KEY",
+    "CANVAS",
+    "ENDCANVAS",
+    "PUT",
+    "FLIP",
+    "FOPEN",
+    "FCLOSE",
+    "FREAD",
+    "FREADB",
+    "FWRITE",
+    "FWRITEB",
+    "FSEEK",
+    "FTELL",
+    "FSIZE",
+    "FEXISTS",
+    "FDELETE",
+    "FLIST",
+    "FMKDIR",
+    "FCOPY",
+    "FMOVE",
+    "HTTPCLEAR",
+    "HTTPHEADER",
+    "HTTPGET",
+    "HTTPPOST",
+    "BUFNEW",
+    "BUFFREE",
+    "BUFCLEAR",
+    "BUFAT",
+    "BUFSUB",
+    "BUFWRITE",
+    "BUFSCAN",
+    "BUFTAKE",
+    "BUFSAVE",
+    "BUFLOAD",
+    "HTTPGETBUF",
+    "URLABS",
+    "URLPART",
+    "HTMLOPEN",
+    "HTMLFEED",
+    "HTMLCLOSE",
+    "HTMLTEXT",
+    "HTMLSTR",
+    "DAPPER",
+    "RAND",
+    "GOTO",
+    "GOSUB",
+    "RETURN",
+    "IF",
+    "IFEQ",
+    "IFNE",
+    "EXIT",
+    "END",
+};
+
+static const char* appOpcodeName(uint8_t opcode) {
+    return (opcode < DAPP_OP_COUNT) ? DAPP_OPCODE_NAMES[opcode] : "";
+}
+
+//   Linear, but it runs once per line at load rather than once per execution, so the
+//   table stays in source order (which groups related ops) instead of being sorted.
+static uint8_t appOpcodeFromName(const String& name) {
+    for (uint8_t i = 1; i < DAPP_OP_COUNT; i++) {
+        if (name == DAPP_OPCODE_NAMES[i]) {
+            return i;
+        }
+    }
+    return DAPP_OP_UNKNOWN;
+}
+
+//   Which argument of a jump-taking instruction holds the label, so the resolve pass below
+//   knows where to look. -1 for everything else.
+static int appJumpLabelArg(uint8_t opcode) {
+    switch (opcode) {
+        case DAPP_OP_GOTO:
+        case DAPP_OP_GOSUB: return 0;
+        case DAPP_OP_IFEQ:
+        case DAPP_OP_IFNE:  return 3;
+        case DAPP_OP_IF:    return 4;
+        default:            return -1;
+    }
+}
+
 static bool appLoad(File& file, DappProgram& program) {
     DappLine* lines = program.lines;
     DappLabel* labels = program.labels;
@@ -2436,30 +2764,68 @@ static bool appLoad(File& file, DappProgram& program) {
             return false;
         }
 
+        DappLine& record = lines[lineCount];
+        record.opcode = DAPP_OP_UNKNOWN;
+        record.jumpTarget = -1;
+
+        //trimmed once here rather than on every execution of the line -- appExecute used to
+        //re-trim, re-split and re-uppercase the same text every time it came round a loop
         String trimmed = trimCopy(line);
-        if (isAppCommentOrBlank(trimmed)) {
-            if (!reachedExecutable) {
-                appApplyMetadataDirective(trimmed, program);
+        if (isAppCommentOrBlank(trimmed) || trimmed.startsWith(":")) {
+            if (isAppCommentOrBlank(trimmed)) {
+                if (!reachedExecutable) {
+                    appApplyMetadataDirective(trimmed, program);
+                }
+            } else {
+                reachedExecutable = true;
+                if (labelCount < DAPP_MAX_LABELS) {
+                    labels[labelCount++] = { trimmed.substring(1), lineCount };
+                }
             }
+            //blanks, comments and ':' labels all execute as no-ops
+            record.opcode = DAPP_OP_LABEL;
         } else {
             reachedExecutable = true;
-            if (trimmed.startsWith(":") && labelCount < DAPP_MAX_LABELS) {
-                labels[labelCount++] = { trimmed.substring(1), lineCount };
-            } else {
-                String op = trimmed;
-                int space = op.indexOf(' ');
-                if (space >= 0) {
-                    op = op.substring(0, space);
-                }
-                op.toUpperCase();
-                if (op == "LABEL" && space >= 0 && labelCount < DAPP_MAX_LABELS) {
-                    labels[labelCount++] = { trimCopy(trimmed.substring(space + 1)), lineCount };
-                }
+            int space = trimmed.indexOf(' ');
+            String opName = (space >= 0) ? trimmed.substring(0, space) : trimmed;
+            opName.toUpperCase();
+            record.arg = (space >= 0) ? trimCopy(trimmed.substring(space + 1)) : String("");
+            record.opcode = appOpcodeFromName(opName);
+
+            if (record.opcode == DAPP_OP_UNKNOWN) {
+                //kept only for the runtime error message, which still fires when -- and only
+                //when -- the line is actually reached, exactly as it did before
+                record.opText = opName;
+            } else if (record.opcode == DAPP_OP_LABEL && space >= 0 && labelCount < DAPP_MAX_LABELS) {
+                labels[labelCount++] = { record.arg, lineCount };
             }
         }
 
-        lines[lineCount++].text = line;
+        lineCount++;
         if ((lineCount & 0x1f) == 0) appRuntimeYield(false);
+    }
+
+    //   Second pass: a GOTO may name a label defined further down, so targets can only be
+    //   resolved once every label is known. This is what turns a jump from a linear scan of
+    //   every label -- with a String compare each -- into an array index.
+    //
+    //   A label that does not resolve is deliberately left at -1 rather than reported here.
+    //   Doing otherwise would break an app whose dead branch names a missing label, which
+    //   used to run fine; the runtime path falls back to appFindLabel and reports it there,
+    //   only if the line is ever reached.
+    for (int i = 0; i < lineCount; i++) {
+        int labelArg = appJumpLabelArg(lines[i].opcode);
+        if (labelArg < 0) {
+            continue;
+        }
+        String parts[5];
+        int count = splitCommand(lines[i].arg, parts, 5);
+        if (labelArg == 0) {
+            lines[i].jumpTarget = (int16_t)appFindLabel(labels, labelCount, lines[i].arg);
+        } else if (count > labelArg) {
+            lines[i].jumpTarget = (int16_t)appFindLabel(labels, labelCount, parts[labelArg]);
+        }
+        if ((i & 0x1f) == 0) appRuntimeYield(false);
     }
 
     return true;
@@ -2488,25 +2854,23 @@ static bool appExecute(DappProgram& program) {
             appRuntimeYield();   //service the board so a long loop can't starve the watchdog
         }
 
-        String line = trimCopy(lines[pc].text);
+        //   All of this -- trim, split, uppercase, match -- happened at load. What is left
+        //   per instruction is an array index and an integer compare, where it used to be
+        //   four String allocations before the opcode had even been recognised.
+        const DappLine& current = lines[pc];
+        const uint8_t op = current.opcode;
+        const String& arg = current.arg;
+        const int16_t jumpTarget = current.jumpTarget;
         pc++;
         const int lineNumber = pc;   //1-based, captured before any jump moves pc
-        if (isAppCommentOrBlank(line) || line.startsWith(":")) {
-            continue;
-        }
 
-        int space = line.indexOf(' ');
-        String op = (space >= 0) ? line.substring(0, space) : line;
-        String arg = (space >= 0) ? trimCopy(line.substring(space + 1)) : "";
-        op.toUpperCase();
-
-        if (op == "LABEL") {
+        if (op == DAPP_OP_LABEL) {
             continue;
-        } else if (op == "PRINT" || op == "ECHO") {
+        } else if (op == DAPP_OP_PRINT || op == DAPP_OP_ECHO) {
             outLine(appExpandText(arg, program), color);
-        } else if (op == "COLOR") {
+        } else if (op == DAPP_OP_COLOR) {
             color = appColorByName(arg);
-        } else if (op == "LED") {
+        } else if (op == DAPP_OP_LED) {
             String parts[3];
             int count = splitCommand(arg, parts, 3);
             if (count < 3) {
@@ -2520,7 +2884,7 @@ static bool appExecute(DappProgram& program) {
             ledSetAppOverrideRgbLong(appValueOf(parts[0], program),
                                      appValueOf(parts[1], program),
                                      appValueOf(parts[2], program));
-        } else if (op == "WAVE") {
+        } else if (op == DAPP_OP_WAVE) {
             String parts[4];
             int count = splitCommand(arg, parts, 4);
             if (count < 4) {
@@ -2543,9 +2907,9 @@ static bool appExecute(DappProgram& program) {
                 return false;
             }
             dappSynthSetChannel(channel, waveform, frequency, level);
-        } else if (op == "WAVESTOP") {
+        } else if (op == DAPP_OP_WAVESTOP) {
             dappSynthEnd();
-        } else if (op == "CLEAR" || op == "CLS") {
+        } else if (op == DAPP_OP_CLEAR || op == DAPP_OP_CLS) {
             //while a canvas is up this means "blank the grid", not "wipe the scrollback the
             //canvas is drawn over" -- the latter would be visible only after ENDCANVAS
             if (dappCanvasActive) {
@@ -2553,35 +2917,35 @@ static bool appExecute(DappProgram& program) {
             } else {
                 outClearScreen();
             }
-        } else if (op == "WAIT" || op == "SLEEP") {
+        } else if (op == DAPP_OP_WAIT || op == DAPP_OP_SLEEP) {
             unsigned long waitMs = (unsigned long)appValueOf(arg, program);
             appDelay(waitMs);
             if (waitMs > 0) {
                 steps = 0;   //a paced loop isn't a runaway one -- see DAPP_MAX_STEPS
             }
-        } else if (op == "SET" || op == "ADD" || op == "SUB" || op == "MUL" || op == "DIV" || op == "MOD") {
+        } else if (op == DAPP_OP_SET || op == DAPP_OP_ADD || op == DAPP_OP_SUB || op == DAPP_OP_MUL || op == DAPP_OP_DIV || op == DAPP_OP_MOD) {
             String parts[2];
             int count = splitCommand(arg, parts, 2);
             if (count < 2) {
-                outLine("run: " + op + " needs <name> <value>", C_RED);
+                outLine("run: " + String(appOpcodeName(op)) + " needs <name> <value>", C_RED);
                 return false;
             }
             long value = appValueOf(parts[1], program);
-            if ((op == "DIV" || op == "MOD") && value == 0) {
-                outLine("run: " + op + " by zero", C_RED);
+            if ((op == DAPP_OP_DIV || op == DAPP_OP_MOD) && value == 0) {
+                outLine("run: " + String(appOpcodeName(op)) + " by zero", C_RED);
                 return false;
             }
             long* target = appNumericTarget(program, parts[0]);
             if (!target) {
                 continue;   //fault recorded; the check at the bottom of the loop reports it
             }
-            if (op == "SET") *target = value;
-            else if (op == "ADD") *target += value;
-            else if (op == "SUB") *target -= value;
-            else if (op == "MUL") *target *= value;
-            else if (op == "DIV") *target /= value;
+            if (op == DAPP_OP_SET) *target = value;
+            else if (op == DAPP_OP_ADD) *target += value;
+            else if (op == DAPP_OP_SUB) *target -= value;
+            else if (op == DAPP_OP_MUL) *target *= value;
+            else if (op == DAPP_OP_DIV) *target /= value;
             else *target %= value;
-        } else if (op == "EXPR") {
+        } else if (op == DAPP_OP_EXPR) {
             //not split with splitCommand: the expression is the whole rest of the line,
             //spaces and all (tinyexpr skips whitespace itself), so it is taken verbatim
             int split = arg.indexOf(' ');
@@ -2606,7 +2970,7 @@ static bool appExecute(DappProgram& program) {
                 continue;
             }
             *target = (long)(result >= 0 ? result + 0.5 : result - 0.5);
-        } else if (op == "DIM") {
+        } else if (op == DAPP_OP_DIM) {
             String parts[2];
             int count = splitCommand(arg, parts, 2);
             if (count < 2) {
@@ -2616,7 +2980,7 @@ static bool appExecute(DappProgram& program) {
             if (!appDimArray(program, parts[0], appValueOf(parts[1], program))) {
                 return false;
             }
-        } else if (op == "LIFE") {
+        } else if (op == DAPP_OP_LIFE) {
             String parts[4];
             int count = splitCommand(arg, parts, 4);
             if (count < 4) {
@@ -2629,7 +2993,7 @@ static bool appExecute(DappProgram& program) {
                 return false;
             }
             steps = 0;   //native LIFE work yields internally, so it is not a runaway loop
-        } else if (op == "SETSTR") {
+        } else if (op == DAPP_OP_SETSTR) {
             String parts[2];
             int count = splitCommand(arg, parts, 2);
             if (count < 2) {
@@ -2642,7 +3006,7 @@ static bool appExecute(DappProgram& program) {
                 return false;
             }
             appSetStringValue(stringVars, slot, appExpandText(parts[1], program));
-        } else if (op == "APPEND") {
+        } else if (op == DAPP_OP_APPEND) {
             String parts[2];
             int count = splitCommand(arg, parts, 2);
             if (count < 2) {
@@ -2654,8 +3018,8 @@ static bool appExecute(DappProgram& program) {
                 outLine("run: too many string variables", C_RED);
                 return false;
             }
-            appSetStringValue(stringVars, slot, stringVars[slot].value + appExpandText(parts[1], program));
-        } else if (op == "CHR") {
+            appAppendStringValue(stringVars, slot, appExpandText(parts[1], program));
+        } else if (op == DAPP_OP_CHR) {
             String parts[2];
             int count = splitCommand(arg, parts, 2);
             if (count < 2) {
@@ -2669,7 +3033,7 @@ static bool appExecute(DappProgram& program) {
             }
             long code = appValueOf(parts[1], program);
             appSetStringValue(stringVars, slot, (code >= 32 && code < 127) ? String((char)code) : String(" "));
-        } else if (op == "HEX") {
+        } else if (op == DAPP_OP_HEX) {
             String parts[3];
             int count = splitCommand(arg, parts, 3);
             if (count < 2) {
@@ -2690,11 +3054,11 @@ static bool appExecute(DappProgram& program) {
             snprintf(formatted, sizeof(formatted), "%0*lX", (int)width,
                      (unsigned long)(uint32_t)appValueOf(parts[1], program));
             appSetStringValue(stringVars, slot, String(formatted));
-        } else if (op == "JSONESC" || op == "JSONGET") {
+        } else if (op == DAPP_OP_JSONESC || op == DAPP_OP_JSONGET) {
             String parts[3];
             int count = splitCommand(arg, parts, 3);
-            if (count < (op == "JSONESC" ? 2 : 3)) {
-                outLine("run: " + op + (op == "JSONESC"
+            if (count < (op == DAPP_OP_JSONESC ? 2 : 3)) {
+                outLine("run: " + String(appOpcodeName(op)) + (op == DAPP_OP_JSONESC
                     ? " needs <name> <text>" : " needs <name> <json> <path>"), C_RED);
                 return false;
             }
@@ -2704,12 +3068,12 @@ static bool appExecute(DappProgram& program) {
                 return false;
             }
             String result;
-            dappJsonOk = op == "JSONESC"
+            dappJsonOk = op == DAPP_OP_JSONESC
                 ? (appJsonEscape(appStringOperand(parts[1], program), result) ? 1 : 0)
                 : (appJsonGetPath(appStringOperand(parts[1], program),
                                   appStringOperand(parts[2], program), result) ? 1 : 0);
             appSetStringValue(stringVars, slot, result);
-        } else if (op == "SUBSTR") {
+        } else if (op == DAPP_OP_SUBSTR) {
             String parts[4];
             int count = splitCommand(arg, parts, 4);
             if (count < 4) {
@@ -2730,17 +3094,17 @@ static bool appExecute(DappProgram& program) {
             long end = start + want;
             if (end > (long)source.length()) end = source.length();
             appSetStringValue(stringVars, slot, source.substring(start, end));
-        } else if (op == "LEN" || op == "CHARAT") {
+        } else if (op == DAPP_OP_LEN || op == DAPP_OP_CHARAT) {
             String parts[3];
             int count = splitCommand(arg, parts, 3);
-            int needed = (op == "LEN") ? 2 : 3;
+            int needed = (op == DAPP_OP_LEN) ? 2 : 3;
             if (count < needed) {
-                outLine("run: " + op + (op == "LEN" ? " needs <name> <text>" : " needs <name> <text> <index>"), C_RED);
+                outLine("run: " + String(appOpcodeName(op)) + (op == DAPP_OP_LEN ? " needs <name> <text>" : " needs <name> <text> <index>"), C_RED);
                 return false;
             }
             String source = appStringOperand(parts[1], program);
             long value = 0;
-            if (op == "LEN") {
+            if (op == DAPP_OP_LEN) {
                 value = source.length();
             } else {
                 long index = appValueOf(parts[2], program);
@@ -2751,11 +3115,11 @@ static bool appExecute(DappProgram& program) {
                 continue;
             }
             *target = value;
-        } else if (op == "INPUT" || op == "INPUTSECRET") {
+        } else if (op == DAPP_OP_INPUT || op == DAPP_OP_INPUTSECRET) {
             String parts[2];
             int count = splitCommand(arg, parts, 2);
             if (count < 1) {
-                outLine("run: " + op + " needs <name> [prompt]", C_RED);
+                outLine("run: " + String(appOpcodeName(op)) + " needs <name> [prompt]", C_RED);
                 return false;
             }
             int slot = appEnsureStringVar(stringVars, parts[0]);
@@ -2764,9 +3128,9 @@ static bool appExecute(DappProgram& program) {
                 return false;
             }
             String prompt = count >= 2 ? appExpandText(parts[1], program) : parts[0] + "> ";
-            appSetStringValue(stringVars, slot, appReadInput(prompt, op == "INPUTSECRET", program.echoInput));
+            appSetStringValue(stringVars, slot, appReadInput(prompt, op == DAPP_OP_INPUTSECRET, program.echoInput));
             steps = 0;   //waiting on a human is not a runaway loop
-        } else if (op == "KEY") {
+        } else if (op == DAPP_OP_KEY) {
             if (arg.length() == 0) {
                 outLine("run: KEY needs <name>", C_RED);
                 return false;
@@ -2777,7 +3141,7 @@ static bool appExecute(DappProgram& program) {
                 continue;
             }
             *target = key;
-        } else if (op == "CANVAS") {
+        } else if (op == DAPP_OP_CANVAS) {
             String parts[2];
             int count = splitCommand(arg, parts, 2);
             if (count < 2) {
@@ -2787,9 +3151,9 @@ static bool appExecute(DappProgram& program) {
             if (!appCanvasBegin((int)appValueOf(parts[0], program), (int)appValueOf(parts[1], program))) {
                 return false;
             }
-        } else if (op == "ENDCANVAS") {
+        } else if (op == DAPP_OP_ENDCANVAS) {
             appCanvasEnd();
-        } else if (op == "PUT") {
+        } else if (op == DAPP_OP_PUT) {
             String parts[3];
             int count = splitCommand(arg, parts, 3);
             if (count < 3) {
@@ -2804,13 +3168,13 @@ static bool appExecute(DappProgram& program) {
                          (int)appValueOf(parts[1], program),
                          appExpandText(parts[2], program),
                          color);
-        } else if (op == "FLIP") {
+        } else if (op == DAPP_OP_FLIP) {
             if (!dappCanvasActive) {
                 outLine("run: FLIP needs a CANVAS first", C_RED);
                 return false;
             }
             appCanvasFlip();
-        } else if (op == "FOPEN") {
+        } else if (op == DAPP_OP_FOPEN) {
             String parts[2];
             int count = splitCommand(arg, parts, 2);
             if (count < 2) {
@@ -2831,9 +3195,9 @@ static bool appExecute(DappProgram& program) {
                 return false;
             }
             appFileOpen(appExpandText(parts[0], program), fsMode, readable, writable);
-        } else if (op == "FCLOSE") {
+        } else if (op == DAPP_OP_FCLOSE) {
             appFileClose();
-        } else if (op == "FREAD") {
+        } else if (op == DAPP_OP_FREAD) {
             if (arg.length() == 0) {
                 outLine("run: FREAD needs <name>", C_RED);
                 return false;
@@ -2848,7 +3212,7 @@ static bool appExecute(DappProgram& program) {
                 return false;
             }
             appSetStringValue(stringVars, slot, appFileReadLine());
-        } else if (op == "FREADB") {
+        } else if (op == DAPP_OP_FREADB) {
             if (arg.length() == 0) {
                 outLine("run: FREADB needs <name>", C_RED);
                 return false;
@@ -2860,7 +3224,7 @@ static bool appExecute(DappProgram& program) {
             long* target = appNumericTarget(program, arg);
             if (!target) continue;
             *target = appFileReadByte();
-        } else if (op == "FWRITE") {
+        } else if (op == DAPP_OP_FWRITE) {
             if (!dappFileOpen || !dappFileWritable) {
                 outLine("run: FWRITE needs a file FOPENed for write or append", C_RED);
                 return false;
@@ -2873,7 +3237,7 @@ static bool appExecute(DappProgram& program) {
                 outLine("run: FWRITE failed (filesystem full?)", C_RED);
                 return false;
             }
-        } else if (op == "FWRITEB") {
+        } else if (op == DAPP_OP_FWRITEB) {
             if (!dappFileOpen || !dappFileWritable) {
                 outLine("run: FWRITEB needs a file FOPENed for write, append, or update", C_RED);
                 return false;
@@ -2888,7 +3252,7 @@ static bool appExecute(DappProgram& program) {
                 outLine("run: FWRITEB failed (filesystem full?)", C_RED);
                 return false;
             }
-        } else if (op == "FSEEK") {
+        } else if (op == DAPP_OP_FSEEK) {
             if (!dappFileOpen) {
                 outLine("run: FSEEK needs an open file", C_RED);
                 return false;
@@ -2900,19 +3264,19 @@ static bool appExecute(DappProgram& program) {
             }
             dappFok = dappFile.seek((uint32_t)offset, SeekSet) ? 1 : 0;
             dappFeof = 0;
-        } else if (op == "FTELL" || op == "FSIZE") {
+        } else if (op == DAPP_OP_FTELL || op == DAPP_OP_FSIZE) {
             if (!dappFileOpen) {
-                outLine("run: " + op + " needs an open file", C_RED);
+                outLine("run: " + String(appOpcodeName(op)) + " needs an open file", C_RED);
                 return false;
             }
             if (arg.length() == 0) {
-                outLine("run: " + op + " needs <name>", C_RED);
+                outLine("run: " + String(appOpcodeName(op)) + " needs <name>", C_RED);
                 return false;
             }
             long* target = appNumericTarget(program, arg);
             if (!target) continue;
-            *target = (op == "FTELL") ? (long)dappFile.position() : (long)dappFile.size();
-        } else if (op == "FEXISTS") {
+            *target = (op == DAPP_OP_FTELL) ? (long)dappFile.position() : (long)dappFile.size();
+        } else if (op == DAPP_OP_FEXISTS) {
             String parts[2];
             int count = splitCommand(arg, parts, 2);
             if (count < 2) {
@@ -2932,7 +3296,7 @@ static bool appExecute(DappProgram& program) {
                 continue;
             }
             *target = exists;
-        } else if (op == "FDELETE") {
+        } else if (op == DAPP_OP_FDELETE) {
             if (arg.length() == 0) {
                 outLine("run: FDELETE needs <path>", C_RED);
                 return false;
@@ -2945,7 +3309,7 @@ static bool appExecute(DappProgram& program) {
                     dappFok = 1;
                 }
             }
-        } else if (op == "FLIST") {
+        } else if (op == DAPP_OP_FLIST) {
             String parts[2];
             int count = splitCommand(arg, parts, 2);
             if (count < 2) {
@@ -2953,26 +3317,26 @@ static bool appExecute(DappProgram& program) {
                 return false;
             }
             appFileListToFile(appStringOperand(parts[0], program), appStringOperand(parts[1], program));
-        } else if (op == "FMKDIR") {
+        } else if (op == DAPP_OP_FMKDIR) {
             if (arg.length() == 0) {
                 outLine("run: FMKDIR needs <path>", C_RED);
                 return false;
             }
             dappFok = dappStorageMkdir(resolvePath(cwd, appStringOperand(arg, program))) ? 1 : 0;
-        } else if (op == "FCOPY" || op == "FMOVE") {
+        } else if (op == DAPP_OP_FCOPY || op == DAPP_OP_FMOVE) {
             String parts[2];
             int count = splitCommand(arg, parts, 2);
             if (count < 2) {
-                outLine("run: " + op + " needs <source> <destination>", C_RED);
+                outLine("run: " + String(appOpcodeName(op)) + " needs <source> <destination>", C_RED);
                 return false;
             }
             String source = resolvePath(cwd, appStringOperand(parts[0], program));
             String destination = resolvePath(cwd, appStringOperand(parts[1], program));
-            dappFok = (op == "FCOPY" ? dappStorageCopy(source, destination)
+            dappFok = (op == DAPP_OP_FCOPY ? dappStorageCopy(source, destination)
                                       : dappStorageMove(source, destination)) ? 1 : 0;
-        } else if (op == "HTTPCLEAR") {
+        } else if (op == DAPP_OP_HTTPCLEAR) {
             appHttpClearHeaders();
-        } else if (op == "HTTPHEADER") {
+        } else if (op == DAPP_OP_HTTPHEADER) {
             String parts[2];
             int count = splitCommand(arg, parts, 2);
             if (count < 2 || !appHttpSetHeader(appStringOperand(parts[0], program),
@@ -2980,12 +3344,12 @@ static bool appExecute(DappProgram& program) {
                 outLine("run: HTTPHEADER needs a safe <name> <value> (max 8 headers)", C_RED);
                 return false;
             }
-        } else if (op == "HTTPGET" || op == "HTTPPOST") {
+        } else if (op == DAPP_OP_HTTPGET || op == DAPP_OP_HTTPPOST) {
             String parts[4];
             int count = splitCommand(arg, parts, 4);
-            int needed = op == "HTTPGET" ? 2 : 3;
+            int needed = op == DAPP_OP_HTTPGET ? 2 : 3;
             if (count < needed) {
-                outLine("run: " + op + (op == "HTTPGET"
+                outLine("run: " + String(appOpcodeName(op)) + (op == DAPP_OP_HTTPGET
                     ? " needs <name> <http-or-https-url> [max-bytes]"
                     : " needs <name> <http-or-https-url> <body> [max-bytes]"), C_RED);
                 return false;
@@ -2995,34 +3359,34 @@ static bool appExecute(DappProgram& program) {
                 outLine("run: too many string variables", C_RED);
                 return false;
             }
-            int maximumIndex = op == "HTTPGET" ? 2 : 3;
+            int maximumIndex = op == DAPP_OP_HTTPGET ? 2 : 3;
             long maximum = count > maximumIndex
                 ? appValueOf(parts[maximumIndex], program) : DAPP_MAX_STRING_LEN;
             if (maximum < 1 || maximum > DAPP_MAX_STRING_LEN) {
-                outLine("run: " + op + " max-bytes must be 1.." + String(DAPP_MAX_STRING_LEN), C_RED);
+                outLine("run: " + String(appOpcodeName(op)) + " max-bytes must be 1.." + String(DAPP_MAX_STRING_LEN), C_RED);
                 return false;
             }
             String response;
-            String body = op == "HTTPPOST" ? appStringOperand(parts[2], program) : String("");
-            appHttpRequest(op == "HTTPPOST" ? "POST" : "GET",
+            String body = op == DAPP_OP_HTTPPOST ? appStringOperand(parts[2], program) : String("");
+            appHttpRequest(op == DAPP_OP_HTTPPOST ? "POST" : "GET",
                            appStringOperand(parts[1], program), body,
                            (size_t)maximum, response);
             appSetStringValue(stringVars, slot, response);
             steps = 0;  //the network wait is a real yield, not a runaway loop
-        } else if (op == "BUFNEW") {
+        } else if (op == DAPP_OP_BUFNEW) {
             long bytes = arg.length() ? appValueOf(arg, program) : (long)DAPP_BUF_DEFAULT_BYTES;
             if (bytes < 1 || bytes > (long)DAPP_BUF_MAX_BYTES) {
                 outLine("run: BUFNEW size must be 1.." + String((long)DAPP_BUF_MAX_BYTES), C_RED);
                 return false;
             }
             dappBufOk = appBufAlloc((size_t)bytes) ? 1 : 0;
-        } else if (op == "BUFFREE") {
+        } else if (op == DAPP_OP_BUFFREE) {
             appBufFree();
             dappBufOk = 1;
-        } else if (op == "BUFCLEAR") {
+        } else if (op == DAPP_OP_BUFCLEAR) {
             dappBufLen = 0;
             dappBufOk = dappBuf ? 1 : 0;
-        } else if (op == "BUFAT") {
+        } else if (op == DAPP_OP_BUFAT) {
             String parts[2];
             if (splitCommand(arg, parts, 2) < 2) {
                 outLine("run: BUFAT needs <name> <position>", C_RED);
@@ -3034,7 +3398,7 @@ static bool appExecute(DappProgram& program) {
             //out of range reads 0 rather than stopping: a scan loop tests $buflen itself
             *target = (dappBuf && position >= 0 && position < (long)dappBufLen)
                 ? (long)dappBuf[position] : 0;
-        } else if (op == "BUFSUB") {
+        } else if (op == DAPP_OP_BUFSUB) {
             String parts[3];
             if (splitCommand(arg, parts, 3) < 3) {
                 outLine("run: BUFSUB needs <name> <position> <count>", C_RED);
@@ -3061,7 +3425,7 @@ static bool appExecute(DappProgram& program) {
                 }
             }
             appSetStringValue(stringVars, slot, piece);
-        } else if (op == "BUFWRITE") {
+        } else if (op == DAPP_OP_BUFWRITE) {
             String parts[2];
             if (splitCommand(arg, parts, 2) < 2) {
                 outLine("run: BUFWRITE needs <position> <text>", C_RED);
@@ -3077,14 +3441,14 @@ static bool appExecute(DappProgram& program) {
                 }
                 dappBufOk = 1;
             }
-        } else if (op == "BUFSCAN" || op == "BUFTAKE") {
+        } else if (op == DAPP_OP_BUFSCAN || op == DAPP_OP_BUFTAKE) {
             //   Token-at-a-time scanning. A per-byte loop in script costs ~25 interpreter
             //   steps per byte; these stop on a character class so the script pays per
             //   token instead, which for most text formats is roughly an order of
             //   magnitude fewer steps for the same walk.
             String parts[4];
             int count = splitCommand(arg, parts, 4);
-            bool take = op == "BUFTAKE";
+            bool take = op == DAPP_OP_BUFTAKE;
             int needed = take ? 3 : 2;
             if (count < needed) {
                 outLine(take ? "run: BUFTAKE needs <strname> <numname> <position> [stopset]"
@@ -3113,19 +3477,19 @@ static bool appExecute(DappProgram& program) {
             }
             *target = position;
             if (take) appSetStringValue(stringVars, slot, piece);
-        } else if (op == "BUFSAVE" || op == "BUFLOAD") {
+        } else if (op == DAPP_OP_BUFSAVE || op == DAPP_OP_BUFLOAD) {
             if (arg.length() == 0) {
-                outLine("run: " + op + " needs <path>", C_RED);
+                outLine("run: " + String(appOpcodeName(op)) + " needs <path>", C_RED);
                 return false;
             }
             RoutedPath r;
             dappBufOk = 0;
             if (dappFileOpen) {
-                outLine("run: " + op + " needs the script's file handle closed (FCLOSE)", C_RED);
+                outLine("run: " + String(appOpcodeName(op)) + " needs the script's file handle closed (FCLOSE)", C_RED);
                 return false;
             }
             if (dappBuf && appFileRoute(appExpandText(arg, program), r)) {
-                if (op == "BUFSAVE") {
+                if (op == DAPP_OP_BUFSAVE) {
                     ledPulseStorageWrite(r.isSd);
                     File f = r.fs->open(r.realPath, "w");
                     if (f && !f.isDirectory()) {
@@ -3143,7 +3507,7 @@ static bool appExecute(DappProgram& program) {
                     }
                 }
             }
-        } else if (op == "HTTPGETBUF") {
+        } else if (op == DAPP_OP_HTTPGETBUF) {
             String parts[2];
             int count = splitCommand(arg, parts, 2);
             if (count < 1) {
@@ -3168,7 +3532,7 @@ static bool appExecute(DappProgram& program) {
             //a short write left bytes unread on the socket, so it cannot be pooled
             if (sink.truncated) appHttpSessionEnd();
             steps = 0;
-        } else if (op == "URLABS") {
+        } else if (op == DAPP_OP_URLABS) {
             String parts[3];
             if (splitCommand(arg, parts, 3) < 3) {
                 outLine("run: URLABS needs <name> <base-url> <href>", C_RED);
@@ -3183,7 +3547,7 @@ static bool appExecute(DappProgram& program) {
             appSetStringValue(stringVars, slot,
                 appHtmlResolveUrl(appStringOperand(parts[1], program),
                                   appStringOperand(parts[2], program)));
-        } else if (op == "URLPART") {
+        } else if (op == DAPP_OP_URLPART) {
             String parts[3];
             if (splitCommand(arg, parts, 3) < 3) {
                 outLine("run: URLPART needs <name> <url> scheme|origin|host|path|dir", C_RED);
@@ -3214,7 +3578,7 @@ static bool appExecute(DappProgram& program) {
                 return false;
             }
             appSetStringValue(stringVars, slot, value);
-        } else if (op == "HTMLOPEN") {
+        } else if (op == DAPP_OP_HTMLOPEN) {
             String parts[5];
             int count = splitCommand(arg, parts, 5);
             if (count < 3) {
@@ -3240,7 +3604,7 @@ static bool appExecute(DappProgram& program) {
                 return false;
             }
             dappHtmlOk = 1;
-        } else if (op == "HTMLFEED") {
+        } else if (op == DAPP_OP_HTMLFEED) {
             String parts[3];
             int count = splitCommand(arg, parts, 3);
             if (count < 1 || !dappHtml.active) {
@@ -3278,9 +3642,9 @@ static bool appExecute(DappProgram& program) {
                 outLine("run: HTMLFEED source must be url, buf or text", C_RED);
                 return false;
             }
-        } else if (op == "HTMLCLOSE") {
+        } else if (op == DAPP_OP_HTMLCLOSE) {
             appHtmlClose();
-        } else if (op == "HTMLTEXT") {
+        } else if (op == DAPP_OP_HTMLTEXT) {
             //   The whole browser fetch in one line: connect, stream the body through the
             //   renderer, close. Nothing is buffered in between, so the page size is
             //   bounded by the filesystem rather than by anything allocated here -- which
@@ -3312,7 +3676,7 @@ static bool appExecute(DappProgram& program) {
             dappHttpLength = dappHtmlBytes;
             appHtmlClose();
             steps = 0;
-        } else if (op == "HTMLSTR") {
+        } else if (op == DAPP_OP_HTMLSTR) {
             String parts[3];
             int count = splitCommand(arg, parts, 3);
             if (count < 2) {
@@ -3363,7 +3727,7 @@ static bool appExecute(DappProgram& program) {
             dappHtml.active = false;
             appSetStringValue(stringVars, slot, dappHtml.out);
             dappHtml.out = "";
-        } else if (op == "DAPPER") {
+        } else if (op == DAPP_OP_DAPPER) {
             //A deliberately narrow bridge to the verified package manager. This is not
             //a shell escape: the only reachable actions are the subcommands accepted by
             //handleDapperCommand(), so package validation, rollback and path ownership
@@ -3374,7 +3738,7 @@ static bool appExecute(DappProgram& program) {
             int commandPartCount = splitCommand(commandLine, commandParts, 8);
             handleDapperCommand(commandParts, commandPartCount);
             steps = 0;  //downloads and catalog walks service the runtime internally
-        } else if (op == "RAND") {
+        } else if (op == DAPP_OP_RAND) {
             String parts[3];
             int count = splitCommand(arg, parts, 3);
             if (count < 2) {
@@ -3399,15 +3763,17 @@ static bool appExecute(DappProgram& program) {
                 continue;
             }
             *target = value;
-        } else if (op == "GOTO") {
-            int target = appFindLabel(labels, labelCount, arg);
+        } else if (op == DAPP_OP_GOTO) {
+            //resolved at load; the scan only runs for a label that did not resolve, which is
+            //an error path anyway
+            int target = (jumpTarget >= 0) ? jumpTarget : appFindLabel(labels, labelCount, arg);
             if (target < 0) {
                 outLine("run: label not found: " + arg, C_RED);
                 return false;
             }
             pc = target;
-        } else if (op == "GOSUB") {
-            int target = appFindLabel(labels, labelCount, arg);
+        } else if (op == DAPP_OP_GOSUB) {
+            int target = (jumpTarget >= 0) ? jumpTarget : appFindLabel(labels, labelCount, arg);
             if (target < 0) {
                 outLine("run: label not found: " + arg, C_RED);
                 return false;
@@ -3420,13 +3786,13 @@ static bool appExecute(DappProgram& program) {
             //pc has already advanced past the GOSUB, so this is where RETURN resumes
             program.callStack[program.callDepth++] = pc;
             pc = target;
-        } else if (op == "RETURN") {
+        } else if (op == DAPP_OP_RETURN) {
             if (program.callDepth <= 0) {
                 outLine("run: RETURN without GOSUB", C_RED);
                 return false;
             }
             pc = program.callStack[--program.callDepth];
-        } else if (op == "IF") {
+        } else if (op == DAPP_OP_IF) {
             String parts[5];
             int count = splitCommand(arg, parts, 5);
             String jumpOp = (count >= 4) ? parts[3] : "";
@@ -3436,7 +3802,7 @@ static bool appExecute(DappProgram& program) {
                 return false;
             }
             if (appCompare(appValueOf(parts[0], program), parts[1], appValueOf(parts[2], program))) {
-                int target = appFindLabel(labels, labelCount, parts[4]);
+                int target = (jumpTarget >= 0) ? jumpTarget : appFindLabel(labels, labelCount, parts[4]);
                 if (target < 0) {
                     outLine("run: label not found: " + parts[4], C_RED);
                     return false;
@@ -3450,18 +3816,18 @@ static bool appExecute(DappProgram& program) {
                 }
                 pc = target;
             }
-        } else if (op == "IFEQ" || op == "IFNE") {
+        } else if (op == DAPP_OP_IFEQ || op == DAPP_OP_IFNE) {
             String parts[4];
             int count = splitCommand(arg, parts, 4);
             String jumpOp = (count >= 3) ? parts[2] : "";
             jumpOp.toUpperCase();
             if (count < 4 || (jumpOp != "GOTO" && jumpOp != "GOSUB")) {
-                outLine("run: " + op + " syntax is " + op + " <left> <right> GOTO|GOSUB <label>", C_RED);
+                outLine("run: " + String(appOpcodeName(op)) + " syntax is " + String(appOpcodeName(op)) + " <left> <right> GOTO|GOSUB <label>", C_RED);
                 return false;
             }
             bool equal = appStringOperand(parts[0], program) == appStringOperand(parts[1], program);
-            if ((op == "IFEQ" && equal) || (op == "IFNE" && !equal)) {
-                int target = appFindLabel(labels, labelCount, parts[3]);
+            if ((op == DAPP_OP_IFEQ && equal) || (op == DAPP_OP_IFNE && !equal)) {
+                int target = (jumpTarget >= 0) ? jumpTarget : appFindLabel(labels, labelCount, parts[3]);
                 if (target < 0) {
                     outLine("run: label not found: " + parts[3], C_RED);
                     return false;
@@ -3475,10 +3841,10 @@ static bool appExecute(DappProgram& program) {
                 }
                 pc = target;
             }
-        } else if (op == "EXIT" || op == "END") {
+        } else if (op == DAPP_OP_EXIT || op == DAPP_OP_END) {
             return true;
         } else {
-            outLine("run: unknown app command: " + op, C_RED);
+            outLine("run: unknown app command: " + current.opText, C_RED);
             return false;
         }
 

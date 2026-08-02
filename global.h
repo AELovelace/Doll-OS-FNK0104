@@ -221,8 +221,14 @@ struct DapperInstalled {
 
 //AppRunner.ino: these live here instead of inside AppRunner.ino because the Arduino
 //builder hoists prototypes for static functions above the tab's own type definitions.
+//   One script line, decoded once at load. It used to hold nothing but the raw source text,
+//   which appExecute then re-trimmed, re-split and re-matched against a chain of ~70 String
+//   comparisons every single time the line ran. See the opcode table in AppRunner.ino.
 struct DappLine {
-    String text;
+    String arg;          //everything after the opcode, trimmed; empty when there is none
+    String opText;       //source spelling, kept only for DAPP_OP_UNKNOWN's error message
+    uint8_t opcode;      //DAPP_OP_* -- DAPP_OP_LABEL covers blanks, comments and ':' labels
+    int16_t jumpTarget;  //pre-resolved destination line for GOTO/GOSUB/IF/IFEQ/IFNE, else -1
 };
 
 struct DappLabel {

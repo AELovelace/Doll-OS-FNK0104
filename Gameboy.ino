@@ -841,7 +841,9 @@ void handleGbCommand(const String parts[], int partCount) {
                 + (audioUp ? (", " + String(dropped) + " audio samples dropped in "
                               + String(underruns) + " gaps") : ""), C_CYAN);
     }
-    displayDirty = true;      // force a full shell repaint over the game frame
+    displayDirty = true;         // force a full shell repaint over the game frame
+    displayInvalidateShadow();   // the game drew straight to the panel, so the partial-push
+                                 // shadow no longer describes what is on the glass
     drawDisplayFrame();
     printPrompt();
 }
