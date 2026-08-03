@@ -69,3 +69,27 @@ test("mapped keyboard events reach the active Game Boy core before shell input",
   assert.equal(event.prevented, true);
   assert.equal(event.stopped, true);
 });
+
+test("the Game Boy core gets the joypad callback required to consume button state", () => {
+  const calls = [];
+  const player = Object.create(GameBoyPlayer.prototype);
+  player.emulator = 73;
+  player.joypad = 0;
+  player.module = {
+    _joypad_new: () => 91,
+    _emulator_set_default_joypad_callback: (...args) => calls.push(args)
+  };
+
+  player.connectJoypad();
+
+  assert.equal(player.joypad, 91);
+  assert.deepEqual(calls, [[73, 91]]);
+});
+
+test("Game Boy control initialization fails loudly when the core cannot allocate it", () => {
+  const player = Object.create(GameBoyPlayer.prototype);
+  player.emulator = 73;
+  player.joypad = 0;
+  player.module = { _joypad_new: () => 0 };
+  assert.throws(() => player.connectJoypad(), /could not initialize its controls/);
+});

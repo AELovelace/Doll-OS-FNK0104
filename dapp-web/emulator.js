@@ -4,7 +4,7 @@ import { highlightDappSource } from "./dapp-highlight.js";
 import { DapperClient } from "./dapper-client.js";
 import { DappRuntime } from "./dapp-runtime.js";
 import { DollMachine, DollShell, VirtualFileSystem, sanitizeDappFilename } from "./emulator-core.js";
-import { GameBoyPlayer } from "./gameboy.js";
+import { GameBoyPlayer } from "./gameboy.js?v=20260803e";
 import { WEB_RUNTIME } from "./runtime-config.js";
 
 const $ = selector => document.querySelector(selector);

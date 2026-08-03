@@ -136,6 +136,7 @@ export class GameBoyPlayer {
     this.controls = new GameBoyControlMap(storage);
     this.module = null;
     this.emulator = 0;
+    this.joypad = 0;
     this.romAllocation = 0;
     this.romKey = "";
     this.romName = "";
@@ -289,6 +290,12 @@ export class GameBoyPlayer {
     if (this.emulator && !this.paused) this.module[method]?.(this.emulator, Number(pressed));
   }
 
+  connectJoypad() {
+    this.joypad = this.module._joypad_new();
+    if (!this.joypad) throw new Error("The Game Boy core could not initialize its controls");
+    this.module._emulator_set_default_joypad_callback(this.emulator, this.joypad);
+  }
+
   releaseAll() {
     for (const action of [...this.pressedActions]) {
       const method = ACTION_METHODS[action];
@@ -343,6 +350,15 @@ export class GameBoyPlayer {
       this.module._free(this.romAllocation);
       this.romAllocation = 0;
       throw new Error("The Game Boy core rejected this ROM");
+    }
+    try {
+      this.connectJoypad();
+    } catch (error) {
+      this.module._emulator_delete(this.emulator);
+      this.module._free(this.romAllocation);
+      this.emulator = 0;
+      this.romAllocation = 0;
+      throw error;
     }
     this.restoreRam();
     this.audioCursor = this.audio.context?.currentTime || 0;
@@ -487,11 +503,13 @@ export class GameBoyPlayer {
     this.releaseAll();
     for (const source of this.audioSources) try { source.stop(); } catch {}
     this.audioSources.clear();
+    if (this.joypad && this.module) this.module._joypad_delete(this.joypad);
     if (this.emulator && this.module) {
       this.saveRam();
       this.module._emulator_delete(this.emulator);
       this.module._free(this.romAllocation);
     }
+    this.joypad = 0;
     this.emulator = 0;
     this.romAllocation = 0;
   }

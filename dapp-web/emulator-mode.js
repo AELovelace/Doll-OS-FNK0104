@@ -1,2 +1,3 @@
 const mode = new URLSearchParams(window.location.search).get("terminal");
-if (mode === "1" || mode === "true") document.documentElement.classList.add("terminal-embed");
+const isFramed = window.self !== window.top;
+if (isFramed || mode === "1" || mode === "true") document.documentElement.classList.add("terminal-embed");

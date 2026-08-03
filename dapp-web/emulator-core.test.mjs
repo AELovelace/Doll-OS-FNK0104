@@ -59,6 +59,7 @@ test("the emulator page wires its editor to the shared device runtime", async ()
   assert.match(source, /const path = `\/apps\/\$\{filename\}`/);
   assert.match(html, /emulator-mode\.js/);
   assert.match(mode, /terminal-embed/);
+  assert.match(mode, /window\.self\s*!==\s*window\.top/);
   assert.match(css, /\.terminal-embed canvas/);
   assert.match(css, /height:\s*calc\(100dvh - 24px\)/);
   assert.match(css, /grid-template-rows:\s*auto auto minmax\(0, 1fr\) auto auto auto/);

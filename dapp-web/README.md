@@ -20,9 +20,10 @@ python -m http.server 8080 -d dapp-web
 Then open `http://localhost:8080/emulator.html` for the emulator or
 `http://localhost:8080/` for the `.dapp` IDE.
 
-For an iframe-sized terminal with no studio or device controls, use
-`emulator.html?terminal=1`. The canvas tracks the iframe viewport and keeps the
-keyboard input offscreen; click the terminal before typing.
+When loaded in an iframe, the emulator automatically switches to the compact
+terminal view with no studio, machine controls, or visible command dock. You can
+also force that layout outside an iframe with `emulator.html?terminal=1`. The
+canvas tracks the viewport; click the terminal before typing.
 
 ## Host it
 
