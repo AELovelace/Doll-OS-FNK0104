@@ -91,6 +91,18 @@ void listDirectory(fs::FS& fs, const String& path, bool showSdMount, bool isSd) 
     ledPulseStorageRead(isSd);
     File dir = fs.open(path);
     if (!dir || !dir.isDirectory()) {
+        if (dir) {
+            dir.close();
+        }
+        if (isSd && path == "/" && sdCardMounted) {
+            File apps = fs.open("/apps");
+            if (apps && apps.isDirectory()) {
+                outLine("  [DIR]  apps");
+                apps.close();
+                return;
+            }
+            if (apps) apps.close();
+        }
         outLine("ls: " + path + " not found", C_RED);
         return;
     }
@@ -167,6 +179,9 @@ String resolvePath(const String& cwd, const String& inputPath) {
 
 //true if resolvedPath is a real, openable directory once routed to its physical filesystem
 bool directoryExists(const String& resolvedPath) {
+    if (resolvedPath == SD_MOUNT) {
+        return sdCardMounted;
+    }
     RoutedPath r = routePath(resolvedPath);
     if (r.isSd && !sdCardMounted) {
         return false;

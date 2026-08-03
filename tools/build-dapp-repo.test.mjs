@@ -25,13 +25,11 @@ function resolvedRuntimeOpcodes(compatibility, version) {
 }
 
 function sourceOpcodes(source) {
-  return [
-    ...new Set(
-      [...source.matchAll(/op\s*==\s*"([A-Z][A-Z0-9_]*)"/g)].map(
-        (match) => match[1],
-      ),
-    ),
-  ].sort();
+  const table = /DAPP_OPCODE_NAMES\[DAPP_OP_COUNT\]\s*=\s*\{([\s\S]*?)\};/.exec(source);
+  const names = table
+    ? [...table[1].matchAll(/"([A-Z][A-Z0-9_]*)"/g)].map((match) => match[1])
+    : [...source.matchAll(/op\s*==\s*"([A-Z][A-Z0-9_]*)"/g)].map((match) => match[1]);
+  return [...new Set(names)].sort();
 }
 
 function sourceIntegerConstants(source) {

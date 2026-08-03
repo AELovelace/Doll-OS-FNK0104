@@ -1,15 +1,15 @@
 # @dapp-format 1
 # @id tracker-music
 # @name Tracker Music
-# @version 1.2.1
+# @version 1.3.1
 # @boards fnk0104
-# @runtime >=1.4.2 <2.0.0
+# @runtime >=1.7.0 <2.0.0
 # @echo off
 # @summary An eight-pattern song sequencer for the three-channel synth
 # /apps/tracker-music.dapp
 # Arrows move, space toggles a step, 1-6 set the selected note tone, [] changes
 # pattern, comma/dot moves the song cursor, A assigns pattern to song, P plays
-# song, +/- changes tempo, Enter plays one loop, H/? helps, S/L save/load,
+# song, +/- changes tempo, Enter plays one loop, H/? helps, S opens save browser,
 # C clears the current pattern, X trims song length, Escape exits.
 
 CANVAS 60 20
@@ -52,6 +52,9 @@ SET bpm 120
 SET tone1 0
 SET tone2 2
 SET tone3 3
+SETSTR saveDir "/apps"
+SETSTR saveName "tracker-music.dat"
+SETSTR savePath "/apps/tracker-music.dat"
 GOSUB inittones
 GOSUB initsong
 GOSUB load
@@ -248,7 +251,7 @@ WAVESTOP
 RETURN
 
 :savekey
-GOSUB save
+GOSUB savebrowser
 GOTO redraw
 :loadkey
 GOSUB load
@@ -296,9 +299,10 @@ EXPR songdisp $songpos + 1
 COLOR pink
 PUT 0 0 "TRACKER MUSIC"
 COLOR white
-PUT 16 0 "PAT $patdisp/8  SONG $songdisp/$songLen  BPM $bpm  CH $channel  TONE $curmark"
+PUT 0 1 "PAT $patdisp/8  SONG $songdisp/$songLen  BPM $bpm"
+PUT 0 2 "CH $channel  TONE $curmark"
 COLOR cyan
-PUT 0 3 "    1 2 3 4 5 6 7 8 9 A B C D E F G"
+PUT 0 4 "    1 2 3 4 5 6 7 8 9 A B C D E F G"
 SET i 0
 :drawloop
 IF $i >= 16 GOTO drawcursor
@@ -307,39 +311,39 @@ EXPR x 4 + $i * 2
 IF $p1[$idx] = 0 GOTO d1off
 COLOR pink
 EXPR mark $t1[$idx] + 1
-PUT $x 6 "$mark"
+PUT $x 7 "$mark"
 GOTO d2
 :d1off
 COLOR white
-PUT $x 6 "."
+PUT $x 7 "."
 :d2
 IF $p2[$idx] = 0 GOTO d2off
 COLOR cyan
 EXPR mark $t2[$idx] + 1
-PUT $x 9 "$mark"
+PUT $x 10 "$mark"
 GOTO d3
 :d2off
 COLOR white
-PUT $x 9 "."
+PUT $x 10 "."
 :d3
 IF $p3[$idx] = 0 GOTO d3off
 COLOR yellow
 EXPR mark $t3[$idx] + 1
-PUT $x 12 "$mark"
+PUT $x 13 "$mark"
 GOTO dn
 :d3off
 COLOR white
-PUT $x 12 "."
+PUT $x 13 "."
 :dn
 ADD i 1
 GOTO drawloop
 :drawcursor
 COLOR white
-PUT 0 6 "S"
-PUT 0 9 "T"
-PUT 0 12 "N"
+PUT 0 7 "S"
+PUT 0 10 "T"
+PUT 0 13 "N"
 EXPR x 4 + $step * 2
-EXPR y 3 + $channel * 3
+EXPR y 4 + $channel * 3
 COLOR green
 PUT $x $y "@"
 COLOR cyan
@@ -361,8 +365,8 @@ ADD i 1
 GOTO drawsong
 :drawsong_done
 COLOR yellow
-PUT 0 22 "arrows move  space toggle  [] pattern  , . song  A assign"
-PUT 0 24 "enter pat  P song  +/- tempo  H/? controls  S/L save/load  esc quit"
+PUT 0 18 "arrows move space toggle [] pattern ,/. song A assign"
+PUT 0 19 "enter pat P song +/- tempo H/? help S save L load esc"
 FLIP
 RETURN
 
@@ -372,19 +376,17 @@ CLS
 COLOR pink
 PUT 0 0 "TRACKER MUSIC CONTROLS"
 COLOR white
-PUT 0 3 "arrows     move between channels and steps"
-PUT 0 5 "space      toggle selected note on/off"
-PUT 0 7 "1-6        set selected note tone and turn it on"
-PUT 0 9 "enter      play one 16-step loop"
-PUT 0 11 "[ / ]      switch between 8 patterns"
-PUT 0 13 ", / .      move song cursor, . extends song"
-PUT 0 15 "A          assign current pattern to song slot"
-PUT 0 17 "P          play song sequence"
-PUT 0 19 "+/- tempo  S/L save/load  C clear pattern  X trim"
-PUT 0 21 "esc        quit tracker"
+PUT 0 2 "arrows  move channels and steps"
+PUT 0 4 "space   toggle note    1-6 set tone"
+PUT 0 6 "enter   play pattern   P play song"
+PUT 0 8 "[ / ]   switch pattern"
+PUT 0 10 ", / .   move song cursor, . extends"
+PUT 0 12 "A       assign pattern to song slot"
+PUT 0 14 "S       save browser   L load current file"
+PUT 0 16 "N       new dir in save browser"
+PUT 0 18 "+/- tempo  C clear pattern  X trim  esc quit"
 COLOR cyan
-PUT 0 22 "S square, T triangle, N noise."
-PUT 0 23 "Press any key to return."
+PUT 0 19 "S square, T triangle, N noise. Any key returns."
 FLIP
 :helpwait
 WAIT 16
@@ -416,8 +418,266 @@ GOTO initsong_loop
 :initsong_done
 RETURN
 
+:savebrowser
+WAVESTOP
+SET savePick 0
+SET savePage 0
+SETSTR saveMsg ""
+:sb_loop
+GOSUB sb_draw
+WAIT 16
+KEY sk
+IF $sk = 0 GOTO sb_loop
+IF $sk = $kesc GOTO sb_done
+IF $sk = $kup GOTO sb_up
+IF $sk = $kdown GOTO sb_down
+IF $sk = $kenter GOTO sb_enter
+IF $sk = $kback GOTO sb_parent_key
+IF $sk = 117 GOTO sb_parent_key
+IF $sk = 85 GOTO sb_parent_key
+IF $sk = 110 GOTO sb_mkdir
+IF $sk = 78 GOTO sb_mkdir
+IF $sk = 115 GOTO sb_saveas
+IF $sk = 83 GOTO sb_saveas
+GOTO sb_loop
+:sb_up
+SUB savePick 1
+IF $savePick >= 0 GOTO sb_up_page
+SET savePick 0
+:sb_up_page
+EXPR minpick $savePage * 10
+IF $savePick >= $minpick GOTO sb_loop
+SUB savePage 1
+IF $savePage >= 0 GOTO sb_loop
+SET savePage 0
+GOTO sb_loop
+:sb_down
+GOSUB sb_refresh_count
+IF $saveCount <= 0 GOTO sb_loop
+ADD savePick 1
+IF $savePick < $saveCount GOTO sb_down_page
+EXPR savePick $saveCount - 1
+:sb_down_page
+EXPR nextpage $savePage + 1
+EXPR maxpick $nextpage * 10
+IF $savePick < $maxpick GOTO sb_loop
+ADD savePage 1
+GOTO sb_loop
+:sb_enter
+GOSUB sb_select
+IF $selected = 0 GOTO sb_loop
+IFEQ $sbtype "D" GOTO sb_opendir
+GOTO sb_loop
+:sb_opendir
+GOSUB sb_join_entry
+SETSTR saveDir $saveTarget
+SET savePick 0
+SET savePage 0
+SETSTR saveMsg ""
+GOTO sb_loop
+:sb_parent_key
+GOSUB sb_parent
+SET savePick 0
+SET savePage 0
+SETSTR saveMsg ""
+GOTO sb_loop
+:sb_mkdir
+INPUT saveName "directory name> "
+LEN n $saveName
+IF $n = 0 GOTO sb_loop
+GOSUB sb_join
+FMKDIR $saveTarget
+IF $fok = 1 GOTO sb_mkdir_ok
+SETSTR saveMsg "could not create directory"
+GOTO sb_loop
+:sb_mkdir_ok
+SETSTR saveDir $saveTarget
+SET savePick 0
+SET savePage 0
+SETSTR saveMsg "directory created"
+GOTO sb_loop
+:sb_saveas
+INPUT saveName "save name> "
+LEN n $saveName
+IF $n = 0 GOTO sb_loop
+GOSUB sb_join
+SETSTR savePath $saveTarget
+GOSUB save
+IF $fok = 1 GOTO sb_done
+SETSTR saveMsg "save failed"
+GOTO sb_loop
+:sb_done
+FDELETE "/tracker-save.list"
+RETURN
+
+:sb_draw
+CLS
+COLOR pink
+PUT 0 0 "SAVE TRACKER"
+COLOR white
+PUT 0 2 "$saveDir"
+GOSUB sb_refresh_count
+IF $fok = 0 GOTO sb_draw_fail
+FOPEN "/tracker-save.list" read
+IF $fok = 0 GOTO sb_draw_fail
+EXPR skip $savePage * 10
+SET index 0
+:sb_skip
+IF $index >= $skip GOTO sb_show
+FREAD line
+IF $feof = 1 GOTO sb_empty
+ADD index 1
+GOTO sb_skip
+:sb_show
+SET shown 0
+:sb_show_one
+IF $shown >= 10 GOTO sb_draw_footer
+FREAD line
+IF $feof = 1 GOTO sb_draw_footer
+GOSUB sb_parserow
+EXPR row 4 + $shown
+SUBSTR showname $sbname 0 42
+IF $index = $savePick GOTO sb_show_sel
+COLOR white
+GOTO sb_show_color
+:sb_show_sel
+COLOR green
+:sb_show_color
+IFEQ $sbtype "D" GOTO sb_show_dir
+PUT 2 $row "$showname"
+GOTO sb_show_next
+:sb_show_dir
+PUT 2 $row "[$showname]"
+:sb_show_next
+ADD shown 1
+ADD index 1
+GOTO sb_show_one
+:sb_empty
+COLOR white
+PUT 2 5 "(empty)"
+:sb_draw_footer
+FCLOSE
+COLOR yellow
+PUT 0 15 "$saveMsg"
+PUT 0 16 "up/down choose  enter open  bksp/u up"
+PUT 0 17 "S save here  N new dir  esc cancel"
+PUT 0 19 "file: $saveName"
+FLIP
+RETURN
+:sb_draw_fail
+FCLOSE
+COLOR red
+PUT 0 5 "cannot list directory"
+COLOR yellow
+PUT 0 17 "bksp/u up  esc cancel"
+FLIP
+RETURN
+
+:sb_refresh_count
+FLIST $saveDir "/tracker-save.list"
+IF $fok = 0 GOTO sb_count_fail
+SET saveCount 0
+FOPEN "/tracker-save.list" read
+IF $fok = 0 GOTO sb_count_done
+:sb_count_loop
+FREAD line
+IF $feof = 1 GOTO sb_count_done
+ADD saveCount 1
+GOTO sb_count_loop
+:sb_count_fail
+SET saveCount 0
+:sb_count_done
+FCLOSE
+RETURN
+
+:sb_select
+SET selected 0
+GOSUB sb_refresh_count
+IF $saveCount <= 0 GOTO sb_select_done
+IF $savePick < $saveCount GOTO sb_select_open
+EXPR savePick $saveCount - 1
+:sb_select_open
+FOPEN "/tracker-save.list" read
+IF $fok = 0 GOTO sb_select_done
+SET index 0
+:sb_select_loop
+FREAD line
+IF $feof = 1 GOTO sb_select_done
+IF $index = $savePick GOTO sb_select_found
+ADD index 1
+GOTO sb_select_loop
+:sb_select_found
+GOSUB sb_parserow
+SET selected 1
+:sb_select_done
+FCLOSE
+RETURN
+
+:sb_parserow
+SUBSTR sbtype $line 0 1
+LEN linelen $line
+SET i 2
+:sb_prscan
+IF $i >= $linelen GOTO sb_prbad
+CHARAT ch $line $i
+IF $ch = 124 GOTO sb_prfound
+ADD i 1
+GOTO sb_prscan
+:sb_prfound
+EXPR count $i - 2
+SUBSTR sbname $line 2 $count
+RETURN
+:sb_prbad
+SETSTR sbtype "?"
+SETSTR sbname $line
+RETURN
+
+:sb_join
+IFEQ $saveDir "/" GOTO sb_joinroot
+SETSTR saveTarget $saveDir
+APPEND saveTarget "/"
+APPEND saveTarget $saveName
+RETURN
+:sb_joinroot
+SETSTR saveTarget "/"
+APPEND saveTarget $saveName
+RETURN
+
+:sb_join_entry
+IFEQ $saveDir "/" GOTO sb_join_entry_root
+SETSTR saveTarget $saveDir
+APPEND saveTarget "/"
+APPEND saveTarget $sbname
+RETURN
+:sb_join_entry_root
+SETSTR saveTarget "/"
+APPEND saveTarget $sbname
+RETURN
+
+:sb_parent
+IFEQ $saveDir "/" GOTO sb_parent_done
+LEN n $saveDir
+SET i 0
+SET last 0
+:sb_parscan
+IF $i >= $n GOTO sb_parcut
+CHARAT ch $saveDir $i
+IF $ch <> 47 GOTO sb_parnext
+SET last $i
+:sb_parnext
+ADD i 1
+GOTO sb_parscan
+:sb_parcut
+IF $last > 0 GOTO sb_parsub
+SETSTR saveDir "/"
+RETURN
+:sb_parsub
+SUBSTR saveDir $saveDir 0 $last
+:sb_parent_done
+RETURN
+
 :save
-FOPEN "/apps/tracker-music.dat" write
+FOPEN $savePath write
 IF $fok = 0 GOTO svdone
 FWRITE "TM3"
 FWRITE "$bpm"
