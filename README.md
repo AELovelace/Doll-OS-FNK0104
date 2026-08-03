@@ -81,36 +81,49 @@ toolbar dropdown before Verify/Upload. That covers board, flash size, custom
 partition scheme, PSRAM, and USB mode in one selection, and keeps this fork's
 sketch-local `TFT_eSPI` from colliding with a global install.
 
-Headless:
+Install the following libraries:
+WiFi at version 3.3.10
+Networking at version 3.3.10
+FS at version 3.3.10
+TFT_eSPI at version 2.5.43
+SPI at version 3.3.10
+SPIFFS at version 3.3.10
+ArduinoJson at version 7.4.3
+ESP32-audioI2S-master at version 3.4.4
+FFat at version 3.3.10
+NetworkClientSecure at version 3.3.10
+SD at version 3.3.10
+SD_MMC at version 3.3.10
+LittleFS at version 3.3.10
+HTTPClient at version 3.3.10
+SimpleFTPServer at version 3.0.2
+ESP32Ping at version 1.6 
+esp32ARP at version 0.1.3
+PubSubClient at version 2.8
+ESP_I2S at version 3.3.10
+Wire at version 3.3.10
+LibSSH-ESP32 at version 5.8.0
 
-```powershell
-arduino-cli compile --profile esp32s3
-```
+Flash normally. To reset your LittleFS turn on "Erase before Writing"
 
 > TODO: gotchas worth calling out here — sketchbook path, audio library version.
 > See the porting notes.
 
-### 3. Flash the filesystem
+### 3. Flash DS-Slave
+Install the following libraries:
+FastLED at version 3.10.5
+SPI at version 3.3.10
+NimBLE-Arduino at version 2.5.0
+SPIFFS at version 3.3.10
+FS at version 3.3.10
+WiFi at version 3.3.10
+Networking at version 3.3.10
 
-Firmware upload and filesystem upload are separate. `.dapp` apps under `/apps`
-need a LittleFS/SPIFFS image upload — though the bundled apps are seeded to flash
-on first boot.
-
-> TODO: exact steps / tool used for the FS upload.
-
-### 4. Flash DS-Slave
-
-> TODO: build + flash steps for the companion sketch, then `PAIR` once per device.
-
-### 5. Connect
-
-```text
-telnet <device-ip> 23
-```
-
-The panel and BLE keyboard are a complete UI on their own — telnet is optional.
-
----
+flash using these settings:
+- **USB Mode:** `USB-OTG (TinyUSB)`
+- **USB CDC On Boot:** `Disabled`
+- **USB MSC On Boot:** `Disabled`
+- **USB DFU On Boot:** `Disabled`
 
 ## Commands
 

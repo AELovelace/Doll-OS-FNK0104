@@ -46,10 +46,12 @@ const audio = new BrowserAudioController();
 audio.setRadioVolume(machine.volume);
 $("#studio-runtime-label").textContent = `Apps execute inside the bounded AppRunner ${WEB_RUNTIME.appRunnerVersion} environment. Saving here writes to the emulated device, never to the hosting server.`;
 const gameBoy = new GameBoyPlayer({
-  dialog: $("#gameboy-dialog"),
-  canvas: $("#gameboy-screen"),
+  canvas: display,
   fileInput: $("#gameboy-rom"),
   status: $("#gameboy-status"),
+  controlsRoot: $("#gameboy-console"),
+  controlsDialog: $("#gameboy-controls-dialog"),
+  onActiveChange: setGameBoyMode,
   audio
 });
 const displayState = {
@@ -201,6 +203,7 @@ function drawCommandBar(width, height) {
 }
 
 function renderDisplay() {
+  if (gameBoy.active) return;
   const { width, height } = display;
   context.imageSmoothingEnabled = false;
   context.textAlign = "left";
@@ -236,7 +239,8 @@ function resizeTerminalDisplay() {
   if (display.width === virtualWidth && display.height === virtualHeight) return;
   display.width = virtualWidth;
   display.height = virtualHeight;
-  renderDisplay();
+  if (gameBoy.active) gameBoy.render();
+  else renderDisplay();
 }
 
 function syncInputDisplay() {
@@ -265,6 +269,21 @@ function setInputMode(mode, prompt, { masked = false, enabled = true } = {}) {
   if (!commandInput.disabled) commandInput.focus({ preventScroll: true });
 }
 
+function setGameBoyMode(active) {
+  stopButton.textContent = active ? "EXIT GB" : "STOP APP";
+  stopButton.disabled = active ? false : !appRunning;
+  if (active) {
+    displayState.canvas = null;
+    runtimeState.textContent = "GAME BOY";
+    setInputMode("GAME BOY", "GB > ");
+  } else if (displayState.powered && !displayState.splash) {
+    runtimeState.textContent = "READY";
+    setInputMode("SHELL INPUT", shell.prompt());
+    renderDisplay();
+  }
+  updateStudioControls();
+}
+
 function beginShellSession() {
   clearOutput();
   appendOutput("===============================", "pink");
@@ -282,6 +301,7 @@ function beginShellSession() {
 }
 
 function bootSequence() {
+  gameBoy.exit();
   displayState.powered = true;
   displayState.splash = true;
   displayState.canvas = null;
@@ -518,7 +538,7 @@ const shell = new DollShell(machine, {
     if (action === "vol") audio.setRadioVolume(volume);
     return audio.radioStatus();
   },
-  gameBoy: () => gameBoy.open(),
+  gameBoy: ({ action } = {}) => action === "controls" ? gameBoy.openControls() : gameBoy.open(),
   stateChanged: renderDisplay,
   reboot: () => {
     audio.stopRadio();
@@ -531,13 +551,13 @@ document.addEventListener("pointerdown", () => { void audio.unlock(); }, { captu
 document.addEventListener("keydown", () => { void audio.unlock(); }, { capture: true });
 
 async function submitShellCommand(value) {
-  if (!displayState.powered || shellBusy || appRunning) return;
+  if (!displayState.powered || shellBusy || appRunning || gameBoy.active) return;
   shellBusy = true;
   commandInput.disabled = true;
   updateStudioControls();
   await shell.execute(value);
   shellBusy = false;
-  if (!appRunning && displayState.powered && !displayState.splash) setInputMode("SHELL INPUT", shell.prompt());
+  if (!appRunning && !gameBoy.active && displayState.powered && !displayState.splash) setInputMode("SHELL INPUT", shell.prompt());
   formatStorage();
   updateStudioControls();
 }
@@ -583,6 +603,10 @@ commandInput.addEventListener("click", syncInputDisplay);
 commandInput.addEventListener("keyup", syncInputDisplay);
 commandInput.addEventListener("keydown", async event => {
   void audio.unlock();
+  if (gameBoy.active) {
+    event.preventDefault();
+    return;
+  }
   if (appRunning) {
     if (appInputResolve) {
       if (event.key === "Enter") {
@@ -631,11 +655,12 @@ $("#screen-button").addEventListener("click", () => {
   void audio.unlock();
   commandInput.focus();
 });
-stopButton.addEventListener("click", () => runtime.stop());
+stopButton.addEventListener("click", () => gameBoy.active ? gameBoy.exit() : runtime.stop());
 
 $("#power-button").addEventListener("click", () => {
   if (displayState.powered) {
     runtime.stop();
+    gameBoy.exit();
     displayState.powered = false;
     displayState.splash = false;
     commandInput.disabled = true;
@@ -655,6 +680,7 @@ $("#power-button").addEventListener("click", () => {
 $("#reboot-button").addEventListener("click", () => {
   if (!displayState.powered) return;
   runtime.stop();
+  gameBoy.exit();
   audio.stopRadio();
   machine.reboot();
   audio.setRadioVolume(machine.volume);
@@ -667,7 +693,8 @@ $("#panel-select").addEventListener("change", event => {
   display.width = width;
   display.height = height;
   display.style.setProperty("--screen-ratio", `${width} / ${height}`);
-  renderDisplay();
+  if (gameBoy.active) gameBoy.render();
+  else renderDisplay();
 });
 
 $("#battery-range").addEventListener("input", event => {
@@ -692,7 +719,7 @@ $("#network-toggle").addEventListener("change", event => {
 });
 
 document.querySelectorAll("[data-command]").forEach(button => button.addEventListener("click", () => {
-  if (!displayState.powered || appRunning) return;
+  if (!displayState.powered || appRunning || gameBoy.active) return;
   void audio.unlock();
   submitShellCommand(button.dataset.command);
 }));
@@ -737,6 +764,7 @@ $("#import-file").addEventListener("change", async event => {
 $("#factory-reset").addEventListener("click", () => {
   if (!window.confirm("Erase writable files, aliases, and app data from this browser?")) return;
   runtime.stop();
+  gameBoy.exit();
   fileSystem.factoryReset();
   machine.reboot();
   shell.cwd = "/";

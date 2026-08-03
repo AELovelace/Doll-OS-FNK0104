@@ -165,17 +165,31 @@ dialog::backdrop { background: rgba(4, 2, 4, .82); }
 .editor-actions button { padding: 8px 13px; border: 1px solid var(--pink); color: white; background: transparent; }
 .editor-actions #save-file { color: var(--ink); background: var(--pink); }
 
-#gameboy-dialog { width: min(720px, calc(100% - 24px)); }
-.gameboy-window { display: grid; grid-template-rows: auto 1fr; }
-.gameboy-stage { display: grid; justify-items: center; gap: 14px; padding: 20px; background: #080708; }
-#gameboy-screen { width: min(100%, 480px); height: auto; aspect-ratio: 10 / 9; border: 10px solid #32242d; background: #8bac0f; image-rendering: pixelated; box-shadow: 8px 8px 0 #180a13; }
-#gameboy-status { margin: 0; color: var(--cyan); font-size: 11px; }
-#gameboy-status[data-state="error"] { color: #ff6c6c; }
-.gameboy-actions { display: grid; width: min(100%, 540px); grid-template-columns: repeat(4, 1fr); gap: 5px; }
-.gameboy-actions button, .gameboy-pad button { min-height: 40px; border: 1px solid var(--pink); color: white; background: #3c1830; font: 10px var(--mono); touch-action: none; }
-.gameboy-pad { display: grid; width: min(100%, 540px); grid-template-columns: repeat(5, 1fr); gap: 5px; }
-.gameboy-pad button[data-gb-key="z"], .gameboy-pad button[data-gb-key="x"] { background: #6b1746; border-radius: 50%; }
-.gameboy-help { margin: 0; color: #bfaeb8; font-size: 9px; line-height: 1.7; text-align: center; }
+.gameboy-console { margin-top: 14px; border: 2px solid var(--pink-soft); background: #080708; }
+.gameboy-console[hidden] { display: none; }
+.gameboy-console-head { display: flex; justify-content: space-between; gap: 12px; padding: 9px 11px; color: var(--ink); background: var(--pink-soft); font-size: 9px; }
+#gameboy-status { min-width: 0; overflow: hidden; color: var(--ink); text-overflow: ellipsis; white-space: nowrap; }
+#gameboy-status[data-state="error"] { color: #681426; }
+.gameboy-actions { display: grid; grid-template-columns: repeat(6, 1fr); gap: 2px; padding: 9px; }
+.gameboy-actions button,
+.gameboy-dpad button,
+.gameboy-face-buttons button,
+.gameboy-control-grid button { min-height: 38px; border: 1px solid var(--pink); color: white; background: #3c1830; font: 9px var(--mono); touch-action: none; }
+.gameboy-touch-controls { display: grid; grid-template-columns: 1fr 1fr; align-items: center; gap: 24px; padding: 0 12px 11px; }
+.gameboy-dpad { display: grid; grid-template-columns: repeat(3, minmax(48px, 1fr)); gap: 3px; }
+.gameboy-face-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.gameboy-face-buttons button[data-gb-action="a"],
+.gameboy-face-buttons button[data-gb-action="b"] { min-height: 54px; border-radius: 50%; background: #6b1746; }
+.gameboy-dpad button.pressed,
+.gameboy-face-buttons button.pressed { color: var(--ink); background: var(--cyan); transform: translateY(1px); }
+.gameboy-help { margin: 0; padding: 0 11px 10px; overflow-wrap: anywhere; color: #bfaeb8; font-size: 8px; line-height: 1.6; text-align: center; }
+
+#gameboy-controls-dialog { width: min(720px, calc(100% - 24px)); }
+.gameboy-controls-window { display: grid; grid-template-rows: auto auto 1fr auto; }
+.gameboy-config-status { margin: 0; padding: 14px; color: var(--cyan); background: #080708; font-size: 10px; }
+.gameboy-control-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; padding: 14px; background: #080708; }
+.gameboy-control-grid label { display: grid; grid-template-columns: 80px minmax(0, 1fr); align-items: center; gap: 8px; color: #d9c9d2; font-size: 10px; }
+.gameboy-control-grid button { width: 100%; }
 
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 
@@ -251,6 +265,17 @@ html.terminal-embed body {
   padding: 0;
 }
 
+.terminal-embed .gameboy-console:not([hidden]) {
+  position: fixed;
+  z-index: 5;
+  right: 6px;
+  bottom: 6px;
+  left: 6px;
+  max-height: 44%;
+  overflow: auto;
+  opacity: .94;
+}
+
 @media (max-width: 1250px) {
   .workbench { grid-template-columns: minmax(330px, .85fr) minmax(430px, 1.15fr); }
   .control-panel { grid-column: 1 / -1; }
@@ -276,5 +301,7 @@ html.terminal-embed body {
   .studio-actions { grid-template-columns: 1fr 1fr; }
   .studio-actions .primary { grid-column: 1 / -1; grid-row: 1; }
   .studio-meta span:last-child { display: none; }
-  .gameboy-actions { grid-template-columns: 1fr 1fr; }
+  .gameboy-actions { grid-template-columns: repeat(3, 1fr); }
+  .gameboy-touch-controls { grid-template-columns: 1fr; gap: 10px; }
+  .gameboy-control-grid { grid-template-columns: 1fr; }
 }

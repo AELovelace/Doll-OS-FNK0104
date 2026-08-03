@@ -850,7 +850,10 @@ export class DollShell {
   command_ftp() { this.unsupported("ftp", "browsers cannot expose an FTP server"); }
   command_gb(parts) {
     if (!this.hooks.gameBoy) return this.unsupported("gb", "Game Boy WASM module is unavailable");
-    this.hooks.gameBoy({ scale: parts[1] || "fit" });
+    const option = (parts[1] || "fit").toLowerCase();
+    if (option === "controls") return this.hooks.gameBoy({ action: "controls" });
+    if (!["fit", "1x"].includes(option)) return this.write("Usage: gb [fit|1x|controls]", "red");
+    this.hooks.gameBoy({ action: "open", scale: option });
   }
   command_motoko() { this.unsupported("motoko", "excluded; this browser emulator never sends MQTT requests"); }
   command_ping() { this.unsupported("ping", "raw ICMP is unavailable in browsers"); }

@@ -35,6 +35,10 @@ contract.
 The editor draft, virtual filesystem, Game Boy battery RAM, and save states are
 stored in the visitor's browser with `localStorage`. They are not uploaded
 anywhere. ROMs are always selected by the visitor; no ROM content is bundled.
+The `gb` command renders the emulator directly inside the DOLL-Screen. Keyboard
+and touch input remain in Game Boy mode until Escape or `EXIT GB` returns to the
+shell. Use `gb controls` or the in-player `CONTROLS` button to remap all eight
+Game Boy inputs; those bindings are also stored only in the visitor's browser.
 
 The emulator's filesystem also stays in browser storage. Its control panel can
 export and import a JSON disk image or perform a confirmed factory reset.

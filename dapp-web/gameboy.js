@@ -1,12 +1,31 @@
 const CPU_TICKS_PER_SECOND = 4_194_304;
 const AUDIO_FRAMES = 4_096;
-const EVENT_NEW_FRAME = 1;
 const EVENT_AUDIO_BUFFER_FULL = 2;
 const EVENT_UNTIL_TICKS = 4;
 const ROM_LIMIT = 8 * 1024 * 1024;
-const KEY_METHODS = Object.freeze({
-  ArrowUp: "_set_joyp_up", ArrowDown: "_set_joyp_down", ArrowLeft: "_set_joyp_left", ArrowRight: "_set_joyp_right",
-  z: "_set_joyp_B", x: "_set_joyp_A", Enter: "_set_joyp_start", Tab: "_set_joyp_select"
+
+export const GAMEBOY_CONTROL_STORAGE_KEY = "doll-os-gb-controls-v1";
+export const GAMEBOY_ACTIONS = Object.freeze(["up", "down", "left", "right", "b", "a", "select", "start"]);
+export const GAMEBOY_DEFAULT_CONTROLS = Object.freeze({
+  up: "ArrowUp",
+  down: "ArrowDown",
+  left: "ArrowLeft",
+  right: "ArrowRight",
+  b: "KeyZ",
+  a: "KeyX",
+  select: "Tab",
+  start: "Enter"
+});
+
+const ACTION_METHODS = Object.freeze({
+  up: "_set_joyp_up",
+  down: "_set_joyp_down",
+  left: "_set_joyp_left",
+  right: "_set_joyp_right",
+  b: "_set_joyp_B",
+  a: "_set_joyp_A",
+  select: "_set_joyp_select",
+  start: "_set_joyp_start"
 });
 
 let loaderPromise;
@@ -36,57 +55,247 @@ function base64ToBytes(value) {
   return Uint8Array.from(binary, character => character.charCodeAt(0));
 }
 
+export function gameBoyControlLabel(code) {
+  const labels = {
+    ArrowUp: "ARROW UP", ArrowDown: "ARROW DOWN", ArrowLeft: "ARROW LEFT", ArrowRight: "ARROW RIGHT",
+    Enter: "ENTER", Tab: "TAB", Space: "SPACE", Backspace: "BACKSPACE",
+    ShiftLeft: "LEFT SHIFT", ShiftRight: "RIGHT SHIFT", ControlLeft: "LEFT CTRL", ControlRight: "RIGHT CTRL"
+  };
+  if (labels[code]) return labels[code];
+  if (/^Key[A-Z]$/.test(code)) return code.slice(3);
+  if (/^Digit\d$/.test(code)) return code.slice(5);
+  return String(code || "UNBOUND").replace(/([a-z])([A-Z])/g, "$1 $2").toUpperCase();
+}
+
+export class GameBoyControlMap {
+  constructor(storage = globalThis.localStorage) {
+    this.storage = storage;
+    this.bindings = this.load();
+  }
+
+  load() {
+    try {
+      const parsed = JSON.parse(this.storage?.getItem(GAMEBOY_CONTROL_STORAGE_KEY) || "null");
+      const values = GAMEBOY_ACTIONS.map(action => parsed?.[action]);
+      if (values.every(code => typeof code === "string" && code && code !== "Escape")
+          && new Set(values).size === GAMEBOY_ACTIONS.length) return { ...parsed };
+    } catch {}
+    return { ...GAMEBOY_DEFAULT_CONTROLS };
+  }
+
+  persist() {
+    try { this.storage?.setItem(GAMEBOY_CONTROL_STORAGE_KEY, JSON.stringify(this.bindings)); }
+    catch {}
+  }
+
+  reset() {
+    this.bindings = { ...GAMEBOY_DEFAULT_CONTROLS };
+    this.persist();
+    return this.bindings;
+  }
+
+  assign(action, code) {
+    if (!GAMEBOY_ACTIONS.includes(action) || typeof code !== "string" || !code || code === "Escape") return false;
+    const previous = this.bindings[action];
+    const conflict = GAMEBOY_ACTIONS.find(candidate => candidate !== action && this.bindings[candidate] === code);
+    this.bindings[action] = code;
+    if (conflict) this.bindings[conflict] = previous;
+    this.persist();
+    return true;
+  }
+
+  actionFor(event) {
+    return GAMEBOY_ACTIONS.find(action => this.bindings[action] === event.code) || "";
+  }
+}
+
 export class GameBoyPlayer {
-  constructor({ dialog, canvas, fileInput, status, audio, storage = globalThis.localStorage } = {}) {
-    this.dialog = dialog;
+  constructor({
+    canvas,
+    fileInput,
+    status,
+    controlsRoot,
+    controlsDialog,
+    audio,
+    storage = globalThis.localStorage,
+    onActiveChange = () => {}
+  } = {}) {
     this.canvas = canvas;
     this.context2d = canvas.getContext("2d", { alpha: false });
+    this.frameCanvas = document.createElement("canvas");
+    this.frameCanvas.width = 160;
+    this.frameCanvas.height = 144;
+    this.frameContext = this.frameCanvas.getContext("2d", { alpha: false });
     this.fileInput = fileInput;
     this.status = status;
+    this.controlsRoot = controlsRoot;
+    this.controlsDialog = controlsDialog;
     this.audio = audio;
     this.storage = storage;
+    this.onActiveChange = onActiveChange;
+    this.controls = new GameBoyControlMap(storage);
     this.module = null;
     this.emulator = 0;
     this.romAllocation = 0;
     this.romKey = "";
+    this.romName = "";
     this.animation = 0;
     this.paused = false;
+    this.active = false;
     this.audioCursor = 0;
     this.audioSources = new Set();
-    this.boundKeyDown = event => this.setKey(event, true);
-    this.boundKeyUp = event => this.setKey(event, false);
+    this.pressedActions = new Set();
+    this.awaitingAction = "";
+    this.boundKeyDown = event => this.handleKey(event, true);
+    this.boundKeyUp = event => this.handleKey(event, false);
+    this.boundBlur = () => this.releaseAll();
     this.bindUi();
+    this.updateControlLabels();
   }
 
   bindUi() {
-    this.dialog.querySelector("[data-gb-close]").addEventListener("click", () => this.dialog.close());
-    this.dialog.querySelector("[data-gb-open]").addEventListener("click", () => this.fileInput.click());
+    this.controlsRoot.querySelector("[data-gb-open]").addEventListener("click", () => this.fileInput.click());
+    this.controlsRoot.querySelector("[data-gb-exit]").addEventListener("click", () => this.exit());
+    this.controlsRoot.querySelector("[data-gb-pause]").addEventListener("click", () => this.togglePause());
+    this.controlsRoot.querySelector("[data-gb-save]").addEventListener("click", () => this.saveState());
+    this.controlsRoot.querySelector("[data-gb-load]").addEventListener("click", () => this.loadState());
+    this.controlsRoot.querySelector("[data-gb-controls]").addEventListener("click", () => this.openControls());
     this.fileInput.addEventListener("change", async event => {
       const [file] = event.target.files;
       if (!file) return;
       try { await this.load(file); }
-      catch (error) { this.setStatus(error.message, true); }
+      catch (error) {
+        this.setStatus(error.message, true);
+        this.drawStandby("ROM ERROR", error.message);
+      }
       event.target.value = "";
     });
-    this.dialog.addEventListener("close", () => this.stop());
-    this.dialog.querySelector("[data-gb-pause]").addEventListener("click", () => this.togglePause());
-    this.dialog.querySelector("[data-gb-save]").addEventListener("click", () => this.saveState());
-    this.dialog.querySelector("[data-gb-load]").addEventListener("click", () => this.loadState());
-    for (const button of this.dialog.querySelectorAll("[data-gb-key]")) {
+    for (const button of this.controlsRoot.querySelectorAll("[data-gb-action]")) {
+      const action = button.dataset.gbAction;
       const set = pressed => {
-        if (!this.emulator) return;
-        this.module[KEY_METHODS[button.dataset.gbKey]]?.(this.emulator, Number(pressed));
+        if (!this.active) return;
+        button.classList.toggle("pressed", pressed);
+        this.setAction(action, pressed);
       };
-      button.addEventListener("pointerdown", event => { event.preventDefault(); button.setPointerCapture(event.pointerId); set(true); });
+      button.addEventListener("pointerdown", event => {
+        event.preventDefault();
+        button.setPointerCapture(event.pointerId);
+        set(true);
+      });
       button.addEventListener("pointerup", () => set(false));
       button.addEventListener("pointercancel", () => set(false));
+      button.addEventListener("lostpointercapture", () => set(false));
     }
+    for (const button of this.controlsDialog.querySelectorAll("[data-gb-bind]")) {
+      button.addEventListener("click", event => {
+        event.preventDefault();
+        this.awaitingAction = button.dataset.gbBind;
+        this.updateControlLabels();
+        button.textContent = "PRESS A KEY";
+        this.controlsDialog.querySelector("[data-gb-config-status]").textContent = "Press a key. Escape cancels.";
+      });
+    }
+    this.controlsDialog.querySelector("[data-gb-reset]").addEventListener("click", () => {
+      this.controls.reset();
+      this.awaitingAction = "";
+      this.updateControlLabels();
+      this.controlsDialog.querySelector("[data-gb-config-status]").textContent = "Default controls restored.";
+    });
+    this.controlsDialog.addEventListener("close", () => {
+      this.awaitingAction = "";
+      this.updateControlLabels();
+      if (this.active) this.canvas.focus?.();
+    });
+  }
+
+  enter() {
+    if (this.active) return;
+    this.active = true;
+    document.addEventListener("keydown", this.boundKeyDown, true);
+    document.addEventListener("keyup", this.boundKeyUp, true);
+    window.addEventListener("blur", this.boundBlur);
+    this.controlsRoot.hidden = false;
+    this.onActiveChange(true);
+    this.setStatus("CHOOSE A ROM FROM THIS DEVICE");
+    this.drawStandby("GAME BOY", "CHOOSE A .GB OR .GBC ROM");
   }
 
   open() {
-    if (!this.dialog.open) this.dialog.showModal();
+    this.enter();
     void this.audio.unlock();
     this.fileInput.click();
+  }
+
+  openControls() {
+    this.enter();
+    this.updateControlLabels();
+    this.controlsDialog.querySelector("[data-gb-config-status]").textContent = "Choose a control, then press its new key.";
+    if (!this.controlsDialog.open) this.controlsDialog.showModal();
+  }
+
+  updateControlLabels() {
+    for (const button of this.controlsDialog.querySelectorAll("[data-gb-bind]")) {
+      if (button.dataset.gbBind === this.awaitingAction) continue;
+      button.textContent = gameBoyControlLabel(this.controls.bindings[button.dataset.gbBind]);
+    }
+    const summary = GAMEBOY_ACTIONS
+      .map(action => `${action.toUpperCase()}:${gameBoyControlLabel(this.controls.bindings[action])}`)
+      .join(" · ");
+    const help = this.controlsRoot.querySelector("[data-gb-control-summary]");
+    if (help) help.textContent = `${summary} · ESC:EXIT`;
+  }
+
+  handleKey(event, pressed) {
+    if (this.awaitingAction && pressed) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.code === "Escape") {
+        this.awaitingAction = "";
+        this.updateControlLabels();
+        this.controlsDialog.querySelector("[data-gb-config-status]").textContent = "Remapping cancelled.";
+        return true;
+      }
+      this.controls.assign(this.awaitingAction, event.code);
+      this.awaitingAction = "";
+      this.updateControlLabels();
+      this.controlsDialog.querySelector("[data-gb-config-status]").textContent = "Control saved in this browser.";
+      return true;
+    }
+    if (!this.active || this.controlsDialog.open) return false;
+    if (event.code === "Escape") {
+      if (pressed) this.exit();
+      event.preventDefault();
+      event.stopPropagation();
+      return true;
+    }
+    const action = this.controls.actionFor(event);
+    if (!action) return false;
+    event.preventDefault();
+    event.stopPropagation();
+    this.controlsRoot.querySelector(`[data-gb-action="${action}"]`)?.classList.toggle("pressed", pressed);
+    this.setAction(action, pressed);
+    return true;
+  }
+
+  setAction(action, pressed) {
+    const method = ACTION_METHODS[action];
+    if (!method) return;
+    if (pressed) {
+      if (this.pressedActions.has(action)) return;
+      this.pressedActions.add(action);
+    } else {
+      if (!this.pressedActions.delete(action)) return;
+    }
+    if (this.emulator && !this.paused) this.module[method]?.(this.emulator, Number(pressed));
+  }
+
+  releaseAll() {
+    for (const action of [...this.pressedActions]) {
+      const method = ACTION_METHODS[action];
+      if (this.emulator) this.module[method]?.(this.emulator, 0);
+    }
+    this.pressedActions.clear();
+    for (const button of this.controlsRoot.querySelectorAll("[data-gb-action]")) button.classList.remove("pressed");
   }
 
   setStatus(message, error = false) {
@@ -94,16 +303,36 @@ export class GameBoyPlayer {
     this.status.dataset.state = error ? "error" : "ready";
   }
 
+  drawStandby(title, detail = "") {
+    const { width, height } = this.canvas;
+    this.context2d.imageSmoothingEnabled = false;
+    this.context2d.fillStyle = "#000";
+    this.context2d.fillRect(0, 0, width, height);
+    this.context2d.textAlign = "center";
+    this.context2d.textBaseline = "middle";
+    this.context2d.font = `${Math.max(12, Math.floor(height / 14))}px "VCR OSD Mono", monospace`;
+    this.context2d.fillStyle = "#ff0f7f";
+    this.context2d.fillText(title, width / 2, height / 2 - 15);
+    this.context2d.font = `${Math.max(7, Math.floor(height / 32))}px "VCR OSD Mono", monospace`;
+    this.context2d.fillStyle = "#eee4ea";
+    this.context2d.fillText(String(detail).slice(0, 46), width / 2, height / 2 + 18);
+    this.context2d.textAlign = "left";
+    this.context2d.textBaseline = "top";
+  }
+
   async load(file) {
     if (!/\.(gb|gbc)$/i.test(file.name)) throw new Error("Choose a .gb or .gbc ROM file");
     if (file.size < 0x150 || file.size > ROM_LIMIT) throw new Error("ROM size is outside the supported 336 B to 8 MiB range");
-    this.stop();
+    this.enter();
+    this.destroyEmulator();
     this.setStatus("LOADING CORE...");
+    this.drawStandby("GAME BOY", "LOADING CORE...");
     const factory = await loadCoreScript();
     this.module ||= await factory({ locateFile: name => new URL(`./vendor/binjgb/${name}`, import.meta.url).href });
     const rom = new Uint8Array(await file.arrayBuffer());
     const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", rom));
     this.romKey = [...digest].map(byte => byte.toString(16).padStart(2, "0")).join("");
+    this.romName = file.name;
     const romSize = (rom.length + 0x7fff) & ~0x7fff;
     this.romAllocation = this.module._malloc(romSize);
     this.module.HEAPU8.fill(0, this.romAllocation, this.romAllocation + romSize);
@@ -118,18 +347,16 @@ export class GameBoyPlayer {
     this.restoreRam();
     this.audioCursor = this.audio.context?.currentTime || 0;
     this.paused = false;
-    document.addEventListener("keydown", this.boundKeyDown);
-    document.addEventListener("keyup", this.boundKeyUp);
+    this.updatePauseButton();
     this.setStatus(`${file.name} // RUNNING`);
     this.frame();
   }
 
   frame() {
-    if (!this.emulator || this.paused) return;
+    if (!this.emulator || this.paused || !this.active) return;
     const target = this.module._emulator_get_ticks_f64(this.emulator) + CPU_TICKS_PER_SECOND / 60;
-    let events = 0;
     for (let guard = 0; guard < 16; guard += 1) {
-      events = this.module._emulator_run_until_f64(this.emulator, target);
+      const events = this.module._emulator_run_until_f64(this.emulator, target);
       if (events & EVENT_AUDIO_BUFFER_FULL) this.queueAudio();
       if (events & EVENT_UNTIL_TICKS) break;
     }
@@ -139,11 +366,25 @@ export class GameBoyPlayer {
   }
 
   render() {
+    if (!this.emulator) {
+      if (this.active) this.drawStandby("GAME BOY", "CHOOSE A .GB OR .GBC ROM");
+      return;
+    }
     const pointer = this.module._get_frame_buffer_ptr(this.emulator);
     const size = this.module._get_frame_buffer_size(this.emulator);
     if (size < 160 * 144 * 4) return;
     const pixels = new Uint8ClampedArray(this.module.HEAPU8.buffer, pointer, 160 * 144 * 4);
-    this.context2d.putImageData(new ImageData(pixels.slice(), 160, 144), 0, 0);
+    this.frameContext.putImageData(new ImageData(pixels.slice(), 160, 144), 0, 0);
+    const { width, height } = this.canvas;
+    const scale = Math.min(width / 160, height / 144);
+    const drawWidth = Math.max(1, Math.floor(160 * scale));
+    const drawHeight = Math.max(1, Math.floor(144 * scale));
+    const x = Math.floor((width - drawWidth) / 2);
+    const y = Math.floor((height - drawHeight) / 2);
+    this.context2d.imageSmoothingEnabled = false;
+    this.context2d.fillStyle = "#000";
+    this.context2d.fillRect(0, 0, width, height);
+    this.context2d.drawImage(this.frameCanvas, 0, 0, 160, 144, x, y, drawWidth, drawHeight);
   }
 
   queueAudio() {
@@ -170,19 +411,16 @@ export class GameBoyPlayer {
     this.audioSources.add(source);
   }
 
-  setKey(event, pressed) {
-    const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
-    const method = KEY_METHODS[key];
-    if (!this.emulator || !method) return;
-    event.preventDefault();
-    this.module[method](this.emulator, Number(pressed));
+  updatePauseButton() {
+    this.controlsRoot.querySelector("[data-gb-pause]").textContent = this.paused ? "RESUME" : "PAUSE";
   }
 
   togglePause() {
-    if (!this.emulator) return;
+    if (!this.emulator) return this.setStatus("LOAD A ROM FIRST", true);
+    this.releaseAll();
     this.paused = !this.paused;
-    this.dialog.querySelector("[data-gb-pause]").textContent = this.paused ? "RESUME" : "PAUSE";
-    this.setStatus(this.paused ? "PAUSED" : "RUNNING");
+    this.updatePauseButton();
+    this.setStatus(this.paused ? `${this.romName} // PAUSED` : `${this.romName} // RUNNING`);
     if (!this.paused) this.frame();
   }
 
@@ -197,6 +435,7 @@ export class GameBoyPlayer {
   }
 
   saveRam() {
+    if (!this.emulator || !this.romKey) return;
     const bytes = this.withFileData("_ext_ram_file_data_new", (data, buffer) => {
       this.module._emulator_write_ext_ram(this.emulator, data);
       return buffer.slice();
@@ -239,13 +478,13 @@ export class GameBoyPlayer {
       ok = true;
     });
     this.setStatus(ok ? "STATE LOADED" : "STATE LOAD FAILED", !ok);
+    if (ok) this.render();
   }
 
-  stop() {
+  destroyEmulator() {
     cancelAnimationFrame(this.animation);
     this.animation = 0;
-    document.removeEventListener("keydown", this.boundKeyDown);
-    document.removeEventListener("keyup", this.boundKeyUp);
+    this.releaseAll();
     for (const source of this.audioSources) try { source.stop(); } catch {}
     this.audioSources.clear();
     if (this.emulator && this.module) {
@@ -256,4 +495,19 @@ export class GameBoyPlayer {
     this.emulator = 0;
     this.romAllocation = 0;
   }
+
+  exit() {
+    if (!this.active) return;
+    this.destroyEmulator();
+    this.active = false;
+    document.removeEventListener("keydown", this.boundKeyDown, true);
+    document.removeEventListener("keyup", this.boundKeyUp, true);
+    window.removeEventListener("blur", this.boundBlur);
+    if (this.controlsDialog.open) this.controlsDialog.close();
+    this.controlsRoot.hidden = true;
+    this.setStatus("GAME BOY STOPPED");
+    this.onActiveChange(false);
+  }
+
+  stop() { this.exit(); }
 }

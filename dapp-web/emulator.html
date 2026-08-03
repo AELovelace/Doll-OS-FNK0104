@@ -7,7 +7,7 @@
   <meta name="description" content="Run a behaviorally faithful DOLL-OS machine in your browser.">
   <title>DOLL-OS // web emulator</title>
   <script src="emulator-mode.js"></script>
-  <link rel="stylesheet" href="emulator.css?v=20260803c">
+  <link rel="stylesheet" href="emulator.css?v=20260803d">
 </head>
 <body>
   <div class="noise" aria-hidden="true"></div>
@@ -84,6 +84,35 @@ END</textarea>
           <button id="stop-app" type="button" disabled>STOP APP</button>
         </div>
         <p class="keyboard-help">↑/↓ history · Ctrl+C clears input · running canvas apps receive keys directly</p>
+
+        <section id="gameboy-console" class="gameboy-console" aria-label="Game Boy controls" hidden>
+          <div class="gameboy-console-head">
+            <strong>GB://DOLL-SCREEN</strong>
+            <span id="gameboy-status" data-state="ready">CHOOSE A ROM FROM THIS DEVICE</span>
+          </div>
+          <input id="gameboy-rom" type="file" accept=".gb,.gbc,application/octet-stream" hidden>
+          <div class="gameboy-actions">
+            <button type="button" data-gb-open>OPEN ROM</button>
+            <button type="button" data-gb-pause>PAUSE</button>
+            <button type="button" data-gb-save>SAVE STATE</button>
+            <button type="button" data-gb-load>LOAD STATE</button>
+            <button type="button" data-gb-controls>CONTROLS</button>
+            <button type="button" data-gb-exit>EXIT GB</button>
+          </div>
+          <div class="gameboy-touch-controls">
+            <div class="gameboy-dpad" aria-label="Game Boy direction controls">
+              <span></span><button type="button" data-gb-action="up">UP</button><span></span>
+              <button type="button" data-gb-action="left">LEFT</button><button type="button" data-gb-action="down">DOWN</button><button type="button" data-gb-action="right">RIGHT</button>
+            </div>
+            <div class="gameboy-face-buttons" aria-label="Game Boy action controls">
+              <button type="button" data-gb-action="b">B</button>
+              <button type="button" data-gb-action="a">A</button>
+              <button type="button" data-gb-action="select">SELECT</button>
+              <button type="button" data-gb-action="start">START</button>
+            </div>
+          </div>
+          <p class="gameboy-help" data-gb-control-summary></p>
+        </section>
       </article>
 
       <aside class="control-panel">
@@ -148,28 +177,28 @@ END</textarea>
     </form>
   </dialog>
 
-  <dialog id="gameboy-dialog" aria-labelledby="gameboy-title">
-    <div class="gameboy-window">
-      <div class="editor-title"><strong id="gameboy-title">GB://LOCAL ROM</strong><button type="button" data-gb-close aria-label="Close Game Boy">Ã—</button></div>
-      <div class="gameboy-stage">
-        <canvas id="gameboy-screen" width="160" height="144" aria-label="Game Boy display"></canvas>
-        <p id="gameboy-status" data-state="ready">CHOOSE A ROM FROM THIS DEVICE</p>
-        <input id="gameboy-rom" type="file" accept=".gb,.gbc,application/octet-stream" hidden>
-        <div class="gameboy-actions">
-          <button type="button" data-gb-open>OPEN ROM</button>
-          <button type="button" data-gb-pause>PAUSE</button>
-          <button type="button" data-gb-save>SAVE STATE</button>
-          <button type="button" data-gb-load>LOAD STATE</button>
-        </div>
-        <div class="gameboy-pad" aria-label="On-screen Game Boy controls">
-          <span></span><button type="button" data-gb-key="ArrowUp">â†‘</button><span></span><button type="button" data-gb-key="z">B</button><button type="button" data-gb-key="x">A</button>
-          <button type="button" data-gb-key="ArrowLeft">â†</button><button type="button" data-gb-key="ArrowDown">â†“</button><button type="button" data-gb-key="ArrowRight">â†’</button><button type="button" data-gb-key="Tab">SELECT</button><button type="button" data-gb-key="Enter">START</button>
-        </div>
-        <p class="gameboy-help">KEYS: ARROWS MOVE Â· Z=B Â· X=A Â· TAB=SELECT Â· ENTER=START<br>ROM AND SAVE DATA NEVER LEAVE THIS BROWSER.</p>
+  <dialog id="gameboy-controls-dialog" aria-labelledby="gameboy-controls-title">
+    <form method="dialog" class="gameboy-controls-window">
+      <div class="editor-title"><strong id="gameboy-controls-title">GB://CONTROL CONFIG</strong><button value="cancel" aria-label="Close Game Boy controls">X</button></div>
+      <p class="gameboy-config-status" data-gb-config-status>Choose a control, then press its new key.</p>
+      <div class="gameboy-control-grid">
+        <label><span>UP</span><button type="button" data-gb-bind="up"></button></label>
+        <label><span>DOWN</span><button type="button" data-gb-bind="down"></button></label>
+        <label><span>LEFT</span><button type="button" data-gb-bind="left"></button></label>
+        <label><span>RIGHT</span><button type="button" data-gb-bind="right"></button></label>
+        <label><span>B</span><button type="button" data-gb-bind="b"></button></label>
+        <label><span>A</span><button type="button" data-gb-bind="a"></button></label>
+        <label><span>SELECT</span><button type="button" data-gb-bind="select"></button></label>
+        <label><span>START</span><button type="button" data-gb-bind="start"></button></label>
       </div>
-    </div>
+      <div class="editor-actions">
+        <span>Bindings are saved only in this browser.</span>
+        <button type="button" data-gb-reset>RESET DEFAULTS</button>
+        <button value="default">DONE</button>
+      </div>
+    </form>
   </dialog>
 
-  <script type="module" src="emulator.js?v=20260803c"></script>
+  <script type="module" src="emulator.js?v=20260803d"></script>
 </body>
 </html>

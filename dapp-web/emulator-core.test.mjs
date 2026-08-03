@@ -162,16 +162,24 @@ test("filesystem copy refuses overwrite and same-volume directory moves preserve
   assert.equal(fileSystem.move("/archive", "/sd/archive"), null);
 });
 
-test("Game Boy is a pinned local WASM feature with no bundled ROM", async () => {
-  const [html, source, vendor, license, wasm] = await Promise.all([
+test("Game Boy is a pinned local WASM feature rendered inside the DOLL-Screen", async () => {
+  const [html, source, emulator, vendor, license, wasm] = await Promise.all([
     readFile(new URL("./emulator.html", import.meta.url), "utf8"),
     readFile(new URL("./gameboy.js", import.meta.url), "utf8"),
+    readFile(new URL("./emulator.js", import.meta.url), "utf8"),
     readFile(new URL("./vendor/binjgb/VENDORED.md", import.meta.url), "utf8"),
     readFile(new URL("./vendor/binjgb/LICENSE", import.meta.url), "utf8"),
     readFile(new URL("./vendor/binjgb/binjgb.wasm", import.meta.url))
   ]);
   assert.match(html, /id="gameboy-rom"/);
+  assert.match(html, /id="gameboy-controls-dialog"/);
+  assert.match(html, /data-gb-bind="start"/);
+  assert.doesNotMatch(html, /id="gameboy-screen"/);
   assert.match(source, /gb\|gbc/);
+  assert.match(source, /GAMEBOY_CONTROL_STORAGE_KEY/);
+  assert.match(source, /document\.addEventListener\("keydown", this\.boundKeyDown, true\)/);
+  assert.match(emulator, /canvas: display/);
+  assert.match(emulator, /if \(gameBoy\.active\) return/);
   assert.match(vendor, /c60e138da5a795ebb55e56b11b7e90024e41112c/);
   assert.match(license, /Permission is hereby granted, free of charge/);
   assert.ok(await WebAssembly.compile(wasm));
@@ -179,6 +187,16 @@ test("Game Boy is a pinned local WASM feature with no bundled ROM", async () => 
   const createBinjgb = require("./vendor/binjgb/binjgb.js");
   const module = await createBinjgb({ wasmBinary: wasm });
   assert.equal(typeof module._emulator_new_simple, "function");
+});
+
+test("gb opens the terminal player or its control configuration", async () => {
+  const calls = [];
+  const { shell, output } = rig({ gameBoy: options => calls.push(options) });
+  await shell.execute("gb");
+  await shell.execute("gb controls");
+  await shell.execute("gb nope");
+  assert.deepEqual(calls, [{ action: "open", scale: "fit" }, { action: "controls" }]);
+  assert.ok(output.some(line => line.text === "Usage: gb [fit|1x|controls]"));
 });
 
 test("aliases persist and expand before dispatch", async () => {
