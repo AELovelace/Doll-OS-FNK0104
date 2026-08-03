@@ -998,15 +998,24 @@ test("Tracker Music saves per-note tones and opens help", async () => {
   const frames = [];
   let runtime;
   let step = 0;
+  let saveFrame = false;
   const push = key => runtime.pushKey({ key, ctrlKey: false });
   const io = {
-    output() {}, clear() {}, status() {}, input() {}, endCanvas() {}, waveStop() {},
+    output() {}, clear() {}, status() {}, endCanvas() {}, waveStop() {},
+    input(_prompt, resolve) { resolve("tracker-music.dat"); },
     canvas(canvas) {
       const text = chatCanvasText(canvas);
       if (!text.trim()) return;
       frames.push(text);
       if (text.includes("TRACKER MUSIC CONTROLS")) {
         push("x");
+        return;
+      }
+      if (text.includes("SAVE TRACKER")) {
+        if (!saveFrame) {
+          saveFrame = true;
+          push("s");
+        }
         return;
       }
       step += 1;
@@ -1039,13 +1048,22 @@ test("Tracker Music switches and saves multiple patterns independently", async (
   const frames = [];
   let runtime;
   let step = 0;
+  let saveFrame = false;
   const push = key => runtime.pushKey({ key, ctrlKey: false });
   const io = {
-    output() {}, clear() {}, status() {}, input() {}, endCanvas() {}, waveStop() {},
+    output() {}, clear() {}, status() {}, endCanvas() {}, waveStop() {},
+    input(_prompt, resolve) { resolve("tracker-music.dat"); },
     canvas(canvas) {
       const text = chatCanvasText(canvas);
       if (!text.trim()) return;
       frames.push(text);
+      if (text.includes("SAVE TRACKER")) {
+        if (!saveFrame) {
+          saveFrame = true;
+          push("s");
+        }
+        return;
+      }
       step += 1;
       if (step === 1) push("]");
       else if (step === 2) push("5");
@@ -1083,12 +1101,21 @@ test("Tracker Music migrates old one-pattern saves", async () => {
   });
   let runtime;
   let step = 0;
+  let saveFrame = false;
   const push = key => runtime.pushKey({ key, ctrlKey: false });
   const io = {
-    output() {}, clear() {}, status() {}, input() {}, endCanvas() {}, waveStop() {},
+    output() {}, clear() {}, status() {}, endCanvas() {}, waveStop() {},
+    input(_prompt, resolve) { resolve("tracker-music.dat"); },
     canvas(canvas) {
       const text = chatCanvasText(canvas);
       if (!text.trim()) return;
+      if (text.includes("SAVE TRACKER")) {
+        if (!saveFrame) {
+          saveFrame = true;
+          push("s");
+        }
+        return;
+      }
       step += 1;
       if (step === 1) push("s");
       else if (step >= 2) push("Escape");
@@ -1103,6 +1130,77 @@ test("Tracker Music migrates old one-pattern saves", async () => {
   assert.deepEqual(saved.slice(0, 8), ["TM3", "140", "3 2 3", "0", "8", "0", "1", "0000000000000000"]);
   assert.equal(saved[8], "1000000000000000");
   assert.equal(saved[11], "3000000000000000");
+});
+
+test("Tracker Music save browser creates a directory and saves a named file", async () => {
+  const files = new MemoryFiles();
+  let runtime;
+  let step = 0;
+  let saveFrame = 0;
+  const answers = ["songs", "jam.dat"];
+  const push = key => runtime.pushKey({ key, ctrlKey: false });
+  const io = {
+    output() {}, clear() {}, status() {}, endCanvas() {}, waveStop() {},
+    input(_prompt, resolve) { resolve(answers.shift() || ""); },
+    canvas(canvas) {
+      const text = chatCanvasText(canvas);
+      if (!text.trim()) return;
+      if (text.includes("SAVE TRACKER")) {
+        saveFrame += 1;
+        if (saveFrame === 1) push("n");
+        else if (saveFrame === 2) push("s");
+        else if (saveFrame >= 3) push("Escape");
+        return;
+      }
+      step += 1;
+      if (step === 1) push("s");
+      else if (step >= 2) push("Escape");
+    }
+  };
+  runtime = new DappRuntime(io, files);
+  const source = await readFile(new URL("../apps/tracker-music.dapp", import.meta.url), "utf8");
+  const result = await runtime.run(source);
+
+  assert.equal(result.ok, true, result.error?.message);
+  assert.ok(files.exists("/apps/songs/jam.dat"));
+  const saved = files.read("/apps/songs/jam.dat").trimEnd().split("\n");
+  assert.equal(saved[0], "TM3");
+});
+
+test("Tracker Music save browser opens the SD app directory from root", async () => {
+  const files = new MemoryFiles();
+  let runtime;
+  let step = 0;
+  let saveFrame = 0;
+  const answers = ["sdjam.dat"];
+  const push = key => runtime.pushKey({ key, ctrlKey: false });
+  const io = {
+    output() {}, clear() {}, status() {}, endCanvas() {}, waveStop() {},
+    input(_prompt, resolve) { resolve(answers.shift() || ""); },
+    canvas(canvas) {
+      const text = chatCanvasText(canvas);
+      if (!text.trim()) return;
+      if (text.includes("SAVE TRACKER")) {
+        saveFrame += 1;
+        if (saveFrame === 1) push("Backspace");
+        else if (saveFrame === 2) push("ArrowDown");
+        else if (saveFrame === 3) push("Enter");
+        else if (saveFrame === 4) push("Enter");
+        else if (saveFrame === 5) push("s");
+        else if (saveFrame >= 6) push("Escape");
+        return;
+      }
+      step += 1;
+      if (step === 1) push("s");
+      else if (step >= 2) push("Escape");
+    }
+  };
+  runtime = new DappRuntime(io, files);
+  const source = await readFile(new URL("../apps/tracker-music.dapp", import.meta.url), "utf8");
+  const result = await runtime.run(source);
+
+  assert.equal(result.ok, true, result.error?.message);
+  assert.ok(files.exists("/sd/apps/sdjam.dat"));
 });
 
 test("Tracker Music sequences patterns and plays a song", async () => {

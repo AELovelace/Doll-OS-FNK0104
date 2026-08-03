@@ -1200,15 +1200,32 @@ static bool appFileListToFile(const String& requestedPath, const String& request
     RoutedPath destination;
     if (!appFileRoute(requestedPath, source) || !appFileRoute(requestedOutput, destination)) return false;
     File dir = source.fs->open(source.realPath);
+    bool synthesizeSdRoot = false;
     if (!dir || !dir.isDirectory()) {
-        if (dir) dir.close();
-        return false;
+        if (dir) {
+            dir.close();
+        }
+        if (source.isSd && source.realPath == "/" && sdCardMounted) {
+            synthesizeSdRoot = true;
+        } else {
+            return false;
+        }
     }
     File output = destination.fs->open(destination.realPath, "w");
     if (!output || output.isDirectory()) {
         if (output) output.close();
-        dir.close();
+        if (dir) dir.close();
         return false;
+    }
+    if (synthesizeSdRoot) {
+        File apps = source.fs->open("/apps");
+        if (apps && apps.isDirectory()) {
+            output.println("D|apps|0");
+        }
+        if (apps) apps.close();
+        output.close();
+        dappFok = 1;
+        return true;
     }
     File entry = dir.openNextFile();
     while (entry) {
