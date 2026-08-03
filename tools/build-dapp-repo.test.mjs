@@ -25,11 +25,20 @@ function resolvedRuntimeOpcodes(compatibility, version) {
 }
 
 function sourceOpcodes(source) {
+  const opcodeTable = source.match(
+    /DAPP_OPCODE_NAMES\s*\[[^\]]+\]\s*=\s*\{([\s\S]*?)\};/,
+  );
+  const decodedNames = opcodeTable
+    ? [...opcodeTable[1].matchAll(/"([A-Z][A-Z0-9_]*)"/g)].map((match) => match[1])
+    : [];
   return [
     ...new Set(
-      [...source.matchAll(/op\s*==\s*"([A-Z][A-Z0-9_]*)"/g)].map(
-        (match) => match[1],
-      ),
+      [
+        ...decodedNames,
+        ...[...source.matchAll(/op\s*==\s*"([A-Z][A-Z0-9_]*)"/g)].map(
+          (match) => match[1],
+        ),
+      ],
     ),
   ].sort();
 }

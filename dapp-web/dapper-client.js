@@ -30,6 +30,13 @@ function runtimeCompatible(record) {
     && compareVersions(RUNTIME_VERSION, record.runtime_max_exclusive) < 0;
 }
 
+function incompatibility(record) {
+  if (record.package_format !== WEB_RUNTIME.packageFormat) return `package format ${record.package_format}`;
+  if (!record.boards.includes(BOARD_ID)) return `not published for ${BOARD_ID}`;
+  if (!runtimeCompatible(record)) return `requires AppRunner >=${record.runtime_min} <${record.runtime_max_exclusive}`;
+  return "";
+}
+
 function safeArtifactUrl(value) {
   if (typeof value !== "string" || !value || value.includes("\\") || value.split("/").includes("..")) return null;
   const resolved = new URL(value, DAPPER_REPOSITORY_BASE_URL);
@@ -39,10 +46,12 @@ function safeArtifactUrl(value) {
 }
 
 function validateRecord(record) {
-  if (!record || record.package_format !== 1 || !/^[a-z0-9][a-z0-9-]{0,31}$/.test(record.id)
+  if (!record || !Number.isInteger(record.package_format) || record.package_format < 1
+      || !/^[a-z0-9][a-z0-9-]{0,31}$/.test(record.id)
       || typeof record.name !== "string" || !parseVersion(record.version)
-      || !Array.isArray(record.boards) || !record.boards.includes(BOARD_ID)
-      || !runtimeCompatible(record) || !Number.isInteger(record.size) || record.size < 1 || record.size > LIMITS.package
+      || !Array.isArray(record.boards) || !record.boards.length || record.boards.some(board => typeof board !== "string")
+      || !parseVersion(record.runtime_min) || !parseVersion(record.runtime_max_exclusive)
+      || !Number.isInteger(record.size) || record.size < 1 || record.size > LIMITS.package
       || !/^[a-f0-9]{64}$/.test(record.sha256) || !safeArtifactUrl(record.url)) return false;
   return true;
 }
@@ -150,6 +159,7 @@ export class DapperClient {
     const records = await this.refresh();
     const newest = new Map();
     for (const record of records) {
+      if (incompatibility(record)) continue;
       const current = newest.get(record.id);
       if (!current || compareVersions(record.version, current.version) > 0) newest.set(record.id, record);
     }
@@ -165,8 +175,12 @@ export class DapperClient {
     const match = String(spec).match(/^([a-z0-9][a-z0-9-]{0,31})(?:@(\d+\.\d+\.\d+))?$/);
     if (!match) throw new Error(`invalid package: ${spec}`);
     const [, id, exactVersion] = match;
-    const matches = (await this.refresh()).filter(record => record.id === id && (!exactVersion || record.version === exactVersion));
-    if (!matches.length) throw new Error(`compatible package not found: ${spec}`);
+    const sameId = (await this.refresh()).filter(record => record.id === id);
+    if (!sameId.length) throw new Error(`package not found: ${id}`);
+    const requested = sameId.filter(record => !exactVersion || record.version === exactVersion);
+    if (!requested.length) throw new Error(`${id} version ${exactVersion} was not found`);
+    const matches = requested.filter(record => !incompatibility(record));
+    if (!matches.length) throw new Error(`${id} is incompatible: ${incompatibility(requested[0])}`);
     return matches.sort((a, b) => compareVersions(b.version, a.version))[0];
   }
 

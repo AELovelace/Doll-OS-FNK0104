@@ -223,6 +223,27 @@ test("run resolves installed apps before system fallbacks", async () => {
   assert.deepEqual(events.run, { path: "/apps/hello.dapp", source: "PRINT local\nEND" });
 });
 
+test("run explains that repository apps must be installed first", async () => {
+  const { shell, output } = rig({ dapper: {} });
+  await shell.execute("run tracker-music");
+  assert.ok(output.some(line => line.text === "run: app not installed: tracker-music"));
+  assert.ok(output.some(line => line.text === "Install it first: dapper install tracker-music"));
+});
+
+test("Dapper refresh reports total artifacts separately from compatible packages", async () => {
+  const { shell, output } = rig({
+    dapper: {
+      async refresh(force) {
+        assert.equal(force, true);
+        return [{ id: "one" }, { id: "two" }, { id: "cardputer" }];
+      },
+      async available() { return [{ id: "one" }, { id: "two" }]; }
+    }
+  });
+  await shell.execute("dapper refresh");
+  assert.ok(output.some(line => line.text === "Dapper: catalog ready (3 artifact(s); 2 compatible package(s))"));
+});
+
 test("Dapper delegates downloads to the verified repository client", async () => {
   let called = false;
   const { shell, fileSystem, output } = rig({

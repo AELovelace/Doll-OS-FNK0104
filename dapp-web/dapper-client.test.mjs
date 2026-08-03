@@ -78,6 +78,31 @@ test("Dapper downloads and verifies a compatible FNK0104 package", async () => {
   assert.ok(requests.every(request => request.options.referrerPolicy === "no-referrer"));
 });
 
+test("Dapper keeps the full catalog count while exposing only compatible packages", async () => {
+  const fixture = repositoryFixture();
+  const cardputer = {
+    ...fixture.record,
+    id: "cardputer-only",
+    name: "Cardputer Only",
+    boards: ["m5cardputer"],
+    url: "packages/cardputer-only/1.2.0/m5cardputer.dapp"
+  };
+  const future = {
+    ...fixture.record,
+    id: "future-app",
+    name: "Future App",
+    runtime_min: "1.8.0",
+    url: "packages/future-app/1.2.0/fnk0104.dapp"
+  };
+  fixture.catalog = `${[fixture.record, cardputer, future].map(record => JSON.stringify(record)).join("\n")}\n`;
+  const client = clientFor(fixture);
+
+  assert.equal((await client.refresh()).length, 3);
+  assert.deepEqual((await client.available()).map(record => record.id), ["download"]);
+  await assert.rejects(() => client.select("cardputer-only"), /not published for fnk0104/);
+  await assert.rejects(() => client.select("future-app"), /requires AppRunner >=1\.8\.0 <2\.0\.0/);
+});
+
 test("Dapper owns, diagnoses, and removes only registry-managed packages", async () => {
   const fixture = repositoryFixture();
   const client = clientFor(fixture);

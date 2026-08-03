@@ -583,7 +583,14 @@ export class DollShell {
   async command_run(parts) {
     if (!parts[1]) return this.write("Usage: run <app>");
     const path = this.findApp(parts[1]);
-    if (!path) return this.write(`run: app not found: ${parts[1]}`, "red");
+    if (!path) {
+      this.write(`run: app not installed: ${parts[1]}`, "red");
+      if (this.hooks.dapper && /^[a-z0-9][a-z0-9-]{0,31}(?:\.dapp)?$/.test(parts[1])) {
+        const id = parts[1].replace(/\.dapp$/, "");
+        this.write(`Install it first: dapper install ${id}`, "yellow");
+      }
+      return;
+    }
     await this.hooks.runApp?.(path, this.fs.read(path));
   }
 
@@ -668,7 +675,8 @@ export class DollShell {
     try {
       if (action === "refresh") {
         const records = await dapper.refresh(true);
-        this.write(`Dapper: catalog ready (${records.length} compatible artifacts)`, "green");
+        const compatible = await dapper.available();
+        this.write(`Dapper: catalog ready (${records.length} artifact(s); ${compatible.length} compatible package(s))`, "green");
       } else if (action === "search") {
         this.write("Dapper: refreshing catalog...", "cyan");
         const found = await dapper.search(query);

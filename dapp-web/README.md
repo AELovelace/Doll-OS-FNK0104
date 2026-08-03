@@ -26,8 +26,11 @@ keyboard input offscreen; click the terminal before typing.
 
 ## Host it
 
-Upload the contents of `dapp-web/` to any static web host. There is no build
-step, server code, package manager, or external asset dependency.
+Upload the entire contents of `dapp-web/` to any static web host as one
+deployment. There is no build step, server code, package manager, or external
+asset dependency. Do not mix JavaScript files from different releases: the
+shell, Dapper client, AppRunner, and `runtime-config.js` share one runtime
+contract.
 
 The editor draft, virtual filesystem, Game Boy battery RAM, and save states are
 stored in the visitor's browser with `localStorage`. They are not uploaded
@@ -100,3 +103,8 @@ passwords into the browser disk.
 Dapper 1.7 maintains an ownership registry under `/.dapper`, refuses unmanaged
 overwrites unless `--force` is explicit, verifies HTTPS artifacts before any
 write, and supports `list`, `update`, `remove`, and hash-checking `doctor`.
+`dapper refresh` reports both catalog artifacts and compatible packages. With
+the current repository it reports 46 artifacts and 43 FNK0104-compatible
+packages; the three remaining packages target M5Cardputer. Tracker Music 1.3.1
+is compatible with the browser's AppRunner 1.7 runtime and can be installed with
+`dapper install tracker-music` before running `run tracker-music`.
