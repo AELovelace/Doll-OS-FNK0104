@@ -60,6 +60,9 @@ test("the emulator page wires its editor to the shared device runtime", async ()
   assert.match(html, /emulator-mode\.js/);
   assert.match(mode, /terminal-embed/);
   assert.match(css, /\.terminal-embed canvas/);
+  assert.match(css, /height:\s*calc\(100dvh - 24px\)/);
+  assert.match(css, /grid-template-rows:\s*auto auto minmax\(0, 1fr\) auto auto auto/);
+  assert.match(css, /#studio-editor[^}]*overflow:\s*auto/);
   assert.match(source, /new ResizeObserver\(resizeTerminalDisplay\)/);
 });
 

@@ -76,17 +76,25 @@ h1 em { color: var(--pink); font-style: normal; text-decoration: underline; text
 
 .workbench { display: grid; grid-template-columns: minmax(340px, .95fr) minmax(440px, 1.35fr) minmax(285px, .65fr); gap: 22px; align-items: start; min-width: 0; }
 .app-lab, .device-column, .control-panel { min-width: 0; border: 3px solid var(--border); background: rgba(23, 18, 23, .92); }
-.app-lab { display: grid; grid-template-rows: auto auto minmax(420px, 1fr) auto auto auto; overflow: hidden; }
+.app-lab {
+  display: grid;
+  height: calc(100vh - 24px);
+  height: calc(100dvh - 24px);
+  max-height: calc(100vh - 24px);
+  max-height: calc(100dvh - 24px);
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto auto;
+  overflow: hidden;
+}
 .app-lab .panel-title span:last-child { color: var(--cyan); }
 .studio-toolbar { display: grid; grid-template-columns: 1fr; gap: 7px; padding: 15px; border-bottom: 1px solid #563047; }
 .studio-toolbar label { color: var(--cyan); font-size: 9px; letter-spacing: 1px; }
 .studio-toolbar select, .studio-toolbar input { width: 100%; min-width: 0; padding: 9px; border: 1px solid #71415b; border-radius: 0; color: white; background: #0b090c; }
-.studio-editor-shell { display: grid; grid-template-columns: 44px minmax(0, 1fr); min-height: 420px; overflow: hidden; background: #070607; }
-.studio-line-numbers { height: 100%; margin: 0; padding: 17px 9px; overflow: hidden; border-right: 1px solid #3e1a31; color: #695562; background: #050405; font: 12px/1.65 var(--mono); text-align: right; white-space: pre; user-select: none; }
-.studio-code-layer { position: relative; min-width: 0; min-height: 420px; overflow: hidden; }
+.studio-editor-shell { display: grid; grid-template-columns: 44px minmax(0, 1fr); min-height: 0; overflow: hidden; background: #070607; }
+.studio-line-numbers { min-height: 0; height: 100%; margin: 0; padding: 17px 9px; overflow: hidden; border-right: 1px solid #3e1a31; color: #695562; background: #050405; font: 12px/1.65 var(--mono); text-align: right; white-space: pre; user-select: none; }
+.studio-code-layer { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
 .studio-highlight, #studio-editor { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 17px; border: 0; font: 13px/1.65 var(--mono); tab-size: 2; white-space: pre; overflow: auto; }
-.studio-highlight { z-index: 1; color: #e9dde4; background: repeating-linear-gradient(0deg, transparent 0 22px, rgba(255,255,255,.018) 22px 23px), #070607; pointer-events: none; }
-#studio-editor { z-index: 2; resize: none; color: transparent; background: transparent; caret-color: var(--pink); -webkit-text-fill-color: transparent; }
+.studio-highlight { z-index: 1; overflow: hidden; color: #e9dde4; background: repeating-linear-gradient(0deg, transparent 0 22px, rgba(255,255,255,.018) 22px 23px), #070607; pointer-events: none; }
+#studio-editor { z-index: 2; resize: none; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; color: transparent; background: transparent; caret-color: var(--pink); -webkit-text-fill-color: transparent; }
 #studio-editor::selection { background: rgba(85, 244, 240, .28); }
 .tok-comment { color: #777068; font-style: italic; }
 .tok-label { color: var(--pink); font-weight: 900; }
