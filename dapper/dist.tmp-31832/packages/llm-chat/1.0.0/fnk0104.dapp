@@ -1,0 +1,85 @@
+# @dapp-format 1
+# @id llm-chat
+# @name LLM Chat
+# @version 1.0.0
+# @boards fnk0104
+# @runtime >=1.4.0 <2.0.0
+# @summary Send single-turn prompts to an OpenAI-compatible Chat Completions endpoint
+
+SETSTR endpoint "http://192.168.1.50:8000/v1/chat/completions"
+SETSTR model "local-model"
+CHR q 34
+
+PRINT "LLM CHAT"
+PRINT "Single-turn chat. Type /quit to leave."
+PRINT "Edit endpoint/model for your server."
+PRINT "A bearer token is masked and kept only for this run."
+INPUTSECRET apikey "Bearer token (blank if none)> "
+HTTPCLEAR
+HTTPHEADER "Content-Type" "application/json"
+IFEQ $apikey "" GOTO headers_ready
+HTTPHEADER "Authorization" "Bearer $apikey"
+:headers_ready
+
+:chat
+INPUT prompt "you> "
+IFEQ $prompt "/quit" GOTO done
+JSONESC safe $prompt
+IF $jsonok = 0 GOTO prompt_too_long
+
+# Build JSON with q because .dapp string literals do not interpret backslash escapes.
+SETSTR body "{"
+APPEND body $q
+APPEND body "model$q:"
+APPEND body $q
+APPEND body "$model$q,"
+APPEND body $q
+APPEND body "messages$q:[{"
+APPEND body $q
+APPEND body "role$q:"
+APPEND body $q
+APPEND body "user$q,"
+APPEND body $q
+APPEND body "content$q:"
+APPEND body $q
+APPEND body $safe
+APPEND body $q
+APPEND body "}],"
+APPEND body $q
+APPEND body "max_completion_tokens$q:256}"
+
+PRINT "thinking..."
+HTTPPOST raw $endpoint $body 4096
+IF $httpok = 0 GOTO http_error
+JSONGET answer $raw "choices[0].message.content"
+IF $jsonok = 0 GOTO json_error
+COLOR cyan
+PRINT "llm> $answer"
+COLOR white
+GOTO chat
+
+:prompt_too_long
+COLOR red
+PRINT "prompt is too long after JSON escaping"
+COLOR white
+GOTO chat
+
+:http_error
+COLOR red
+PRINT "request failed: HTTP $httpcode"
+PRINT "$raw"
+COLOR white
+GOTO chat
+
+:json_error
+COLOR red
+PRINT "response did not contain choices[0].message.content"
+PRINT "$raw"
+COLOR white
+GOTO chat
+
+:done
+HTTPCLEAR
+SETSTR apikey ""
+PRINT "bye"
+END

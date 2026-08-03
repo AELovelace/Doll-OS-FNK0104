@@ -1,0 +1,165 @@
+# @dapp-format 1
+# @id netwatch
+# @name Netwatch
+# @version 1.0.1
+# @boards fnk0104
+# @runtime >=1.4.2 <2.0.0
+# @echo off
+# @summary Live wifi/IP change watcher with persistent event log
+# /apps/netwatch.dapp
+# Watches wifi and IP changes and appends events to /apps/netwatch.log.
+# Keys: L view log, C clear log, R reset counters, Esc/Q quit.
+
+SET lastWifi $wifi
+SETSTR lastIp $ip
+SET upCount 0
+SET downCount 0
+SET ipCount 0
+SETSTR ev "started"
+GOSUB log_event
+SET nextTick 0
+GOSUB draw
+
+:loop
+KEY k
+IF $k = $kesc GOTO done
+IF $k = 113 GOTO done
+IF $k = 81 GOTO done
+IF $k = 108 GOSUB show_log
+IF $k = 76 GOSUB show_log
+IF $k = 99 GOSUB clear_log
+IF $k = 67 GOSUB clear_log
+IF $k = 114 GOSUB reset_counts
+IF $k = 82 GOSUB reset_counts
+
+EXPR waitFor $nextTick - $millis
+IF $waitFor > 0 GOTO loop_wait
+EXPR nextTick $millis + 1000
+GOSUB sample
+GOSUB draw
+
+:loop_wait
+WAIT 20
+GOTO loop
+
+:sample
+SET wifiNow $wifi
+SETSTR ipNow $ip
+IF $wifiNow = $lastWifi GOTO sm_ip
+IF $wifiNow = 1 GOSUB on_up
+IF $wifiNow = 0 GOSUB on_down
+SET lastWifi $wifiNow
+:sm_ip
+IFEQ $ipNow $lastIp GOTO sm_done
+GOSUB on_ip_change
+SETSTR lastIp $ipNow
+:sm_done
+RETURN
+
+:on_up
+ADD upCount 1
+SETSTR ev "wifi online"
+GOSUB log_event
+RETURN
+
+:on_down
+ADD downCount 1
+SETSTR ev "wifi offline"
+GOSUB log_event
+RETURN
+
+:on_ip_change
+ADD ipCount 1
+SETSTR ev "ip -> $ipNow"
+GOSUB log_event
+RETURN
+
+:log_event
+FOPEN "/apps/netwatch.log" append
+IF $fok = 1 GOTO log_write
+RETURN
+:log_write
+FWRITE "[$seconds] $ev"
+FCLOSE
+RETURN
+
+:draw
+CLEAR
+COLOR cyan
+PRINT "NETWATCH"
+PRINT "--------"
+COLOR white
+IF $wifi = 1 GOTO dr_on
+COLOR red
+PRINT "wifi: offline"
+GOTO dr_ip
+:dr_on
+COLOR green
+PRINT "wifi: online"
+:dr_ip
+COLOR white
+PRINT "ip: $ip"
+PRINT ""
+COLOR cyan
+PRINT "events"
+COLOR white
+PRINT "up: $upCount"
+PRINT "down: $downCount"
+PRINT "ip changes: $ipCount"
+PRINT ""
+COLOR yellow
+PRINT "L log  C clear  R reset  Esc quit"
+RETURN
+
+:show_log
+CLEAR
+COLOR cyan
+PRINT "NETWATCH LOG"
+PRINT "------------"
+COLOR white
+FOPEN "/apps/netwatch.log" read
+IF $fok = 1 GOTO sl_read
+COLOR yellow
+PRINT "(no log file yet)"
+GOTO sl_pause
+:sl_read
+SET lines 0
+:sl_loop
+FREAD line
+IF $feof = 1 GOTO sl_done
+ADD lines 1
+PRINT "$lines. $line"
+GOTO sl_loop
+:sl_done
+FCLOSE
+IF $lines > 0 GOTO sl_pause
+COLOR yellow
+PRINT "(empty)"
+:sl_pause
+PRINT ""
+INPUT _ "enter to return"
+GOSUB draw
+RETURN
+
+:clear_log
+FDELETE "/apps/netwatch.log"
+SETSTR ev "log cleared"
+GOSUB log_event
+GOSUB draw
+RETURN
+
+:reset_counts
+SET upCount 0
+SET downCount 0
+SET ipCount 0
+SETSTR ev "counters reset"
+GOSUB log_event
+GOSUB draw
+RETURN
+
+:done
+SETSTR ev "stopped"
+GOSUB log_event
+COLOR cyan
+PRINT "netwatch: bye"
+EXIT

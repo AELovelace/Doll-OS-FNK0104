@@ -1,0 +1,516 @@
+# @dapp-format 1
+# @id mines
+# @name Minesweeper
+# @version 1.0.0
+# @boards fnk0104
+# @runtime >=1.1.0 <2.0.0
+# @summary Sweep a 12x10 field of eighteen mines without opening one
+# /apps/mines.dapp
+# Minesweeper for the DOLL-OS canvas. Arrows or WASD move the cursor,
+# space or enter opens a cell, F flags one, R starts a new field, escape
+# quits.
+#
+# Two details are worth knowing before reading the code. The mines are not
+# laid until the first cell is opened, and the nine cells around that first
+# pick are excluded, so an opening move can never lose and usually opens a
+# large area. And the flood fill that opens that area is a queue in an
+# array, not recursion: cells go in as they are opened and only blanks are
+# expanded, which is the same order a recursive version would visit them
+# without needing 100 nested GOSUBs to hold the frontier.
+
+CANVAS 40 15
+COLOR red
+PUT 12 5 "M I N E S"
+COLOR white
+PUT 6 7 "arrows or wasd to move"
+PUT 6 8 "space opens - f flags"
+PUT 6 9 "r restarts - esc quits"
+FLIP
+WAIT 1200
+
+# 12 x 10 field: a mine flag, a neighbour count, and a display state
+# (0 hidden, 1 open, 2 flagged) per cell, plus the flood-fill queue
+DIM mine 120
+DIM nb 120
+DIM st 120
+DIM q 120
+
+GOSUB loadbest
+
+# restart is cleared here, not where it is acted on: the main loop tests it
+# on every pass, including the ones where no key arrived, so leaving it set
+# would send the game back through newgame forever
+:newgame
+SET restart 0
+SET curx 6
+SET cury 5
+SET flags 0
+SET revealed 0
+SET placed 0
+SET dead 0
+SET won 0
+SET quit 0
+SET start $seconds
+SET elapsed 0
+SET i 0
+:ng_clear
+SET mine[$i] 0
+SET nb[$i] 0
+SET st[$i] 0
+ADD i 1
+IF $i < 120 GOTO ng_clear
+GOSUB draw
+
+:ng_drain
+KEY k
+IF $k <> 0 GOTO ng_drain
+
+# ---------------------------------------------------------------- main loop
+
+# the clock is the only thing that moves without the player, so a frame is
+# redrawn when a key arrives or when the displayed second changes
+:loop
+KEY k
+IF $k <> 0 GOSUB handlekey
+IF $quit = 1 GOTO leave
+IF $restart = 1 GOTO newgame
+IF $dead = 1 GOTO lost
+IF $won = 1 GOTO cleared
+EXPR now $seconds - $start
+IF $now = $elapsed GOTO lp_wait
+SET elapsed $now
+GOSUB draw
+:lp_wait
+WAIT 20
+GOTO loop
+
+# ---------------------------------------------------------------- input
+
+:handlekey
+SET restart 0
+IF $k = $kesc GOTO hk_quit
+IF $k = 114 GOTO hk_restart
+IF $k = 82 GOTO hk_restart
+IF $k = $kleft GOTO hk_left
+IF $k = 97 GOTO hk_left
+IF $k = $kright GOTO hk_right
+IF $k = 100 GOTO hk_right
+IF $k = $kup GOTO hk_up
+IF $k = 119 GOTO hk_up
+IF $k = $kdown GOTO hk_down
+IF $k = 115 GOTO hk_down
+IF $k = $kspace GOTO hk_open
+IF $k = $kenter GOTO hk_open
+IF $k = 102 GOTO hk_flag
+IF $k = 70 GOTO hk_flag
+RETURN
+
+:hk_quit
+SET quit 1
+RETURN
+
+:hk_restart
+SET restart 1
+RETURN
+
+:hk_left
+IF $curx <= 0 GOTO hk_redraw
+SUB curx 1
+GOTO hk_redraw
+:hk_right
+IF $curx >= 11 GOTO hk_redraw
+ADD curx 1
+GOTO hk_redraw
+:hk_up
+IF $cury <= 0 GOTO hk_redraw
+SUB cury 1
+GOTO hk_redraw
+:hk_down
+IF $cury >= 9 GOTO hk_redraw
+ADD cury 1
+:hk_redraw
+GOSUB draw
+RETURN
+
+# flagging is only ever a display change, so it needs no rules beyond
+# refusing to cover an open cell
+:hk_flag
+EXPR ci $cury * 12 + $curx
+IF $st[$ci] = 1 GOTO hk_flag_done
+IF $st[$ci] = 2 GOTO hk_unflag
+SET st[$ci] 2
+ADD flags 1
+GOTO hk_flag_done
+:hk_unflag
+SET st[$ci] 0
+SUB flags 1
+:hk_flag_done
+GOSUB draw
+RETURN
+
+# the index is recomputed after layfield rather than kept across it: laying
+# the field walks every cell, and shared numeric variables do not survive a
+# GOSUB the way locals would
+:hk_open
+EXPR ci $cury * 12 + $curx
+IF $st[$ci] <> 0 GOTO hk_open_done
+IF $placed = 0 GOSUB layfield
+EXPR ci $cury * 12 + $curx
+IF $mine[$ci] = 1 GOTO hk_boom
+SET rx $curx
+SET ry $cury
+GOSUB reveal
+EXPR need 120 - 18
+IF $revealed >= $need GOSUB setwon
+GOTO hk_open_done
+:hk_boom
+SET dead 1
+:hk_open_done
+GOSUB draw
+RETURN
+
+:setwon
+SET won 1
+RETURN
+
+# ---------------------------------------------------------------- the field
+
+# called from the first open, with curx/cury holding the cell that must be
+# safe. Eighteen mines are dropped at random outside the 3x3 around it;
+# rejection sampling is fine here because at worst 18 of 111 free cells are
+# taken, so a retry is rare.
+:layfield
+SET laid 0
+:lf_try
+RAND mi 120
+IF $mine[$mi] = 1 GOTO lf_try
+EXPR my floor($mi / 12)
+EXPR mx $mi - $my * 12
+EXPR ddx abs($mx - $curx)
+EXPR ddy abs($my - $cury)
+IF $ddx > 1 GOTO lf_place
+IF $ddy > 1 GOTO lf_place
+GOTO lf_try
+:lf_place
+SET mine[$mi] 1
+ADD laid 1
+IF $laid < 18 GOTO lf_try
+
+SET i 0
+:lf_count
+EXPR cy floor($i / 12)
+EXPR cx $i - $cy * 12
+GOSUB neighbours
+SET nb[$i] $n
+ADD i 1
+IF $i < 120 GOTO lf_count
+SET placed 1
+SET start $seconds
+RETURN
+
+# in: cx, cy   out: n -- mines in the eight cells around (cx,cy)
+:neighbours
+SET n 0
+SET dy -1
+:nbr_dy
+SET dx -1
+:nbr_dx
+EXPR nx $cx + $dx
+EXPR ny $cy + $dy
+IF $nx < 0 GOTO nbr_next
+IF $nx > 11 GOTO nbr_next
+IF $ny < 0 GOTO nbr_next
+IF $ny > 9 GOTO nbr_next
+EXPR ni $ny * 12 + $nx
+ADD n $mine[$ni]
+:nbr_next
+ADD dx 1
+IF $dx <= 1 GOTO nbr_dx
+ADD dy 1
+IF $dy <= 1 GOTO nbr_dy
+# the 3x3 sweep counted the centre cell as well; take it back out
+EXPR mid $cy * 12 + $cx
+SUB n $mine[$mid]
+RETURN
+
+# ---------------------------------------------------------------- opening
+
+# in: rx, ry -- opens that cell and, if it is blank, everything reachable
+# through other blanks. q holds the cells still to expand; a cell is marked
+# open as it is pushed, which is what stops it being pushed twice.
+:reveal
+EXPR ri $ry * 12 + $rx
+SET qh 0
+SET qt 0
+SET q[$qt] $ri
+ADD qt 1
+SET st[$ri] 1
+ADD revealed 1
+
+:rv_pop
+IF $qh >= $qt GOTO rv_done
+SET ci $q[$qh]
+ADD qh 1
+IF $nb[$ci] <> 0 GOTO rv_pop
+EXPR cy floor($ci / 12)
+EXPR cx $ci - $cy * 12
+
+SET dy -1
+:rv_dy
+SET dx -1
+:rv_dx
+EXPR nx $cx + $dx
+EXPR ny $cy + $dy
+IF $nx < 0 GOTO rv_next
+IF $nx > 11 GOTO rv_next
+IF $ny < 0 GOTO rv_next
+IF $ny > 9 GOTO rv_next
+EXPR ni $ny * 12 + $nx
+IF $st[$ni] <> 0 GOTO rv_next
+IF $mine[$ni] = 1 GOTO rv_next
+SET st[$ni] 1
+ADD revealed 1
+SET q[$qt] $ni
+ADD qt 1
+:rv_next
+ADD dx 1
+IF $dx <= 1 GOTO rv_dx
+ADD dy 1
+IF $dy <= 1 GOTO rv_dy
+GOTO rv_pop
+
+:rv_done
+RETURN
+
+:showmines
+SET i 0
+:sm_loop
+IF $mine[$i] = 0 GOTO sm_next
+SET st[$i] 1
+:sm_next
+ADD i 1
+IF $i < 120 GOTO sm_loop
+RETURN
+
+# ---------------------------------------------------------------- drawing
+
+:draw
+CLS
+COLOR red
+PUT 0 0 "MINESWEEPER"
+COLOR blue
+PUT 0 1 "+------------------------------------+"
+PUT 0 12 "+------------------------------------+"
+
+SET y 0
+:dr_row
+SET x 0
+:dr_col
+EXPR i $y * 12 + $x
+GOSUB cellchar
+SET cur 0
+IF $x <> $curx GOTO dr_plain
+IF $y <> $cury GOTO dr_plain
+SET cur 1
+:dr_plain
+IF $cur = 1 GOTO dr_cursor
+SETSTR cell " "
+APPEND cell $ch
+APPEND cell " "
+GOTO dr_put
+:dr_cursor
+SETSTR cell "["
+APPEND cell $ch
+APPEND cell "]"
+:dr_put
+EXPR px $x * 3 + 1
+EXPR py $y + 2
+PUT $px $py $cell
+ADD x 1
+IF $x < 12 GOTO dr_col
+ADD y 1
+IF $y < 10 GOTO dr_row
+
+EXPR left 18 - $flags
+COLOR cyan
+PUT 0 13 "mines"
+COLOR white
+PUT 6 13 $left
+COLOR cyan
+PUT 12 13 "time"
+COLOR white
+PUT 17 13 $elapsed
+COLOR cyan
+PUT 24 13 "best"
+COLOR white
+PUT 29 13 $best
+COLOR yellow
+PUT 0 14 "space opens  f flags  r new  esc quit"
+FLIP
+RETURN
+
+# sets ch (one character) and the colour for cell $i
+:cellchar
+SET s $st[$i]
+IF $s = 2 GOTO cc_flag
+IF $s = 1 GOTO cc_open
+COLOR blue
+SETSTR ch "."
+RETURN
+:cc_flag
+COLOR pink
+SETSTR ch "F"
+RETURN
+:cc_open
+IF $mine[$i] = 1 GOTO cc_mine
+SET n $nb[$i]
+IF $n = 0 GOTO cc_blank
+EXPR code 48 + $n
+CHR ch $code
+GOSUB numcolor
+RETURN
+:cc_blank
+COLOR white
+SETSTR ch " "
+RETURN
+:cc_mine
+COLOR red
+SETSTR ch "*"
+RETURN
+
+# the usual convention: the more mines a number is warning about, the
+# louder it looks
+:numcolor
+COLOR cyan
+IF $n = 1 GOTO nc_done
+COLOR green
+IF $n = 2 GOTO nc_done
+COLOR yellow
+IF $n = 3 GOTO nc_done
+COLOR magenta
+IF $n = 4 GOTO nc_done
+COLOR pink
+IF $n = 5 GOTO nc_done
+COLOR red
+:nc_done
+RETURN
+
+# ---------------------------------------------------------------- best time
+
+:loadbest
+SET best 0
+FEXISTS bx "/apps/mines.bt"
+IF $bx = 0 GOTO lb_done
+FOPEN "/apps/mines.bt" read
+IF $fok = 0 GOTO lb_done
+FREAD text
+FCLOSE
+GOSUB str2num
+SET best $num
+:lb_done
+RETURN
+
+# a stored 0 means "no record yet", so a clear that took under a second is
+# rounded up rather than becoming an unbeatable best
+:savebest
+SET newbest 0
+IF $elapsed > 0 GOTO sb_test
+SET elapsed 1
+:sb_test
+IF $best = 0 GOTO sb_store
+IF $elapsed >= $best GOTO sb_done
+:sb_store
+SET best $elapsed
+SET newbest 1
+FOPEN "/apps/mines.bt" write
+IF $fok = 0 GOTO sb_done
+FWRITE $elapsed
+FCLOSE
+:sb_done
+RETURN
+
+# in: text (string)   out: num -- a time read back from a file is text again
+:str2num
+SET num 0
+SET s2i 0
+LEN s2len $text
+:s2n_loop
+IF $s2i >= $s2len GOTO s2n_done
+CHARAT s2d $text $s2i
+IF $s2d < 48 GOTO s2n_done
+IF $s2d > 57 GOTO s2n_done
+SUB s2d 48
+MUL num 10
+ADD num $s2d
+ADD s2i 1
+GOTO s2n_loop
+:s2n_done
+RETURN
+
+# ---------------------------------------------------------------- endings
+
+# a blank box over the middle of the field for the two endings to write into
+:banner
+PUT 6 4 "+----------------------+"
+PUT 6 5 "|                      |"
+PUT 6 6 "|                      |"
+PUT 6 7 "|                      |"
+PUT 6 8 "+----------------------+"
+RETURN
+
+:lost
+GOSUB showmines
+GOSUB draw
+COLOR red
+GOSUB banner
+PUT 11 5 "YOU HIT A MINE"
+COLOR cyan
+PUT 9 7 "r=again  esc=quit"
+FLIP
+GOTO endwait
+
+:cleared
+EXPR elapsed $seconds - $start
+GOSUB savebest
+GOSUB draw
+COLOR green
+GOSUB banner
+PUT 10 5 "CLEARED in $elapsed s"
+IF $newbest = 0 GOTO cl_keys
+COLOR yellow
+PUT 10 6 "NEW BEST TIME"
+:cl_keys
+COLOR cyan
+PUT 9 7 "r=again  esc=quit"
+FLIP
+
+:endwait
+WAIT 400
+:ew_drain
+KEY k
+IF $k <> 0 GOTO ew_drain
+:ew_wait
+KEY k
+IF $k = 114 GOTO newgame
+IF $k = 82 GOTO newgame
+IF $k = $kenter GOTO newgame
+IF $k = $kspace GOTO newgame
+IF $k = $kesc GOTO leave
+WAIT 20
+GOTO ew_wait
+
+:leave
+ENDCANVAS
+IF $won = 1 GOTO lv_won
+IF $dead = 1 GOTO lv_dead
+COLOR white
+PRINT "mines: left the field with $revealed of 102 cells open"
+EXIT
+:lv_won
+COLOR green
+PRINT "mines: field cleared in $elapsed seconds (best $best)"
+EXIT
+:lv_dead
+COLOR red
+PRINT "mines: you hit a mine after $revealed cells"
+EXIT

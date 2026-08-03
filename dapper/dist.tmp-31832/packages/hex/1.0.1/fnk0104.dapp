@@ -1,0 +1,238 @@
+# @dapp-format 1
+# @id hex
+# @name Hex Editor
+# @version 1.0.1
+# @boards fnk0104
+# @runtime >=1.4.2 <2.0.0
+# @echo off
+# @summary Inspect and patch files byte-for-byte without losing NULs or newlines
+
+INPUT path "file> "
+FOPEN "$path" update
+IF $fok = 0 GOTO open_fail
+FSIZE size
+SET base 0
+SET cursor 0
+DIM bytes 16
+CANVAS 60 13
+
+:loop
+GOSUB load_page
+GOSUB draw
+WAIT 35
+KEY k
+IF $k = 0 GOTO loop
+IF $k = $kleft GOTO left
+IF $k = $kright GOTO right
+IF $k = $kup GOTO up
+IF $k = $kdown GOTO down
+IF $k = 110 GOTO next_page
+IF $k = 78 GOTO next_page
+IF $k = 112 GOTO prev_page
+IF $k = 80 GOTO prev_page
+IF $k = 101 GOTO edit
+IF $k = 69 GOTO edit
+IF $k = $kesc GOTO quit
+IF $k = 120 GOTO quit
+IF $k = 88 GOTO quit
+GOTO loop
+
+:left
+SUB cursor 1
+IF $cursor >= 0 GOTO loop
+IF $base = 0 GOTO left_zero
+SUB base 16
+SET cursor 15
+GOTO loop
+:left_zero
+SET cursor 0
+GOTO loop
+
+:right
+ADD cursor 1
+EXPR absolute $base+$cursor
+IF $absolute < $size GOTO right_in_page
+IF $size = 0 GOTO right_empty
+EXPR cursor $size-$base-1
+IF $cursor >= 0 GOTO loop
+:right_empty
+SET cursor 0
+GOTO loop
+:right_in_page
+IF $cursor < 16 GOTO loop
+ADD base 16
+SET cursor 0
+GOTO loop
+
+:up
+SUB cursor 8
+IF $cursor >= 0 GOTO loop
+IF $base = 0 GOTO up_zero
+SUB base 16
+ADD cursor 16
+GOTO loop
+:up_zero
+SET cursor 0
+GOTO loop
+
+:down
+ADD cursor 8
+IF $cursor < 16 GOTO down_clamp
+ADD base 16
+SUB cursor 16
+:down_clamp
+EXPR absolute $base+$cursor
+IF $absolute < $size GOTO loop
+IF $size = 0 GOTO right_empty
+EXPR cursor $size-$base-1
+IF $cursor >= 0 GOTO loop
+SET cursor 0
+GOTO loop
+
+:next_page
+EXPR next $base+16
+IF $next >= $size GOTO loop
+SET base $next
+GOTO loop
+
+:prev_page
+IF $base = 0 GOTO loop
+SUB base 16
+IF $base >= 0 GOTO loop
+SET base 0
+GOTO loop
+
+:edit
+IF $size = 0 GOTO loop
+EXPR absolute $base+$cursor
+IF $absolute >= $size GOTO loop
+INPUT entered "new byte (00-FF)> "
+LEN entered_len $entered
+IF $entered_len <> 2 GOTO loop
+CHARAT code $entered 0
+GOSUB nibble
+IF $valid = 0 GOTO loop
+SET high $nibble
+CHARAT code $entered 1
+GOSUB nibble
+IF $valid = 0 GOTO loop
+EXPR value $high*16+$nibble
+FSEEK $absolute
+IF $fok = 0 GOTO loop
+FWRITEB $value
+GOTO loop
+
+:nibble
+SET valid 1
+IF $code >= 48 GOTO nibble_digit_hi
+GOTO nibble_bad
+:nibble_digit_hi
+IF $code <= 57 GOTO nibble_digit
+IF $code >= 65 GOTO nibble_upper_hi
+GOTO nibble_bad
+:nibble_upper_hi
+IF $code <= 70 GOTO nibble_upper
+IF $code >= 97 GOTO nibble_lower_hi
+GOTO nibble_bad
+:nibble_lower_hi
+IF $code <= 102 GOTO nibble_lower
+GOTO nibble_bad
+:nibble_digit
+EXPR nibble $code-48
+RETURN
+:nibble_upper
+EXPR nibble $code-55
+RETURN
+:nibble_lower
+EXPR nibble $code-87
+RETURN
+:nibble_bad
+SET valid 0
+SET nibble 0
+RETURN
+
+:load_page
+FSEEK $base
+SET count 0
+:load_loop
+IF $count >= 16 GOTO load_done
+FREADB byte
+IF $feof = 1 GOTO load_done
+SET bytes[$count] $byte
+ADD count 1
+GOTO load_loop
+:load_done
+RETURN
+
+:draw
+CLEAR
+COLOR pink
+PUT 1 0 "HEX EDITOR  $path"
+COLOR white
+PUT 1 1 "arrows move  N/P page  E edit  X exit"
+HEX hextext $base 8
+PUT 1 3 "$hextext:"
+EXPR rowbase $base+8
+HEX hextext $rowbase 8
+PUT 1 6 "$hextext:"
+
+SET i 0
+:draw_loop
+IF $i >= $count GOTO draw_cursor
+SET byte $bytes[$i]
+HEX hextext $byte 2
+EXPR col ($i%8)*3+8
+IF $i < 8 GOTO draw_row0
+SET row 6
+GOTO draw_hex
+:draw_row0
+SET row 3
+:draw_hex
+COLOR cyan
+PUT $col $row $hextext
+
+SETSTR glyph "."
+IF $byte < 32 GOTO draw_ascii
+IF $byte > 126 GOTO draw_ascii
+CHR glyph $byte
+:draw_ascii
+EXPR acol ($i%8)+35
+COLOR green
+PUT $acol $row "$glyph"
+ADD i 1
+GOTO draw_loop
+
+:draw_cursor
+EXPR absolute $base+$cursor
+IF $absolute >= $size GOTO draw_status
+EXPR col ($cursor%8)*3+8
+IF $cursor < 8 GOTO cursor_row0
+SET row 7
+GOTO cursor_put
+:cursor_row0
+SET row 4
+:cursor_put
+COLOR yellow
+PUT $col $row "^^"
+
+:draw_status
+HEX hextext $absolute 8
+COLOR white
+PUT 1 9 "offset 0x$hextext / $size bytes"
+IF $absolute >= $size GOTO draw_flip
+SET byte $bytes[$cursor]
+HEX hextext $byte 2
+PUT 1 10 "byte 0x$hextext  decimal $byte"
+:draw_flip
+FLIP
+RETURN
+
+:quit
+FCLOSE
+ENDCANVAS
+PRINT "hex: closed $path"
+END
+
+:open_fail
+PRINT "hex: cannot open $path for update"
+END

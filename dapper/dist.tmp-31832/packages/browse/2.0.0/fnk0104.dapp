@@ -1,0 +1,258 @@
+# @dapp-format 1
+# @id browse
+# @name Browse
+# @version 2.0.0
+# @boards fnk0104
+# @runtime >=1.5.0 <2.0.0
+# @echo off
+# @summary A text-mode web browser: fetch, HTML to text, link following
+# /apps/browse.dapp
+#
+# HTMLTEXT does the whole fetch in one opcode: it streams the response body straight
+# through the runtime's HTML renderer and out to two files, without the document ever
+# existing in a variable. Nothing here is bounded by the 4096-byte string cap, so
+# there is no ranged-window walk, no 206/200/416 bookkeeping, and no parser state to
+# carry across chunk edges -- version 1 of this app was ~900 lines of exactly that,
+# and spent about 25 interpreter steps per byte of HTML doing it.
+#
+# What the runtime hands back:
+#   /browse.txt   rendered text, word-wrapped, one line per line
+#   /browse.lnk   "<number> <absolute-url>" per line, in marker order
+# so link [7] in the text is line 7 of the link file, which is what vw_link relies on.
+#
+# Known gaps, all deliberate: no JS, no CSS, no images, no forms. Non-ASCII text is
+# transliterated to ASCII by the renderer because the panel font cannot draw anything
+# above 126 (see ansiFilterByte in Display.ino).
+
+SET wrapcol 76
+SET maxlinks 200
+SET pagelines 20
+
+SETSTR textpath "/browse.txt"
+SETSTR linkpath "/browse.lnk"
+
+COLOR pink
+PRINT "browse -- text-mode web browser"
+COLOR white
+PRINT "enter pages a screenful, [n] follows a link, o opens a url, q quits"
+PRINT ""
+
+GOSUB askurl
+IF $navigate = 0 GOTO bye
+
+:nav
+GOSUB normalize
+GOSUB fetch
+IF $htmlok = 0 GOTO nav_failed
+IF $httpok = 0 GOTO nav_failed
+GOSUB report
+GOSUB view
+IF $navigate = 1 GOTO nav
+GOTO bye
+
+:nav_failed
+COLOR red
+PRINT "browse: fetch failed for $url (HTTP $httpcode)"
+COLOR white
+GOSUB askurl
+IF $navigate = 1 GOTO nav
+GOTO bye
+
+:bye
+HTTPCLEAR
+COLOR pink
+PRINT "browse: done"
+EXIT
+
+# ------------------------------------------------------------------ fetching
+
+:fetch
+HTTPCLEAR
+HTTPHEADER User-Agent "DOLL-OS-browse/2.0"
+HTTPHEADER Accept "text/html, text/plain"
+COLOR cyan
+PRINT "fetching $url"
+COLOR white
+HTMLTEXT $url $textpath $linkpath $wrapcol $maxlinks
+RETURN
+
+:report
+PRINT ""
+COLOR pink
+PRINT "$url"
+COLOR cyan
+PRINT "HTTP $httpcode, $htmlbytes bytes, $htmllines lines, $htmllinks links"
+IF $htmllinks < $maxlinks GOTO rp_done
+COLOR yellow
+PRINT "link list stopped at $maxlinks"
+:rp_done
+COLOR white
+PRINT ""
+RETURN
+
+# ------------------------------------------------------------------ reading
+
+# forward-only pager over the rendered text: the terminal keeps the scrollback, so
+# there is nothing to gain from re-reading for a page-up
+:view
+SET navigate 0
+FOPEN $textpath read
+IF $fok = 0 GOTO vw_none
+
+:vw_page
+SET vshown 0
+:vw_line
+IF $vshown >= $pagelines GOTO vw_prompt
+FREAD ln
+IF $feof = 1 GOTO vw_end
+COLOR white
+PRINT "$ln"
+ADD vshown 1
+GOTO vw_line
+
+:vw_end
+COLOR yellow
+PRINT "-- end of page --"
+SET vmore 0
+GOTO vw_ask
+:vw_prompt
+SET vmore 1
+
+:vw_ask
+COLOR cyan
+INPUT ln "[enter] more, n link, o url, q quit> "
+COLOR white
+IFEQ $ln "q" GOTO vw_quit
+IFEQ $ln "Q" GOTO vw_quit
+IFEQ $ln "o" GOTO vw_open
+IFEQ $ln "O" GOTO vw_open
+LEN n $ln
+IF $n = 0 GOTO vw_more
+GOSUB str2num
+IF $got = 0 GOTO vw_ask
+SET vpick $n
+GOTO vw_link
+
+:vw_more
+IF $vmore = 0 GOTO vw_ask
+GOTO vw_page
+
+:vw_open
+FCLOSE
+GOSUB askurl
+RETURN
+
+:vw_quit
+FCLOSE
+SET navigate 0
+RETURN
+
+# a number out of range is a typo, not a dead end: the spool is still open, so say so
+# and go back to the prompt. Only a link file that will not read is fatal, and by then
+# the spool has been closed and the reading position lost.
+:vw_link
+IF $vpick < 1 GOTO vw_nolink
+IF $vpick > $htmllinks GOTO vw_nolink
+FCLOSE
+FOPEN $linkpath read
+IF $fok = 0 GOTO vw_badlink
+EXPR n $vpick - 1
+:vl_skip
+IF $n <= 0 GOTO vl_read
+FREAD ln
+IF $feof = 1 GOTO vw_badlink
+SUB n 1
+GOTO vl_skip
+:vl_read
+FREAD ln
+IF $feof = 1 GOTO vw_badlink
+FCLOSE
+LEN sl1 $ln
+SET si1 0
+:vl_sp
+IF $si1 >= $sl1 GOTO vw_badlink
+CHARAT sc1 $ln $si1
+IF $sc1 = 32 GOTO vl_got
+ADD si1 1
+GOTO vl_sp
+:vl_got
+ADD si1 1
+EXPR n $sl1 - $si1
+SUBSTR newurl $ln $si1 $n
+SETSTR url $newurl
+SET navigate 1
+RETURN
+
+:vw_nolink
+COLOR red
+PRINT "no link [$vpick] on this page -- there are $htmllinks"
+COLOR white
+GOTO vw_ask
+
+:vw_badlink
+FCLOSE
+COLOR red
+PRINT "browse: link $vpick is missing from $linkpath"
+COLOR white
+SET navigate 0
+RETURN
+
+:vw_none
+COLOR red
+PRINT "browse: nothing to read"
+COLOR white
+SET navigate 0
+RETURN
+
+# ------------------------------------------------------------------ helpers
+
+:askurl
+SET navigate 0
+INPUT newurl "url> "
+LEN n $newurl
+IF $n = 0 GOTO ak_done
+SETSTR url $newurl
+SET navigate 1
+:ak_done
+RETURN
+
+# a bare host typed at the prompt gets a scheme. Relative links never reach here --
+# the renderer absolutises every href against the page it came from.
+:normalize
+LEN n $url
+SET pi2 0
+:nm_scan
+IF $pi2 >= $n GOTO nm_add
+SUBSTR probe $url $pi2 3
+IFEQ $probe "://" GOTO nm_done
+ADD pi2 1
+GOTO nm_scan
+:nm_add
+SETSTR probe "http://"
+APPEND probe $url
+SETSTR url $probe
+:nm_done
+RETURN
+
+# in: ln -- out: n, got=1 if it was a run of digits
+:str2num
+SET n 0
+SET got 0
+SET si1 0
+LEN sl1 $ln
+IF $sl1 = 0 GOTO s2_done
+SET got 1
+:s2_loop
+IF $si1 >= $sl1 GOTO s2_done
+CHARAT sc1 $ln $si1
+IF $sc1 < 48 GOTO s2_bad
+IF $sc1 > 57 GOTO s2_bad
+SUB sc1 48
+MUL n 10
+ADD n $sc1
+ADD si1 1
+GOTO s2_loop
+:s2_bad
+SET got 0
+:s2_done
+RETURN

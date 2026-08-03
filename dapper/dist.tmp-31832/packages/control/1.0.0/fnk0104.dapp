@@ -1,0 +1,186 @@
+# @dapp-format 1
+# @id control
+# @name Control
+# @version 1.0.0
+# @boards fnk0104
+# @runtime >=1.4.2 <2.0.0
+# @echo off
+# @summary A six-service HTTP health dashboard with latency and event logging
+# /apps/control.dapp
+
+SET slots 6
+
+:menu
+CLEAR
+COLOR pink
+PRINT "CONTROL // HTTP SERVICE MONITOR"
+COLOR white
+SET slot 1
+:list
+IF $slot > $slots GOTO listed
+FEXISTS have "/apps/control-$slot.cfg"
+IF $have = 0 GOTO empty
+GOSUB loadslot
+PRINT "$slot  $name  $url"
+GOTO next
+:empty
+PRINT "$slot  -- empty --"
+:next
+ADD slot 1
+GOTO list
+:listed
+PRINT ""
+PRINT "a add/edit   c check one   x check all"
+PRINT "d delete     l log         q quit"
+INPUT choice "control> "
+IFEQ $choice "a" GOTO edit
+IFEQ $choice "c" GOTO checkone
+IFEQ $choice "x" GOTO checkall
+IFEQ $choice "d" GOTO delete
+IFEQ $choice "l" GOTO log
+IFEQ $choice "q" GOTO leave
+GOTO menu
+
+:edit
+INPUT text "slot 1-6> "
+GOSUB str2num
+IF $got = 0 GOTO menu
+IF $num < 1 GOTO menu
+IF $num > $slots GOTO menu
+SET slot $num
+INPUT name "service name> "
+INPUT url "health URL> "
+LEN n $name
+IF $n = 0 GOTO menu
+LEN n $url
+IF $n = 0 GOTO menu
+FOPEN "/apps/control-$slot.cfg" write
+IF $fok = 0 GOTO menu
+FWRITE "$name"
+FWRITE "$url"
+FCLOSE
+GOTO menu
+
+:checkone
+INPUT text "slot> "
+GOSUB str2num
+IF $got = 0 GOTO menu
+SET slot $num
+IF $slot < 1 GOTO menu
+IF $slot > $slots GOTO menu
+FEXISTS have "/apps/control-$slot.cfg"
+IF $have = 0 GOTO menu
+CLEAR
+GOSUB loadslot
+GOSUB check
+INPUT choice "enter> "
+GOTO menu
+
+:checkall
+CLEAR
+COLOR pink
+PRINT "SERVICE STATUS"
+COLOR white
+SET slot 1
+:ca_loop
+IF $slot > $slots GOTO ca_done
+FEXISTS have "/apps/control-$slot.cfg"
+IF $have = 0 GOTO ca_next
+GOSUB loadslot
+GOSUB check
+:ca_next
+ADD slot 1
+GOTO ca_loop
+:ca_done
+INPUT choice "enter> "
+GOTO menu
+
+:check
+SET before $millis
+HTTPGET response $url 128
+SET after $millis
+EXPR latency $after - $before
+IF $httpok = 0 GOTO down
+COLOR green
+PRINT "UP    $name  HTTP $httpcode  $latency ms"
+SETSTR state "UP"
+GOTO checked
+:down
+COLOR red
+PRINT "DOWN  $name  HTTP $httpcode  $latency ms"
+SETSTR state "DOWN"
+:checked
+COLOR white
+FOPEN "/apps/control.log" append
+IF $fok = 0 GOTO ck_done
+FWRITE "[$seconds] $state $name HTTP=$httpcode ms=$latency"
+FCLOSE
+:ck_done
+RETURN
+
+:delete
+INPUT text "delete slot> "
+GOSUB str2num
+IF $got = 0 GOTO menu
+IF $num < 1 GOTO menu
+IF $num > $slots GOTO menu
+INPUT confirm "type DELETE> "
+IFNE $confirm "DELETE" GOTO menu
+SET slot $num
+FDELETE "/apps/control-$slot.cfg"
+GOTO menu
+
+:log
+CLEAR
+FEXISTS have "/apps/control.log"
+IF $have = 0 GOTO lognone
+FOPEN "/apps/control.log" read
+IF $fok = 0 GOTO lognone
+:logloop
+FREAD line
+IF $feof = 1 GOTO logdone
+PRINT "$line"
+GOTO logloop
+:logdone
+FCLOSE
+INPUT choice "enter> "
+GOTO menu
+:lognone
+PRINT "no checks logged"
+INPUT choice "enter> "
+GOTO menu
+
+:loadslot
+FOPEN "/apps/control-$slot.cfg" read
+IF $fok = 0 GOTO ls_done
+FREAD name
+FREAD url
+FCLOSE
+:ls_done
+RETURN
+
+:str2num
+SET num 0
+SET got 0
+SET i 0
+LEN n $text
+IF $n = 0 GOTO sn_done
+SET got 1
+:sn_loop
+IF $i >= $n GOTO sn_done
+CHARAT digit $text $i
+IF $digit < 48 GOTO sn_bad
+IF $digit > 57 GOTO sn_bad
+SUB digit 48
+MUL num 10
+ADD num $digit
+ADD i 1
+GOTO sn_loop
+:sn_bad
+SET got 0
+:sn_done
+RETURN
+
+:leave
+PRINT "control: done"
+EXIT

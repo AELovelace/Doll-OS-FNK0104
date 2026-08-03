@@ -1,0 +1,295 @@
+# @dapp-format 1
+# @id synth
+# @name Three Channel Synth
+# @version 1.0.0
+# @boards fnk0104
+# @runtime >=1.4.0 <2.0.0
+# @summary Mix three live sine, triangle, square, or noise voices
+
+# Three oscillators share the onboard speaker. 1/2/3 selects a channel;
+# S/T/Q/N/O selects sine/triangle/square/noise/off. Arrows tune it.
+
+SET sel 1
+SET f1 220
+SET f2 330
+SET f3 440
+SET l1 25
+SET l2 20
+SET l3 15
+SETSTR w1 sine
+SETSTR w2 triangle
+SETSTR w3 square
+
+WAVE 1 $w1 $f1 $l1
+WAVE 2 $w2 $f2 $l2
+WAVE 3 $w3 $f3 $l3
+IF $audiook = 0 GOTO audio_fail
+
+CANVAS 60 20
+
+:loop
+GOSUB draw
+WAIT 45
+KEY k
+IF $k = 0 GOTO loop
+IF $k = 49 GOTO select1
+IF $k = 50 GOTO select2
+IF $k = 51 GOTO select3
+IF $k = 115 GOTO sine
+IF $k = 83 GOTO sine
+IF $k = 116 GOTO triangle
+IF $k = 84 GOTO triangle
+IF $k = 113 GOTO square
+IF $k = 81 GOTO square
+IF $k = 110 GOTO noise
+IF $k = 78 GOTO noise
+IF $k = 111 GOTO waveoff
+IF $k = 79 GOTO waveoff
+IF $k = $kleft GOTO freq_down
+IF $k = $kright GOTO freq_up
+IF $k = $kdown GOTO level_down
+IF $k = $kup GOTO level_up
+IF $k = $kesc GOTO quit
+IF $k = 120 GOTO quit
+IF $k = 88 GOTO quit
+GOTO loop
+
+:select1
+SET sel 1
+GOTO loop
+:select2
+SET sel 2
+GOTO loop
+:select3
+SET sel 3
+GOTO loop
+
+:sine
+SETSTR chosen sine
+GOSUB set_wave
+GOTO loop
+:triangle
+SETSTR chosen triangle
+GOSUB set_wave
+GOTO loop
+:square
+SETSTR chosen square
+GOSUB set_wave
+GOTO loop
+:noise
+SETSTR chosen noise
+GOSUB set_wave
+GOTO loop
+:waveoff
+SETSTR chosen off
+GOSUB set_wave
+GOTO loop
+
+:set_wave
+IF $sel = 1 GOTO set_wave1
+IF $sel = 2 GOTO set_wave2
+SETSTR w3 $chosen
+GOSUB apply3
+RETURN
+:set_wave1
+SETSTR w1 $chosen
+GOSUB apply1
+RETURN
+:set_wave2
+SETSTR w2 $chosen
+GOSUB apply2
+RETURN
+
+:freq_down
+IF $sel = 1 GOTO freq_down1
+IF $sel = 2 GOTO freq_down2
+SUB f3 10
+IF $f3 >= 10 GOTO freq_down3_ok
+SET f3 10
+:freq_down3_ok
+GOSUB apply3
+GOTO loop
+:freq_down1
+SUB f1 10
+IF $f1 >= 10 GOTO freq_down1_ok
+SET f1 10
+:freq_down1_ok
+GOSUB apply1
+GOTO loop
+:freq_down2
+SUB f2 10
+IF $f2 >= 10 GOTO freq_down2_ok
+SET f2 10
+:freq_down2_ok
+GOSUB apply2
+GOTO loop
+
+:freq_up
+IF $sel = 1 GOTO freq_up1
+IF $sel = 2 GOTO freq_up2
+ADD f3 10
+IF $f3 <= 12000 GOTO freq_up3_ok
+SET f3 12000
+:freq_up3_ok
+GOSUB apply3
+GOTO loop
+:freq_up1
+ADD f1 10
+IF $f1 <= 12000 GOTO freq_up1_ok
+SET f1 12000
+:freq_up1_ok
+GOSUB apply1
+GOTO loop
+:freq_up2
+ADD f2 10
+IF $f2 <= 12000 GOTO freq_up2_ok
+SET f2 12000
+:freq_up2_ok
+GOSUB apply2
+GOTO loop
+
+:level_down
+IF $sel = 1 GOTO level_down1
+IF $sel = 2 GOTO level_down2
+SUB l3 5
+IF $l3 >= 0 GOTO level_down3_ok
+SET l3 0
+:level_down3_ok
+GOSUB apply3
+GOTO loop
+:level_down1
+SUB l1 5
+IF $l1 >= 0 GOTO level_down1_ok
+SET l1 0
+:level_down1_ok
+GOSUB apply1
+GOTO loop
+:level_down2
+SUB l2 5
+IF $l2 >= 0 GOTO level_down2_ok
+SET l2 0
+:level_down2_ok
+GOSUB apply2
+GOTO loop
+
+:level_up
+IF $sel = 1 GOTO level_up1
+IF $sel = 2 GOTO level_up2
+ADD l3 5
+IF $l3 <= 100 GOTO level_up3_ok
+SET l3 100
+:level_up3_ok
+GOSUB apply3
+GOTO loop
+:level_up1
+ADD l1 5
+IF $l1 <= 100 GOTO level_up1_ok
+SET l1 100
+:level_up1_ok
+GOSUB apply1
+GOTO loop
+:level_up2
+ADD l2 5
+IF $l2 <= 100 GOTO level_up2_ok
+SET l2 100
+:level_up2_ok
+GOSUB apply2
+GOTO loop
+
+:apply1
+WAVE 1 $w1 $f1 $l1
+RETURN
+:apply2
+WAVE 2 $w2 $f2 $l2
+RETURN
+:apply3
+WAVE 3 $w3 $f3 $l3
+RETURN
+
+:draw
+CLEAR
+COLOR pink
+PUT 1 0 "THREE CHANNEL SYNTH"
+COLOR white
+PUT 25 0 "1/2/3 select  X exit"
+PUT 1 1 "S sine  T triangle  Q square  N noise  O off"
+PUT 1 2 "left/right frequency   up/down level"
+
+COLOR cyan
+PUT 1 4 "CH1  $w1  $f1 Hz  $l1%"
+SETSTR pw $w1
+SET base 7
+GOSUB plot
+COLOR green
+PUT 1 9 "CH2  $w2  $f2 Hz  $l2%"
+SETSTR pw $w2
+SET base 12
+GOSUB plot
+COLOR yellow
+PUT 1 14 "CH3  $w3  $f3 Hz  $l3%"
+SETSTR pw $w3
+SET base 17
+GOSUB plot
+
+COLOR pink
+GOSUB marker
+FLIP
+RETURN
+
+:marker
+IF $sel = 1 GOTO marker1
+IF $sel = 2 GOTO marker2
+PUT 0 14 ">"
+RETURN
+:marker1
+PUT 0 4 ">"
+RETURN
+:marker2
+PUT 0 9 ">"
+RETURN
+
+:plot
+SET x 0
+:plot_loop
+IF $x >= 48 GOTO plot_done
+SET y 0
+IFEQ $pw "sine" GOTO plot_sine
+IFEQ $pw "triangle" GOTO plot_tri
+IFEQ $pw "square" GOTO plot_square
+IFEQ $pw "noise" GOTO plot_noise
+GOTO plot_put
+:plot_sine
+EXPR y 2*sin($x*3.14159/8)
+GOTO plot_put
+:plot_tri
+EXPR p $x%16
+EXPR y 2-abs($p-8)/2
+GOTO plot_put
+:plot_square
+EXPR p $x%16
+IF $p < 8 GOTO plot_square_hi
+SET y -2
+GOTO plot_put
+:plot_square_hi
+SET y 2
+GOTO plot_put
+:plot_noise
+RAND y -2 2
+:plot_put
+EXPR px $x+10
+EXPR py $base-$y
+PUT $px $py "*"
+ADD x 1
+GOTO plot_loop
+:plot_done
+RETURN
+
+:quit
+WAVESTOP
+ENDCANVAS
+PRINT "synth: silence"
+END
+
+:audio_fail
+PRINT "synth: audio hardware unavailable"
+END

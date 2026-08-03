@@ -1,0 +1,24 @@
+# @dapp-format 1
+# @id fetch
+# @name HTTP Fetch
+# @version 1.0.0
+# @boards fnk0104
+# @runtime >=1.4.0 <2.0.0
+# @summary Fetch a bounded HTTP or HTTPS text response and show its status
+
+INPUT url "url> "
+PRINT "fetching $url"
+HTTPGET body "$url" 4096
+PRINT "HTTP $httpcode, $httplen bytes, truncated=$httptruncated"
+IF $httpok = 0 GOTO failed
+PRINT "$body"
+END
+
+:failed
+COLOR red
+PRINT "request failed"
+IF $httplen = 0 GOTO done
+COLOR yellow
+PRINT "$body"
+:done
+END

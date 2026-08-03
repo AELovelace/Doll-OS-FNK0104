@@ -1,0 +1,120 @@
+# @dapp-format 1
+# @id passwords
+# @name Password Lab
+# @version 1.0.0
+# @boards m5cardputer
+# @runtime >=1.1.0 <2.0.0
+# @summary A compact random password and PIN generator for Cardputer
+# /apps/passwords.dapp
+# Generates passwords locally and never writes them to storage. RAND is useful
+# for everyday suggestions, but it is not promised to be cryptographically
+# secure; use a password manager for high-value credentials.
+
+CLEAR
+COLOR pink
+PRINT "PASSWORD LAB"
+COLOR white
+PRINT "local generator - nothing is saved"
+
+:menu
+PRINT ""
+COLOR cyan
+PRINT "1) friendly  letters + digits"
+PRINT "2) strong    mixed + symbols"
+PRINT "3) PIN       digits only"
+PRINT "q) quit"
+COLOR white
+INPUT mode "style> "
+IFEQ $mode "q" GOTO leave
+IFEQ $mode "Q" GOTO leave
+IFEQ $mode "1" GOTO friendly
+IFEQ $mode "2" GOTO strong
+IFEQ $mode "3" GOTO pin
+COLOR red
+PRINT "choose 1, 2, 3, or q"
+GOTO menu
+
+:friendly
+SETSTR pool "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+SET minlen 8
+SET maxlen 32
+GOTO asklen
+
+:strong
+SETSTR pool "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%+-_?"
+SET minlen 12
+SET maxlen 40
+GOTO asklen
+
+:pin
+SETSTR pool "0123456789"
+SET minlen 4
+SET maxlen 12
+
+:asklen
+INPUT text "length> "
+GOSUB str2num
+IF $num < $minlen GOTO badlen
+IF $num > $maxlen GOTO badlen
+SET want $num
+GOSUB generate
+PRINT ""
+COLOR green
+PRINT $result
+COLOR yellow
+PRINT "write it down now; it will not be saved"
+COLOR white
+INPUT again "enter = another, m = menu, q = quit> "
+IFEQ $again "q" GOTO leave
+IFEQ $again "Q" GOTO leave
+IFEQ $again "m" GOTO menu
+IFEQ $again "M" GOTO menu
+GOSUB generate
+PRINT ""
+COLOR green
+PRINT $result
+COLOR white
+GOTO asklen
+
+:badlen
+COLOR red
+PRINT "length must be $minlen-$maxlen"
+COLOR white
+GOTO asklen
+
+:generate
+SETSTR result ""
+LEN poollen $pool
+SET i 0
+:genloop
+IF $i >= $want GOTO gendone
+RAND pick $poollen
+CHARAT code $pool $pick
+CHR one $code
+APPEND result $one
+ADD i 1
+GOTO genloop
+:gendone
+RETURN
+
+:str2num
+SET num 0
+SET i 0
+LEN nlen $text
+:numloop
+IF $i >= $nlen GOTO numdone
+CHARAT digit $text $i
+IF $digit < 48 GOTO numdone
+IF $digit > 57 GOTO numdone
+SUB digit 48
+MUL num 10
+ADD num $digit
+ADD i 1
+GOTO numloop
+:numdone
+RETURN
+
+:leave
+COLOR pink
+PRINT "password lab: cleared"
+EXIT

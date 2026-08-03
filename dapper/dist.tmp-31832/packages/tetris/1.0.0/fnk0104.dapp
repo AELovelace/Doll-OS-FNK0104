@@ -1,0 +1,528 @@
+# @dapp-format 1
+# @id tetris
+# @name Tetris
+# @version 1.0.0
+# @boards fnk0104
+# @runtime >=1.1.0 <2.0.0
+# @summary A falling-block puzzle game for the DOLL-OS canvas
+# /apps/tetris.dapp
+# Tetris for the DOLL-OS shell. Arrows or WASD to move, up/W to rotate,
+# space to hard drop, escape to quit.
+#
+# This is the app the .dapp language grew CANVAS/KEY/DIM/EXPR/GOSUB for --
+# every one of those is load-bearing here. The well is a 200-cell array,
+# the piece tables are three more, gravity runs off $millis rather than
+# blocking on INPUT, and the whole frame is drawn by cell instead of
+# printed as lines.
+
+CANVAS 32 22
+COLOR white
+PUT 8 10 "TETRIS"
+PUT 4 12 "arrows move - up rotates"
+PUT 5 13 "space drops - esc quits"
+FLIP
+WAIT 1200
+
+# Piece geometry. Pieces are 0..6 = I O T S Z J L, each stored as the four
+# cells of its spawn rotation inside an NxN box; every other rotation is
+# computed from those (see cellat), so there is no 7x4 shape table to keep.
+DIM pbox 7
+SET pbox[0] 4
+SET pbox[1] 2
+SET pbox[2] 3
+SET pbox[3] 3
+SET pbox[4] 3
+SET pbox[5] 3
+SET pbox[6] 3
+
+# row of each cell, indexed piece*4 + cell
+DIM pr 28
+SET pr[0] 1
+SET pr[1] 1
+SET pr[2] 1
+SET pr[3] 1
+SET pr[4] 0
+SET pr[5] 0
+SET pr[6] 1
+SET pr[7] 1
+SET pr[8] 0
+SET pr[9] 1
+SET pr[10] 1
+SET pr[11] 1
+SET pr[12] 0
+SET pr[13] 0
+SET pr[14] 1
+SET pr[15] 1
+SET pr[16] 0
+SET pr[17] 0
+SET pr[18] 1
+SET pr[19] 1
+SET pr[20] 0
+SET pr[21] 1
+SET pr[22] 1
+SET pr[23] 1
+SET pr[24] 0
+SET pr[25] 1
+SET pr[26] 1
+SET pr[27] 1
+
+# column of each cell, same indexing
+DIM pc 28
+SET pc[0] 0
+SET pc[1] 1
+SET pc[2] 2
+SET pc[3] 3
+SET pc[4] 0
+SET pc[5] 1
+SET pc[6] 0
+SET pc[7] 1
+SET pc[8] 1
+SET pc[9] 0
+SET pc[10] 1
+SET pc[11] 2
+SET pc[12] 1
+SET pc[13] 2
+SET pc[14] 0
+SET pc[15] 1
+SET pc[16] 0
+SET pc[17] 1
+SET pc[18] 1
+SET pc[19] 2
+SET pc[20] 0
+SET pc[21] 0
+SET pc[22] 1
+SET pc[23] 2
+SET pc[24] 2
+SET pc[25] 0
+SET pc[26] 1
+SET pc[27] 2
+
+# the well: 10 wide, 20 tall, 0 = empty, else the piece's color index
+DIM well 200
+
+SET score 0
+SET lines 0
+SET level 1
+SET dropms 650
+SET quit 0
+SET dirty 1
+
+# best score so far, persisted in /apps/tetris.hs across runs
+GOSUB loadhs
+
+GOTO spawn
+
+# ---------------------------------------------------------------- main loop
+
+:loop
+IF $dirty = 1 GOSUB draw
+SET dirty 0
+KEY k
+IF $k <> 0 GOSUB handlekey
+IF $quit = 1 GOTO leave
+EXPR remain $dropat - $millis
+IF $remain > 0 GOTO loop_wait
+GOSUB gravity
+IF $locked = 1 GOTO spawn
+:loop_wait
+WAIT 12
+GOTO loop
+
+:spawn
+RAND piece 7
+SET rot 0
+SET px 3
+SET py 0
+GOSUB collide
+IF $hit = 1 GOTO gameover
+EXPR dropat $millis + $dropms
+SET dirty 1
+GOTO loop
+
+# ---------------------------------------------------------------- input
+
+:handlekey
+IF $k = $kesc GOTO hk_quit
+IF $k = $kleft GOTO hk_left
+IF $k = 97 GOTO hk_left
+IF $k = $kright GOTO hk_right
+IF $k = 100 GOTO hk_right
+IF $k = $kup GOTO hk_rot
+IF $k = 119 GOTO hk_rot
+IF $k = $kdown GOTO hk_down
+IF $k = 115 GOTO hk_down
+IF $k = $kspace GOTO hk_drop
+RETURN
+
+:hk_quit
+SET quit 1
+RETURN
+
+:hk_left
+SUB px 1
+GOSUB collide
+IF $hit = 0 GOTO hk_left_ok
+ADD px 1
+:hk_left_ok
+SET dirty 1
+RETURN
+
+:hk_right
+ADD px 1
+GOSUB collide
+IF $hit = 0 GOTO hk_right_ok
+SUB px 1
+:hk_right_ok
+SET dirty 1
+RETURN
+
+# rotate, then try the two one-cell wall kicks before giving up
+:hk_rot
+SET oldrot $rot
+SET oldpx $px
+ADD rot 1
+IF $rot < 4 GOTO hk_rot_test
+SET rot 0
+:hk_rot_test
+GOSUB collide
+IF $hit = 0 GOTO hk_rot_ok
+ADD px 1
+GOSUB collide
+IF $hit = 0 GOTO hk_rot_ok
+SUB px 2
+GOSUB collide
+IF $hit = 0 GOTO hk_rot_ok
+SET px $oldpx
+SET rot $oldrot
+:hk_rot_ok
+SET dirty 1
+RETURN
+
+:hk_down
+ADD py 1
+GOSUB collide
+IF $hit = 0 GOTO hk_down_ok
+SUB py 1
+SET dropat 0
+RETURN
+:hk_down_ok
+EXPR dropat $millis + $dropms
+ADD score 1
+SET dirty 1
+RETURN
+
+# hard drop parks the piece and zeroes the gravity timer, so the locking
+# itself happens in the one place that does it -- the main loop's gravity
+:hk_drop
+ADD py 1
+GOSUB collide
+IF $hit = 0 GOTO hk_drop
+SUB py 1
+SET dropat 0
+SET dirty 1
+RETURN
+
+# ---------------------------------------------------------------- rules
+
+# one gravity step. Sets locked=1 when the piece came to rest, and never
+# jumps out of itself -- a GOTO out of a GOSUB would strand its return address.
+:gravity
+SET locked 0
+ADD py 1
+GOSUB collide
+IF $hit = 0 GOTO gr_done
+SUB py 1
+GOSUB lock
+GOSUB clearlines
+GOSUB addscore
+SET locked 1
+:gr_done
+EXPR dropat $millis + $dropms
+SET dirty 1
+RETURN
+
+# cell $i of the current piece at the current rotation, as cr/cc within its box.
+# Rotating clockwise in an NxN box is (r,c) -> (c, N-1-r), applied $rot times.
+:cellat
+EXPR pi $piece * 4 + $i
+SET cr $pr[$pi]
+SET cc $pc[$pi]
+SET rleft $rot
+:cellat_spin
+IF $rleft <= 0 GOTO cellat_done
+SET t $cr
+SET cr $cc
+EXPR cc $pbox[$piece] - 1 - $t
+SUB rleft 1
+GOTO cellat_spin
+:cellat_done
+RETURN
+
+# hit=1 if the piece at px/py/rot leaves the well or overlaps a settled cell.
+# Rows above the top are legal, which is what lets a piece spawn partly offscreen.
+:collide
+SET hit 0
+SET i 0
+:collide_cell
+GOSUB cellat
+EXPR bx $px + $cc
+EXPR by $py + $cr
+IF $bx < 0 GOTO collide_hit
+IF $bx > 9 GOTO collide_hit
+IF $by > 19 GOTO collide_hit
+IF $by < 0 GOTO collide_next
+EXPR wi $by * 10 + $bx
+IF $well[$wi] <> 0 GOTO collide_hit
+:collide_next
+ADD i 1
+IF $i < 4 GOTO collide_cell
+RETURN
+:collide_hit
+SET hit 1
+RETURN
+
+:lock
+SET i 0
+EXPR lc $piece + 1
+:lock_cell
+GOSUB cellat
+EXPR bx $px + $cc
+EXPR by $py + $cr
+IF $by < 0 GOTO lock_next
+EXPR wi $by * 10 + $bx
+SET well[$wi] $lc
+:lock_next
+ADD i 1
+IF $i < 4 GOTO lock_cell
+RETURN
+
+# collapses every full row, bottom up, leaving the count in `cleared`
+:clearlines
+SET cleared 0
+SET ry 19
+:cl_row
+IF $ry < 0 GOTO cl_done
+SET cx 0
+SET full 1
+:cl_scan
+EXPR wi $ry * 10 + $cx
+IF $well[$wi] <> 0 GOTO cl_scan_next
+SET full 0
+:cl_scan_next
+ADD cx 1
+IF $cx < 10 GOTO cl_scan
+IF $full = 0 GOTO cl_next_row
+SET sy $ry
+:cl_shift
+IF $sy <= 0 GOTO cl_top
+SET cx 0
+:cl_shift_cell
+EXPR di $sy * 10 + $cx
+EXPR si $di - 10
+SET well[$di] $well[$si]
+ADD cx 1
+IF $cx < 10 GOTO cl_shift_cell
+SUB sy 1
+GOTO cl_shift
+:cl_top
+SET cx 0
+:cl_top_cell
+SET well[$cx] 0
+ADD cx 1
+IF $cx < 10 GOTO cl_top_cell
+ADD cleared 1
+GOTO cl_row
+:cl_next_row
+SUB ry 1
+GOTO cl_row
+:cl_done
+RETURN
+
+:addscore
+IF $cleared = 0 GOTO as_done
+ADD lines $cleared
+IF $cleared = 1 GOTO as_one
+IF $cleared = 2 GOTO as_two
+IF $cleared = 3 GOTO as_three
+EXPR score $score + 800 * $level
+GOTO as_level
+:as_one
+EXPR score $score + 100 * $level
+GOTO as_level
+:as_two
+EXPR score $score + 300 * $level
+GOTO as_level
+:as_three
+EXPR score $score + 500 * $level
+:as_level
+EXPR level floor($lines / 10) + 1
+EXPR dropms 650 - ($level - 1) * 55
+IF $dropms > 80 GOTO as_done
+SET dropms 80
+:as_done
+RETURN
+
+# ---------------------------------------------------------------- drawing
+
+:draw
+CLS
+COLOR blue
+PUT 0 0 "+--------------------+"
+PUT 0 21 "+--------------------+"
+SET dy 1
+:draw_side
+PUT 0 $dy "|"
+PUT 21 $dy "|"
+ADD dy 1
+IF $dy < 21 GOTO draw_side
+
+SET dy 0
+:draw_row
+SET dx 0
+:draw_col
+EXPR wi $dy * 10 + $dx
+SET ck $well[$wi]
+IF $ck = 0 GOTO draw_col_next
+GOSUB setcolor
+EXPR sx $dx * 2 + 1
+EXPR sy $dy + 1
+PUT $sx $sy "[]"
+:draw_col_next
+ADD dx 1
+IF $dx < 10 GOTO draw_col
+ADD dy 1
+IF $dy < 20 GOTO draw_row
+
+EXPR ck $piece + 1
+GOSUB setcolor
+SET i 0
+:draw_piece
+GOSUB cellat
+EXPR bx $px + $cc
+EXPR by $py + $cr
+IF $by < 0 GOTO draw_piece_next
+EXPR sx $bx * 2 + 1
+EXPR sy $by + 1
+PUT $sx $sy "[]"
+:draw_piece_next
+ADD i 1
+IF $i < 4 GOTO draw_piece
+
+COLOR pink
+PUT 23 1 "TETRIS"
+COLOR cyan
+PUT 23 3 "SCORE"
+COLOR white
+PUT 23 4 $score
+COLOR cyan
+PUT 23 6 "LINES"
+COLOR white
+PUT 23 7 $lines
+COLOR cyan
+PUT 23 9 "LEVEL"
+COLOR white
+PUT 23 10 $level
+COLOR cyan
+PUT 23 12 "HI"
+COLOR white
+PUT 23 13 $hiscore
+COLOR yellow
+PUT 23 14 "<- ->"
+PUT 23 15 "move"
+PUT 23 16 "up rot"
+PUT 23 17 "dn soft"
+PUT 23 18 "spc drop"
+PUT 23 20 "esc quit"
+FLIP
+RETURN
+
+# COLOR takes a name, so the color index in a well cell has to be dispatched
+:setcolor
+IF $ck = 1 GOTO scol_i
+IF $ck = 2 GOTO scol_o
+IF $ck = 3 GOTO scol_t
+IF $ck = 4 GOTO scol_s
+IF $ck = 5 GOTO scol_z
+IF $ck = 6 GOTO scol_j
+COLOR pink
+RETURN
+:scol_i
+COLOR cyan
+RETURN
+:scol_o
+COLOR yellow
+RETURN
+:scol_t
+COLOR magenta
+RETURN
+:scol_s
+COLOR green
+RETURN
+:scol_z
+COLOR red
+RETURN
+:scol_j
+COLOR blue
+RETURN
+
+# ---------------------------------------------------------------- high score
+
+# reads /apps/tetris.hs into hiscore, tolerating a missing or garbled file --
+# a fresh install simply starts the ladder at 0
+:loadhs
+SET hiscore 0
+FEXISTS hs "/apps/tetris.hs"
+IF $hs = 0 GOTO lh_done
+FOPEN "/apps/tetris.hs" read
+IF $fok = 0 GOTO lh_done
+FREAD text
+FCLOSE
+GOSUB str2num
+SET hiscore $num
+:lh_done
+RETURN
+
+# in: text (string)   out: num -- digits off the front of a string, since a
+# number read back from a file is text again (the Chapter 5 routine)
+:str2num
+SET num 0
+SET s2i 0
+LEN s2len $text
+:s2n_loop
+IF $s2i >= $s2len GOTO s2n_done
+CHARAT s2d $text $s2i
+IF $s2d < 48 GOTO s2n_done
+IF $s2d > 57 GOTO s2n_done
+SUB s2d 48
+MUL num 10
+ADD num $s2d
+ADD s2i 1
+GOTO s2n_loop
+:s2n_done
+RETURN
+
+# ---------------------------------------------------------------- exits
+
+:gameover
+IF $score <= $hiscore GOTO go_banner
+SET hiscore $score
+FOPEN "/apps/tetris.hs" write
+IF $fok = 0 GOTO go_nosave
+FWRITE $score
+FCLOSE
+:go_nosave
+COLOR yellow
+PUT 4 8 "NEW HIGH SCORE"
+:go_banner
+COLOR red
+PUT 6 10 "GAME OVER"
+COLOR white
+PUT 5 12 "score $score"
+FLIP
+WAIT 2500
+
+:leave
+ENDCANVAS
+COLOR pink
+PRINT "tetris: $lines lines, level $level, score $score (best $hiscore)"
+EXIT

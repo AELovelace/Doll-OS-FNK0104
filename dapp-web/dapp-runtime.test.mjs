@@ -296,6 +296,74 @@ test("the shipped hex editor reads a binary page and exits without changing it",
   assert.equal(files.read("/apps/test.bin"), original);
 });
 
+async function runGrotto2({ answers, randoms = [] }) {
+  const files = new MemoryFiles();
+  const outputs = [];
+  let runtime;
+  let queuedStart = false;
+  const originalRandom = Math.random;
+  const originalSetTimeout = globalThis.setTimeout;
+  const originalClearTimeout = globalThis.clearTimeout;
+  Math.random = () => randoms.length ? randoms.shift() : 0;
+  globalThis.setTimeout = (callback) => {
+    queueMicrotask(callback);
+    return 0;
+  };
+  globalThis.clearTimeout = () => {};
+  try {
+    const io = {
+      output(text) { outputs.push(text); },
+      clear() {}, status() {}, endCanvas() {}, wave() {}, waveStop() {},
+      input(_prompt, resolve) { resolve(answers.shift() ?? ""); },
+      canvas(canvas) {
+        const text = chatCanvasText(canvas);
+        if (!queuedStart && text.trim()) {
+          queuedStart = true;
+          runtime.pushKey({ key: "Enter", ctrlKey: false });
+        }
+      }
+    };
+    runtime = new DappRuntime(io, files);
+    const source = await readFile(new URL("../apps/grotto2.dapp", import.meta.url), "utf8");
+    const result = await runtime.run(source);
+    return { result, runtime, files, outputs };
+  } finally {
+    Math.random = originalRandom;
+    globalThis.setTimeout = originalSetTimeout;
+    globalThis.clearTimeout = originalClearTimeout;
+  }
+}
+
+test("The Cursed Grotto II reaches victory and saves its score", async () => {
+  const answers = [
+    "", "Doll", "s", "s", "s", "s", "1",
+    "1", "1", "1", "1", "1", "1", "1", "1",
+    "d", "d"
+  ];
+  const { result, runtime, files, outputs } = await runGrotto2({ answers });
+
+  assert.equal(result.ok, true, result.error?.message);
+  assert.ok(outputs.some(line => line.includes("V I C T O R Y")));
+  assert.equal(runtime.numbers.get("zone"), 12);
+  assert.equal(runtime.numbers.get("px"), 6);
+  assert.equal(runtime.numbers.get("py"), 5);
+  assert.equal(files.read("/apps/grotto2.hs"), "#1060\n");
+});
+
+test("The Cursed Grotto II random encounters return to movement", async () => {
+  const answers = [
+    "", "Doll", "s", "2", "s", "s", "s", "1",
+    "1", "1", "1", "1", "1", "1", "1", "1",
+    "d", "d"
+  ];
+  const randoms = [0, 0.9, 0, 0.9];
+  const { result, outputs } = await runGrotto2({ answers, randoms });
+
+  assert.equal(result.ok, true, result.error?.message);
+  assert.ok(outputs.some(line => line.includes("giant cave bat")));
+  assert.ok(outputs.some(line => line.includes("V I C T O R Y")));
+});
+
 test("the shipped LLM chat app masks its key and parses a Chat Completions reply", async (t) => {
   const previousFetch = globalThis.fetch;
   let request;
@@ -918,7 +986,7 @@ test("Tracker Music saves per-note tones and opens help", async () => {
       const text = chatCanvasText(canvas);
       if (!text.trim()) return;
       frames.push(text);
-      if (text.includes("TRACKER MUSIC HELP")) {
+      if (text.includes("TRACKER MUSIC CONTROLS")) {
         push("x");
         return;
       }
@@ -934,19 +1002,133 @@ test("Tracker Music saves per-note tones and opens help", async () => {
   const result = await runtime.run(source);
 
   assert.equal(result.ok, true, result.error?.message);
-  assert.ok(frames.some(frame => frame.includes("TRACKER MUSIC HELP")));
-  assert.ok(frames.some(frame => frame.includes("selected tone 4")));
-  assert.equal(files.read("/apps/tracker-music.dat"), [
-    "120",
-    "3 2 3",
-    "1000000000000000",
-    "0000000000000000",
-    "0000000000000000",
-    "3000000000000000",
-    "2222222222222222",
-    "3333333333333333",
-    ""
-  ].join("\n"));
+  assert.ok(frames.some(frame => frame.includes("TRACKER MUSIC CONTROLS")));
+  assert.ok(frames.some(frame => frame.includes("PAT 1/8") && frame.includes("TONE 4")));
+  const saved = files.read("/apps/tracker-music.dat").trimEnd().split("\n");
+  assert.equal(saved.length, 56);
+  assert.deepEqual(saved.slice(0, 8), ["TM3", "120", "3 2 3", "0", "8", "0", "1", "0000000000000000"]);
+  assert.equal(saved[8], "1000000000000000");
+  assert.equal(saved[9], "0000000000000000");
+  assert.equal(saved[10], "0000000000000000");
+  assert.equal(saved[11], "3000000000000000");
+  assert.equal(saved[12], "2222222222222222");
+  assert.equal(saved[13], "3333333333333333");
+});
+
+test("Tracker Music switches and saves multiple patterns independently", async () => {
+  const files = new MemoryFiles();
+  const frames = [];
+  let runtime;
+  let step = 0;
+  const push = key => runtime.pushKey({ key, ctrlKey: false });
+  const io = {
+    output() {}, clear() {}, status() {}, input() {}, endCanvas() {}, waveStop() {},
+    canvas(canvas) {
+      const text = chatCanvasText(canvas);
+      if (!text.trim()) return;
+      frames.push(text);
+      step += 1;
+      if (step === 1) push("]");
+      else if (step === 2) push("5");
+      else if (step === 3) push("a");
+      else if (step === 4) push("s");
+      else if (step >= 5) push("Escape");
+    }
+  };
+  runtime = new DappRuntime(io, files);
+  const source = await readFile(new URL("../apps/tracker-music.dapp", import.meta.url), "utf8");
+  const result = await runtime.run(source);
+
+  assert.equal(result.ok, true, result.error?.message);
+  assert.ok(frames.some(frame => frame.includes("PAT 2/8") && frame.includes("TONE 5")));
+  const saved = files.read("/apps/tracker-music.dat").trimEnd().split("\n");
+  assert.deepEqual(saved.slice(0, 8), ["TM3", "120", "4 2 3", "1", "8", "0", "1", "1000000000000000"]);
+  assert.equal(saved[8], "0000000000000000");
+  assert.equal(saved[14], "1000000000000000");
+  assert.equal(saved[17], "4000000000000000");
+});
+
+test("Tracker Music migrates old one-pattern saves", async () => {
+  const files = new MemoryFiles({
+    "/apps/tracker-music.dat": [
+      "140",
+      "3 2 3",
+      "1000000000000000",
+      "0000000000000000",
+      "0000000000000000",
+      "3000000000000000",
+      "2222222222222222",
+      "3333333333333333",
+      ""
+    ].join("\n")
+  });
+  let runtime;
+  let step = 0;
+  const push = key => runtime.pushKey({ key, ctrlKey: false });
+  const io = {
+    output() {}, clear() {}, status() {}, input() {}, endCanvas() {}, waveStop() {},
+    canvas(canvas) {
+      const text = chatCanvasText(canvas);
+      if (!text.trim()) return;
+      step += 1;
+      if (step === 1) push("s");
+      else if (step >= 2) push("Escape");
+    }
+  };
+  runtime = new DappRuntime(io, files);
+  const source = await readFile(new URL("../apps/tracker-music.dapp", import.meta.url), "utf8");
+  const result = await runtime.run(source);
+
+  assert.equal(result.ok, true, result.error?.message);
+  const saved = files.read("/apps/tracker-music.dat").trimEnd().split("\n");
+  assert.deepEqual(saved.slice(0, 8), ["TM3", "140", "3 2 3", "0", "8", "0", "1", "0000000000000000"]);
+  assert.equal(saved[8], "1000000000000000");
+  assert.equal(saved[11], "3000000000000000");
+});
+
+test("Tracker Music sequences patterns and plays a song", async () => {
+  const files = new MemoryFiles();
+  const waves = [];
+  let runtime;
+  let step = 0;
+  const originalSetTimeout = globalThis.setTimeout;
+  const originalClearTimeout = globalThis.clearTimeout;
+  globalThis.setTimeout = (callback) => {
+    queueMicrotask(callback);
+    return 0;
+  };
+  globalThis.clearTimeout = () => {};
+  try {
+    const push = key => runtime.pushKey({ key, ctrlKey: false });
+    const io = {
+      output() {}, clear() {}, status() {}, input() {}, endCanvas() {}, waveStop() {},
+      wave(value) { waves.push(value); },
+      canvas(canvas) {
+        const text = chatCanvasText(canvas);
+        if (!text.trim()) return;
+        step += 1;
+        if (step === 1) push("1");
+        else if (step === 2) push(".");
+        else if (step === 3) push("]");
+        else if (step === 4) push("5");
+        else if (step === 5) push("a");
+        else if (step === 6) push("p");
+        else if (waves.some(wave => wave.frequency === 110) && waves.some(wave => wave.frequency === 196)) {
+          push("Escape");
+        }
+      }
+    };
+    runtime = new DappRuntime(io, files);
+    const source = await readFile(new URL("../apps/tracker-music.dapp", import.meta.url), "utf8");
+    const result = await runtime.run(source);
+
+    assert.equal(result.ok, true, result.error?.message);
+    assert.ok(waves.some(wave => wave.frequency === 110));
+    assert.ok(waves.some(wave => wave.frequency === 196));
+  } finally {
+    globalThis.setTimeout = originalSetTimeout;
+    globalThis.clearTimeout = originalClearTimeout;
+  }
 });
 
 test("Requests, Control and Feeds exercise their network and persistence paths", async (t) => {

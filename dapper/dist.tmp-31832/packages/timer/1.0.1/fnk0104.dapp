@@ -1,0 +1,185 @@
+# @dapp-format 1
+# @id timer
+# @name Countdown Timer
+# @version 1.0.1
+# @boards fnk0104
+# @runtime >=1.4.2 <2.0.0
+# @echo off
+# @summary Countdown timer with pause/cancel and optional LED alarm
+# /apps/timer.dapp
+# Enter minutes and seconds, then run a countdown.
+# Keys while running: space pause/resume, esc cancel.
+
+:menu
+CLEAR
+COLOR cyan
+PRINT "COUNTDOWN TIMER"
+PRINT "---------------"
+COLOR white
+PRINT "enter numeric values"
+INPUT minsText "minutes> "
+INPUT secsText "seconds> "
+
+SETSTR src $minsText
+GOSUB parse_num
+IF $nvalid = 1 GOTO mins_ok
+COLOR red
+PRINT "minutes must be digits only"
+WAIT 900
+GOTO menu
+:mins_ok
+SET mins $nout
+
+SETSTR src $secsText
+GOSUB parse_num
+IF $nvalid = 1 GOTO secs_ok
+COLOR red
+PRINT "seconds must be digits only"
+WAIT 900
+GOTO menu
+:secs_ok
+SET secs $nout
+
+IF $secs < 60 GOTO sec_range_ok
+COLOR yellow
+PRINT "seconds should be 0..59"
+WAIT 900
+GOTO menu
+:sec_range_ok
+
+EXPR total $mins * 60 + $secs
+IF $total > 0 GOTO start
+COLOR red
+PRINT "duration must be greater than zero"
+WAIT 900
+GOTO menu
+
+:start
+SET paused 0
+SET lastShown -1
+EXPR deadline $seconds + $total
+
+:run_loop
+KEY k
+IF $k = $kesc GOTO cancelled
+IF $k = $kspace GOSUB toggle_pause
+IF $paused = 1 GOTO run_wait
+
+EXPR remain $deadline - $seconds
+IF $remain >= 0 GOTO remain_ok
+SET remain 0
+:remain_ok
+IF $remain = $lastShown GOTO remain_skip
+SET lastShown $remain
+GOSUB draw_remaining
+:remain_skip
+IF $remain = 0 GOTO alarm
+
+:run_wait
+WAIT 120
+GOTO run_loop
+
+:toggle_pause
+IF $paused = 1 GOTO tp_resume
+SET paused 1
+GOSUB draw_paused
+RETURN
+:tp_resume
+SET paused 0
+GOSUB draw_remaining
+RETURN
+
+:draw_remaining
+EXPR mm floor($lastShown / 60)
+EXPR ss $lastShown % 60
+SET pv $mm
+GOSUB pad2
+SETSTR stamp $p2
+APPEND stamp ":"
+SET pv $ss
+GOSUB pad2
+APPEND stamp $p2
+CLEAR
+COLOR cyan
+PRINT "COUNTDOWN"
+COLOR white
+PRINT ""
+PRINT "remaining: $stamp"
+PRINT ""
+COLOR yellow
+PRINT "space pause/resume"
+PRINT "esc cancel"
+RETURN
+
+:draw_paused
+CLEAR
+COLOR yellow
+PRINT "COUNTDOWN PAUSED"
+COLOR white
+PRINT ""
+PRINT "space resume"
+PRINT "esc cancel"
+RETURN
+
+:alarm
+CLEAR
+COLOR green
+PRINT "TIMER DONE"
+COLOR white
+PRINT ""
+PRINT "time is up"
+IF $ledok = 1 GOSUB led_blink
+INPUT _ "enter to run another timer"
+GOTO menu
+
+:cancelled
+CLEAR
+COLOR yellow
+PRINT "timer cancelled"
+WAIT 600
+GOTO menu
+
+# Parse decimal text in $src -> $nout, sets $nvalid 1/0
+:parse_num
+SET nout 0
+SET nvalid 0
+LEN slen $src
+IF $slen > 0 GOTO pn_loop_prep
+RETURN
+:pn_loop_prep
+SET i 0
+:pn_loop
+IF $i >= $slen GOTO pn_done
+CHARAT ch $src $i
+IF $ch < 48 GOTO pn_fail
+IF $ch > 57 GOTO pn_fail
+EXPR digit $ch - 48
+EXPR nout $nout * 10 + $digit
+ADD i 1
+GOTO pn_loop
+:pn_done
+SET nvalid 1
+RETURN
+:pn_fail
+SET nvalid 0
+RETURN
+
+# Optional visual alarm on rear LED when available
+:led_blink
+SET i 0
+:lb_loop
+LED 255 0 0
+WAIT 150
+LED 0 0 0
+WAIT 120
+ADD i 1
+IF $i < 8 GOTO lb_loop
+RETURN
+
+:pad2
+SETSTR p2 ""
+IF $pv >= 10 GOTO p2_digits
+SETSTR p2 "0"
+:p2_digits
+APPEND p2 $pv
+RETURN
