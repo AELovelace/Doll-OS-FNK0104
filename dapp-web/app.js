@@ -1,6 +1,11 @@
+import { BrowserAudioController } from "./browser-audio.js";
+import { bundledApps, firmwareAppIds } from "./bundled-apps.js";
+import { DapperClient } from "./dapper-client.js";
 import { DappRuntime } from "./dapp-runtime.js";
 import { highlightDappSource } from "./dapp-highlight.js";
+import { DollMachine, DollShell, VirtualFileSystem, normalizePath, sanitizeDappFilename } from "./emulator-core.js";
 import { commandGroups, examples } from "./examples.js";
+import { WEB_RUNTIME } from "./runtime-config.js";
 
 const $ = selector => document.querySelector(selector);
 const editor = $("#code-editor");
@@ -21,43 +26,37 @@ const editorStats = $("#editor-stats");
 const filenameInput = $("#filename-input");
 const editorTitle = $("#editor-title");
 const STORAGE_KEY = "dapp-playground-source-v1";
-const FILES_KEY = "dapp-playground-files-v1";
+const LEGACY_FILES_KEY = "dapp-playground-files-v1";
+const FILES_MIGRATION_KEY = "dapp-playground-files-migrated-v1";
 const FILENAME_KEY = "dapp-playground-filename-v1";
 const approvedNetworkOrigins = new Set();
+const fileSystem = new VirtualFileSystem({ bundledApps, systemAppIds: firmwareAppIds });
 
-class BrowserFileSystem {
-  constructor() {
-    try {
-      this.files = JSON.parse(localStorage.getItem(FILES_KEY)) || {};
-    } catch {
-      this.files = {};
+function migrateLegacyFiles() {
+  if (localStorage.getItem(FILES_MIGRATION_KEY)) return;
+  try {
+    const legacy = JSON.parse(localStorage.getItem(LEGACY_FILES_KEY) || "{}");
+    for (const [rawPath, content] of Object.entries(legacy)) {
+      if (typeof content !== "string") continue;
+      const path = normalizePath("/apps", rawPath);
+      const parts = path.split("/").filter(Boolean).slice(0, -1);
+      let directory = "";
+      for (const part of parts) {
+        directory += `/${part}`;
+        if (!fileSystem.exists(directory)) fileSystem.mkdir(directory);
+      }
+      if (!fileSystem.exists(path)) fileSystem.write(path, content);
     }
-  }
-
-  persist() {
-    localStorage.setItem(FILES_KEY, JSON.stringify(this.files));
-  }
-
-  exists(path) {
-    return Object.hasOwn(this.files, path);
-  }
-
-  read(path) {
-    return this.files[path] ?? null;
-  }
-
-  write(path, content) {
-    this.files[path] = content;
-    this.persist();
-  }
-
-  delete(path) {
-    if (!this.exists(path)) return false;
-    delete this.files[path];
-    this.persist();
-    return true;
-  }
+    localStorage.setItem(FILES_MIGRATION_KEY, "1");
+  } catch {}
 }
+
+migrateLegacyFiles();
+const machine = new DollMachine({ fileSystem, bundledApps });
+const dapper = new DapperClient();
+const audio = new BrowserAudioController();
+audio.setRadioVolume(machine.volume);
+$("#runtime-version-label").textContent = `AppRunner ${WEB_RUNTIME.appRunnerVersion} // ${WEB_RUNTIME.displayBoardId}`;
 
 function paintEditor() {
   const source = editor.value;
@@ -166,9 +165,7 @@ function endCanvas() {
 }
 
 function downloadFilename() {
-  const leaf = filenameInput.value.trim().replaceAll("\\", "/").split("/").pop() || "untitled";
-  const base = leaf.replace(/\.dapp$/i, "").replace(/[^a-z0-9._-]+/gi, "-").replace(/^[.-]+|[.-]+$/g, "");
-  return `${base || "untitled"}.dapp`;
+  return sanitizeDappFilename(filenameInput.value);
 }
 
 function updateFilename(value, persist = true) {
@@ -178,57 +175,7 @@ function updateFilename(value, persist = true) {
   if (persist) localStorage.setItem(FILENAME_KEY, filename);
 }
 
-let synthContext;
-const synthChannels = new Map();
-
-function stopWaveChannel(channel) {
-  const voice = synthChannels.get(channel);
-  if (!voice) return;
-  try { voice.source.stop(); } catch {}
-  voice.source.disconnect();
-  voice.gain.disconnect();
-  voice.filter?.disconnect();
-  synthChannels.delete(channel);
-}
-
-function setWave({ channel, waveform, frequency, level }) {
-  stopWaveChannel(channel);
-  if (waveform === "off" || level === 0) return;
-
-  synthContext ||= new AudioContext();
-  synthContext.resume();
-  const gain = synthContext.createGain();
-  gain.gain.value = (level / 100) * 0.08;
-  gain.connect(synthContext.destination);
-
-  let source;
-  let filter;
-  if (waveform === "noise") {
-    const length = synthContext.sampleRate;
-    const buffer = synthContext.createBuffer(1, length, synthContext.sampleRate);
-    const samples = buffer.getChannelData(0);
-    for (let i = 0; i < length; i += 1) samples[i] = Math.random() * 2 - 1;
-    source = synthContext.createBufferSource();
-    source.buffer = buffer;
-    source.loop = true;
-    filter = synthContext.createBiquadFilter();
-    filter.type = "lowpass";
-    filter.frequency.value = frequency;
-    source.connect(filter);
-    filter.connect(gain);
-  } else {
-    source = synthContext.createOscillator();
-    source.type = { sin: "sine", tri: "triangle", sq: "square" }[waveform] || waveform;
-    source.frequency.value = frequency;
-    source.connect(gain);
-  }
-  source.start();
-  synthChannels.set(channel, { source, gain, filter });
-}
-
-function stopAllWaves() {
-  for (const channel of [...synthChannels.keys()]) stopWaveChannel(channel);
-}
+const stopAllWaves = () => audio.stopAllWaves();
 
 const io = {
   output: appendOutput,
@@ -237,7 +184,7 @@ const io = {
   input: showInput,
   canvas: renderCanvas,
   endCanvas,
-  wave: setWave,
+  wave: value => audio.wave(value),
   waveStop: stopAllWaves,
   authorizeHttp({ url, method }) {
     const target = new URL(url);
@@ -253,17 +200,35 @@ const io = {
   }
 };
 
-const runtime = new DappRuntime(io, new BrowserFileSystem());
+const dapperShell = new DollShell(machine, { output: appendOutput, dapper });
+const runtime = new DappRuntime(io, fileSystem, {
+  battery: () => machine.battery,
+  cwd: () => "/apps",
+  heap: () => Math.max(0, 8 * 1024 * 1024 - [...fileSystem.files.values()].reduce((sum, value) => sum + value.length, 0)),
+  ip: () => machine.wifiConnected ? machine.ip : "0.0.0.0",
+  wifi: () => Number(machine.wifiConnected),
+  millis: () => machine.uptimeSeconds() * 1000,
+  seconds: () => machine.uptimeSeconds(),
+  audiook: () => Number(audio.isReady),
+  dapper: parts => dapperShell.command_dapper(["dapper", ...parts])
+});
 
 async function runSource() {
   if (runtime.running) return;
+  await audio.unlock();
   clearOutput();
   endCanvas();
-  appendOutput(`Running /apps/${downloadFilename()}`, "green");
+  const path = `/apps/${downloadFilename()}`;
+  if (!fileSystem.write(path, editor.value)) {
+    appendOutput(`Could not save ${path} to the shared virtual device`, "red");
+    return;
+  }
+  appendOutput(`Running ${path}`, "green");
   runButton.disabled = true;
   stopButton.disabled = false;
   screen.focus();
   await runtime.run(editor.value);
+  stopAllWaves();
   runButton.disabled = false;
   stopButton.disabled = true;
   inputForm.hidden = true;
@@ -335,6 +300,7 @@ editor.addEventListener("keydown", event => {
 });
 
 screen.addEventListener("keydown", event => {
+  void audio.unlock();
   if (!runtime.running || !inputForm.hidden) return;
   if (runtime.pushKey(event)) {
     event.preventDefault();
@@ -345,6 +311,7 @@ screen.addEventListener("keydown", event => {
 });
 
 document.addEventListener("keydown", event => {
+  void audio.unlock();
   if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
     event.preventDefault();
     runSource();
@@ -352,7 +319,10 @@ document.addEventListener("keydown", event => {
   if (event.key === "Escape" && $("#help-drawer").classList.contains("open")) openHelp(false);
 });
 
-runButton.addEventListener("click", runSource);
+runButton.addEventListener("click", () => {
+  void audio.unlock();
+  runSource();
+});
 stopButton.addEventListener("click", () => runtime.stop());
 $("#clear-button").addEventListener("click", clearOutput);
 $("#download-button").addEventListener("click", downloadSource);

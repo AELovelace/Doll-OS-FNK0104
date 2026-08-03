@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
+import { createRequire } from "node:module";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { DappRuntime } from "./dapp-runtime.js";
 import { bundledApps, firmwareAppIds } from "./bundled-apps.js";
-import { COMMAND_COMPATIBILITY, FILE_SYSTEM_LIMITS, DollMachine, DollShell, VirtualFileSystem, normalizePath, sanitizeDappFilename, splitCommand } from "./emulator-core.js";
+import { COMMAND_COMPATIBILITY, FILE_SYSTEM_LIMITS, SETTINGS_FILE_PATH, DollMachine, DollShell, VirtualFileSystem, normalizePath, sanitizeDappFilename, settingsGet, splitCommand } from "./emulator-core.js";
 
 class MemoryStorage {
   constructor() { this.values = new Map(); }
@@ -144,6 +145,39 @@ test("shell supports filesystem navigation and mutation", async () => {
   assert.ok(output.some(line => line.text === "rm: removed /docs/moved.txt" && line.color === "green"));
 });
 
+test("filesystem copy refuses overwrite and same-volume directory moves preserve children", () => {
+  const { fileSystem } = rig();
+  fileSystem.mkdir("/docs");
+  fileSystem.mkdir("/docs/sub");
+  fileSystem.write("/docs/sub/note.txt", "hello");
+  fileSystem.write("/apps/existing.txt", "keep");
+  assert.equal(fileSystem.copy("/docs/sub/note.txt", "/apps/existing.txt"), null);
+  assert.equal(fileSystem.read("/apps/existing.txt"), "keep");
+  assert.equal(fileSystem.move("/docs", "/archive"), "/archive");
+  assert.equal(fileSystem.read("/archive/sub/note.txt"), "hello");
+  assert.equal(fileSystem.exists("/docs"), false);
+  assert.equal(fileSystem.move("/archive", "/sd/archive"), null);
+});
+
+test("Game Boy is a pinned local WASM feature with no bundled ROM", async () => {
+  const [html, source, vendor, license, wasm] = await Promise.all([
+    readFile(new URL("./emulator.html", import.meta.url), "utf8"),
+    readFile(new URL("./gameboy.js", import.meta.url), "utf8"),
+    readFile(new URL("./vendor/binjgb/VENDORED.md", import.meta.url), "utf8"),
+    readFile(new URL("./vendor/binjgb/LICENSE", import.meta.url), "utf8"),
+    readFile(new URL("./vendor/binjgb/binjgb.wasm", import.meta.url))
+  ]);
+  assert.match(html, /id="gameboy-rom"/);
+  assert.match(source, /gb\|gbc/);
+  assert.match(vendor, /c60e138da5a795ebb55e56b11b7e90024e41112c/);
+  assert.match(license, /Permission is hereby granted, free of charge/);
+  assert.ok(await WebAssembly.compile(wasm));
+  const require = createRequire(import.meta.url);
+  const createBinjgb = require("./vendor/binjgb/binjgb.js");
+  const module = await createBinjgb({ wasmBinary: wasm });
+  assert.equal(typeof module._emulator_new_simple, "function");
+});
+
 test("aliases persist and expand before dispatch", async () => {
   const { shell, output } = rig();
   await shell.execute("alias where pwd");
@@ -151,6 +185,35 @@ test("aliases persist and expand before dispatch", async () => {
   await shell.execute("where");
   assert.ok(output.some(line => line.text === "alias: where=pwd"));
   assert.equal(output.at(-1).text, "/apps");
+});
+
+test("settings persist, mask secret listings, and apply radio defaults after reboot", async () => {
+  let playedUrl = "";
+  const fixture = rig({
+    async radio({ action, url, defaultUrl }) {
+      playedUrl = url || defaultUrl;
+      return { playing: action === "play", url: playedUrl, volume: fixture.machine.volume };
+    }
+  });
+  const { shell, fileSystem, machine, output } = fixture;
+  await shell.execute("settings set radio.url https://radio.example/live.mp3");
+  await shell.execute("settings set radio.volume 7");
+  await shell.execute("settings set asuka.brave_key secret-value");
+  assert.match(fileSystem.read(SETTINGS_FILE_PATH), /radio\.volume=7/);
+  assert.equal(settingsGet(fileSystem, "radio.url"), "https://radio.example/live.mp3");
+  assert.equal(machine.volume, 12);
+  const listingStart = output.length;
+  await shell.execute("settings");
+  const listing = output.slice(listingStart);
+  assert.ok(listing.some(line => line.text === "asuka.brave_key=****"));
+  assert.equal(listing.some(line => line.text.includes("secret-value")), false);
+  await shell.execute("reboot");
+  assert.equal(machine.volume, 12);
+  await shell.execute("radio play");
+  assert.equal(machine.volume, 7);
+  assert.equal(playedUrl, "https://radio.example/live.mp3");
+  await shell.execute("settings unset radio.url");
+  assert.equal(settingsGet(fileSystem, "radio.url", "fallback"), "fallback");
 });
 
 test("run resolves installed apps before system fallbacks", async () => {

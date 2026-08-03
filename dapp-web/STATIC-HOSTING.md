@@ -25,8 +25,13 @@ Use HTTPS in production.
 Netlify, and compatible hosts. Configure the equivalent headers in the host's
 dashboard when it does not consume `_headers` files.
 
+The supplied policy asks browsers to revalidate static files on each visit so
+an updated entry module cannot be paired with stale imported modules. Make sure
+the host serves `binjgb.wasm` as `application/wasm`.
+
 The policy deliberately allows connections only to the hosting origin and
-HTTPS destinations. The emulator adds another layer: app networking is off by
+HTTPS destinations. HTTPS media is allowed for the explicit `radio play <url>`
+command. The emulator adds another layer: app networking is off by
 default and each destination origin requires an in-page approval that lasts
 only until reload. Requests always use `credentials: "omit"` and a no-referrer
 policy, including requests back to the hosting origin.
@@ -49,6 +54,18 @@ them.
 Imported disk images cannot replace firmware apps. Imports and runtime writes
 are bounded by file-count, per-file, path-length, directory-count, and total
 storage limits.
+
+The Game Boy core is pinned and vendored under `vendor/binjgb`; it runs locally
+as WebAssembly. Visitors supply their own `.gb` or `.gbc` files, and ROM bytes,
+battery RAM, and save states are never sent to the host. The site has no ASUKA,
+MQTT/Motoko, SSH, telnet, or remote-session gateway and needs no server-side
+code.
+
+Runtime overrides are stored as plain text in the visitor's virtual
+`/system/conf/settings.dsys`. Only `radio.url` and `radio.volume` affect the web
+runner. Hardware-only FTP, MQTT, ASUKA, and remote-session keys remain inert;
+visitors should not enter real secrets because disk export and `settings get`
+can reveal them.
 
 ## Remaining trust rule
 

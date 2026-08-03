@@ -67,6 +67,26 @@ static char radioAnnounceText[160] = "";     //one pending line for radioService
 static int radioAnnounceColor = C_WHITE;
 static bool radioAnnouncePending = false;
 
+static bool radioDefaultsInitialized = false;
+
+//Runs once, lazily, the first time "radio" is used post-boot. radioVolume's static
+//initializer above runs at global-construction time, before LittleFS is mounted, so
+//a "settings set radio.volume" override can't be read there -- it has to be applied
+//here instead (same lazy-init shape as Asuka.ino's asukaEnsureDefaults()).
+static void radioEnsureDefaults() {
+    if (radioDefaultsInitialized) {
+        return;
+    }
+    radioDefaultsInitialized = true;
+    int savedVolume = settingsGet("radio.volume", String(RADIO_DEFAULT_VOLUME)).toInt();
+    if (savedVolume < 0 || savedVolume > RADIO_VOLUME_MAX) {
+        return;
+    }
+    portENTER_CRITICAL(&radioMux);
+    radioVolume = savedVolume;
+    portEXIT_CRITICAL(&radioMux);
+}
+
 static TaskHandle_t radioTaskHandle = NULL;
 
 //   task-local -- only the radio task touches these after creation.
@@ -511,6 +531,7 @@ void radioAdjustVolume(int delta) {
 
 //Expected forms: radio | radio status | radio play [url] | radio pause | radio stop | radio vol <0-21>
 void handleRadioCommand(const String parts[], int partCount) {
+    radioEnsureDefaults();
     String sub = (partCount > 1) ? parts[1] : "status";
 
     if (sub == "status") {
@@ -531,7 +552,7 @@ void handleRadioCommand(const String parts[], int partCount) {
             url = String(radioUrl);
             portEXIT_CRITICAL(&radioMux);
             if (url.length() == 0) {
-                url = RADIO_DEFAULT_URL;
+                url = settingsGet("radio.url", RADIO_DEFAULT_URL);
             }
         }
         if (!radioEnsureTask()) {

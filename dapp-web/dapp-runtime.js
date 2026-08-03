@@ -1003,7 +1003,7 @@ export class DappRuntime {
           || frequency < 1 || frequency > 12000 || level < 0 || level > 100) {
         throw this.error("WAVE needs channel 1..3, hz 1..12000, level 0..100, and a valid waveform");
       }
-      this.io.wave?.({ channel, waveform, frequency, level });
+      await Promise.resolve(this.io.wave?.({ channel, waveform, frequency, level }));
       return;
     }
     if (op === "WAVESTOP") {
@@ -1540,7 +1540,7 @@ export class DappRuntime {
       seconds: Math.floor(elapsed / 1000),
       wifi: 1,
       ledok: 1,
-      audiook: this.io.wave ? 1 : 0,
+      audiook: 0,
       fok: this.fok,
       feof: this.feof,
       httpcode: this.httpcode,

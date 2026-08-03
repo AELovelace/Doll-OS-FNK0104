@@ -1,8 +1,11 @@
 import { bundledApps, firmwareAppIds } from "./bundled-apps.js";
+import { BrowserAudioController } from "./browser-audio.js";
 import { highlightDappSource } from "./dapp-highlight.js";
 import { DapperClient } from "./dapper-client.js";
 import { DappRuntime } from "./dapp-runtime.js";
 import { DollMachine, DollShell, VirtualFileSystem, sanitizeDappFilename } from "./emulator-core.js";
+import { GameBoyPlayer } from "./gameboy.js";
+import { WEB_RUNTIME } from "./runtime-config.js";
 
 const $ = selector => document.querySelector(selector);
 const display = $("#display");
@@ -39,6 +42,16 @@ const palette = {
 const fileSystem = new VirtualFileSystem({ bundledApps, systemAppIds: firmwareAppIds });
 const machine = new DollMachine({ fileSystem, bundledApps });
 const dapper = new DapperClient();
+const audio = new BrowserAudioController();
+audio.setRadioVolume(machine.volume);
+$("#studio-runtime-label").textContent = `Apps execute inside the bounded AppRunner ${WEB_RUNTIME.appRunnerVersion} environment. Saving here writes to the emulated device, never to the hosting server.`;
+const gameBoy = new GameBoyPlayer({
+  dialog: $("#gameboy-dialog"),
+  canvas: $("#gameboy-screen"),
+  fileInput: $("#gameboy-rom"),
+  status: $("#gameboy-status"),
+  audio
+});
 const displayState = {
   history: [],
   canvas: null,
@@ -55,8 +68,6 @@ let appInputResolve = null;
 let appInputEcho = true;
 let shellBusy = false;
 let editorTarget = "";
-let synthContext;
-const synthChannels = new Map();
 const approvedNetworkOrigins = new Set();
 
 function appendOutput(text, color = "white") {
@@ -286,51 +297,7 @@ function bootSequence() {
   }, 650);
 }
 
-function stopWaveChannel(channel) {
-  const voice = synthChannels.get(channel);
-  if (!voice) return;
-  try { voice.source.stop(); } catch {}
-  voice.source.disconnect();
-  voice.gain.disconnect();
-  voice.filter?.disconnect();
-  synthChannels.delete(channel);
-}
-
-function setWave({ channel, waveform, frequency, level }) {
-  stopWaveChannel(channel);
-  if (waveform === "off" || level === 0) return;
-  synthContext ||= new AudioContext();
-  synthContext.resume();
-  const gain = synthContext.createGain();
-  gain.gain.value = (level / 100) * 0.08;
-  gain.connect(synthContext.destination);
-  let source;
-  let filter;
-  if (waveform === "noise") {
-    const buffer = synthContext.createBuffer(1, synthContext.sampleRate, synthContext.sampleRate);
-    const samples = buffer.getChannelData(0);
-    for (let index = 0; index < samples.length; index += 1) samples[index] = Math.random() * 2 - 1;
-    source = synthContext.createBufferSource();
-    source.buffer = buffer;
-    source.loop = true;
-    filter = synthContext.createBiquadFilter();
-    filter.type = "lowpass";
-    filter.frequency.value = frequency;
-    source.connect(filter);
-    filter.connect(gain);
-  } else {
-    source = synthContext.createOscillator();
-    source.type = { sin: "sine", tri: "triangle", sq: "square" }[waveform] || waveform;
-    source.frequency.value = frequency;
-    source.connect(gain);
-  }
-  source.start();
-  synthChannels.set(channel, { source, gain, filter });
-}
-
-function stopAllWaves() {
-  for (const channel of [...synthChannels.keys()]) stopWaveChannel(channel);
-}
+const stopAllWaves = () => audio.stopAllWaves();
 
 const io = {
   output: appendOutput,
@@ -357,7 +324,7 @@ const io = {
     deviceLed.style.color = `rgb(${red} ${green} ${blue})`;
     deviceLed.classList.toggle("active", red + green + blue > 0);
   },
-  wave: setWave,
+  wave: value => audio.wave(value),
   waveStop: stopAllWaves,
   authorizeHttp({ url, method }) {
     if (!$("#network-toggle").checked) {
@@ -390,6 +357,7 @@ const runtime = new DappRuntime(io, fileSystem, {
   wifi: () => Number(machine.wifiConnected),
   millis: () => machine.uptimeSeconds() * 1000,
   seconds: () => machine.uptimeSeconds(),
+  audiook: () => Number(audio.isReady),
   dapper: parts => shell.command_dapper(["dapper", ...parts])
 });
 
@@ -539,9 +507,28 @@ const shell = new DollShell(machine, {
   runApp,
   edit: openEditor,
   dapper,
+  radioDefaults: volume => audio.setRadioVolume(volume),
+  radio: async ({ action, url, defaultUrl, volume }) => {
+    if (action === "play") {
+      const selectedUrl = url || (!audio.radioStatus().url ? defaultUrl : "");
+      return audio.playRadio(selectedUrl);
+    }
+    if (action === "pause") return audio.pauseRadio();
+    if (action === "stop") return audio.stopRadio();
+    if (action === "vol") audio.setRadioVolume(volume);
+    return audio.radioStatus();
+  },
+  gameBoy: () => gameBoy.open(),
   stateChanged: renderDisplay,
-  reboot: bootSequence
+  reboot: () => {
+    audio.stopRadio();
+    audio.setRadioVolume(machine.volume);
+    bootSequence();
+  }
 });
+
+document.addEventListener("pointerdown", () => { void audio.unlock(); }, { capture: true });
+document.addEventListener("keydown", () => { void audio.unlock(); }, { capture: true });
 
 async function submitShellCommand(value) {
   if (!displayState.powered || shellBusy || appRunning) return;
@@ -595,6 +582,7 @@ commandInput.addEventListener("input", syncInputDisplay);
 commandInput.addEventListener("click", syncInputDisplay);
 commandInput.addEventListener("keyup", syncInputDisplay);
 commandInput.addEventListener("keydown", async event => {
+  void audio.unlock();
   if (appRunning) {
     if (appInputResolve) {
       if (event.key === "Enter") {
@@ -639,7 +627,10 @@ commandInput.addEventListener("keydown", async event => {
   }
 });
 
-$("#screen-button").addEventListener("click", () => commandInput.focus());
+$("#screen-button").addEventListener("click", () => {
+  void audio.unlock();
+  commandInput.focus();
+});
 stopButton.addEventListener("click", () => runtime.stop());
 
 $("#power-button").addEventListener("click", () => {
@@ -651,10 +642,12 @@ $("#power-button").addEventListener("click", () => {
     runtimeState.textContent = "OFF";
     $("#power-label").textContent = "OFF";
     stopAllWaves();
+    audio.stopRadio();
     updateStudioControls();
     renderDisplay();
   } else {
     machine.reboot();
+    audio.setRadioVolume(machine.volume);
     bootSequence();
   }
 });
@@ -662,7 +655,9 @@ $("#power-button").addEventListener("click", () => {
 $("#reboot-button").addEventListener("click", () => {
   if (!displayState.powered) return;
   runtime.stop();
+  audio.stopRadio();
   machine.reboot();
+  audio.setRadioVolume(machine.volume);
   shell.cwd = "/";
   bootSequence();
 });
@@ -698,6 +693,7 @@ $("#network-toggle").addEventListener("change", event => {
 
 document.querySelectorAll("[data-command]").forEach(button => button.addEventListener("click", () => {
   if (!displayState.powered || appRunning) return;
+  void audio.unlock();
   submitShellCommand(button.dataset.command);
 }));
 

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHash, webcrypto } from "node:crypto";
 import test from "node:test";
 
-import { DAPPER_REPOSITORY_BASE_URL, DAPPER_REPOSITORY_URL, DapperClient } from "./dapper-client.js";
+import { DAPPER_INSTALLED_PATH, DAPPER_REPOSITORY_BASE_URL, DAPPER_REPOSITORY_URL, DapperClient } from "./dapper-client.js";
 import { VirtualFileSystem } from "./emulator-core.js";
 
 class MemoryStorage {
@@ -72,9 +72,35 @@ test("Dapper downloads and verifies a compatible FNK0104 package", async () => {
   const installed = await client.install("download", fileSystem);
   assert.equal(installed.path, "/apps/download.dapp");
   assert.equal(fileSystem.read(installed.path), fixture.source);
+  assert.match(fileSystem.read(DAPPER_INSTALLED_PATH), /"download"/);
   assert.equal(requests.length, 3);
   assert.ok(requests.every(request => request.options.credentials === "omit"));
   assert.ok(requests.every(request => request.options.referrerPolicy === "no-referrer"));
+});
+
+test("Dapper owns, diagnoses, and removes only registry-managed packages", async () => {
+  const fixture = repositoryFixture();
+  const client = clientFor(fixture);
+  const fileSystem = new VirtualFileSystem({ storage: new MemoryStorage() });
+  fileSystem.write("/apps/download.dapp", "unmanaged");
+  await assert.rejects(() => client.install("download", fileSystem), /unmanaged/);
+  await client.install("download", fileSystem, "/apps", { force: true });
+  assert.equal((await client.doctor(fileSystem)).ok, true);
+  fileSystem.write("/apps/download.dapp", "tampered");
+  assert.match((await client.doctor(fileSystem)).issues[0], /hash/);
+  const removed = client.remove("download", fileSystem);
+  assert.equal(removed.id, "download");
+  assert.equal(fileSystem.exists("/apps/download.dapp"), false);
+  assert.equal(client.installed(fileSystem).length, 0);
+
+  fileSystem.write("/apps/victim.dapp", "keep me");
+  fileSystem.write(DAPPER_INSTALLED_PATH, JSON.stringify({
+    registry_format: 1,
+    repository: "sadgirlsclub",
+    packages: { download: { repository: "sadgirlsclub", id: "download", version: "1.2.0", sha256: fixture.record.sha256, path: "/apps/victim.dapp" } }
+  }));
+  assert.throws(() => client.remove("download", fileSystem), /registry is corrupt/);
+  assert.equal(fileSystem.read("/apps/victim.dapp"), "keep me");
 });
 
 test("Dapper refuses an artifact that does not match the catalog hash", async () => {

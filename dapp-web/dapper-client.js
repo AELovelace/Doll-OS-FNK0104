@@ -1,9 +1,13 @@
+import { WEB_RUNTIME } from "./runtime-config.js";
+
 export const DAPPER_REPOSITORY_URL = "https://sadgirlsclub.wtf/dapper/repo.json";
 export const DAPPER_REPOSITORY_BASE_URL = "https://sadgirlsclub.wtf/dapper/";
+export const DAPPER_INSTALLED_PATH = "/.dapper/installed.json";
 
 const LIMITS = Object.freeze({ repo: 4096, catalog: 128 * 1024, package: 256 * 1024, line: 4096, records: 512 });
-const RUNTIME_VERSION = "1.5.0";
-const BOARD_ID = "fnk0104";
+const RUNTIME_VERSION = WEB_RUNTIME.appRunnerVersion;
+const BOARD_ID = WEB_RUNTIME.boardId;
+const MAX_INSTALLED = 32;
 
 function parseVersion(value) {
   const match = String(value).match(/^(\d+)\.(\d+)\.(\d+)$/);
@@ -56,6 +60,38 @@ async function sha256(bytes, cryptoImpl) {
   if (!cryptoImpl?.subtle) throw new Error("SHA-256 is unavailable in this browser");
   const digest = new Uint8Array(await cryptoImpl.subtle.digest("SHA-256", bytes));
   return [...digest].map(byte => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function blankRegistry() {
+  return { registry_format: 1, repository: "sadgirlsclub", packages: {} };
+}
+
+function loadRegistry(fileSystem) {
+  const source = fileSystem.read(DAPPER_INSTALLED_PATH);
+  if (source === null) return blankRegistry();
+  try {
+    const registry = JSON.parse(source);
+    if (registry?.registry_format !== 1 || registry.repository !== "sadgirlsclub"
+        || !registry.packages || typeof registry.packages !== "object" || Array.isArray(registry.packages)) throw new Error();
+    const entries = Object.entries(registry.packages);
+    if (entries.length > MAX_INSTALLED) throw new Error();
+    for (const [id, installed] of entries) {
+      const ownedPaths = [`/apps/${id}.dapp`, `/sd/apps/${id}.dapp`];
+      if (!/^[a-z0-9][a-z0-9-]{0,31}$/.test(id) || installed?.id !== id
+          || installed.repository !== "sadgirlsclub" || !ownedPaths.includes(installed.path)
+          || !parseVersion(installed.version) || !/^[a-f0-9]{64}$/.test(installed.sha256)) throw new Error();
+    }
+    return registry;
+  } catch {
+    throw new Error("installed-package registry is corrupt; run dapper doctor");
+  }
+}
+
+function saveRegistry(fileSystem, registry) {
+  if (!fileSystem.exists("/.dapper") && !fileSystem.mkdir("/.dapper")) throw new Error("cannot create /.dapper");
+  if (!fileSystem.write(DAPPER_INSTALLED_PATH, `${JSON.stringify(registry, null, 2)}\n`)) {
+    throw new Error("cannot update installed-package registry");
+  }
 }
 
 export class DapperClient {
@@ -134,8 +170,11 @@ export class DapperClient {
     return matches.sort((a, b) => compareVersions(b.version, a.version))[0];
   }
 
-  async install(spec, fileSystem, root = "/apps") {
-    if (root !== "/apps" && root !== "/sd/apps") throw new Error("unsupported install location");
+  installed(fileSystem) {
+    return Object.values(loadRegistry(fileSystem).packages).sort((a, b) => a.id.localeCompare(b.id));
+  }
+
+  async verifiedPackage(spec) {
     const record = await this.select(spec);
     const artifactUrl = safeArtifactUrl(record.url);
     const bytes = await this.fetchBytes(artifactUrl, LIMITS.package);
@@ -149,8 +188,94 @@ export class DapperClient {
         || metadata.runtime !== `>=${record.runtime_min} <${record.runtime_max_exclusive}`) {
       throw new Error("downloaded package metadata does not match catalog");
     }
+    return { record, source };
+  }
+
+  async install(spec, fileSystem, root = "/apps", { force = false } = {}) {
+    if (root !== "/apps" && root !== "/sd/apps") throw new Error("unsupported install location");
+    const { record, source } = await this.verifiedPackage(spec);
     const path = `${root}/${record.id}.dapp`;
-    if (!fileSystem.write(path, source)) throw new Error(`could not write ${path}`);
+    const registry = loadRegistry(fileSystem);
+    const managed = Object.hasOwn(registry.packages, record.id) ? registry.packages[record.id] : null;
+    if (fileSystem.exists(path) && (!managed || managed.path !== path) && !force) {
+      throw new Error(`${path} is unmanaged; use --force to take ownership`);
+    }
+    if (!managed && Object.keys(registry.packages).length >= MAX_INSTALLED) throw new Error("installed-package registry is full");
+    if (managed?.version === record.version && managed.sha256 === record.sha256
+        && managed.path === path && fileSystem.read(path) === source) return { record, path, current: true };
+
+    const snapshot = fileSystem.snapshot();
+    try {
+      if (!fileSystem.write(path, source)) throw new Error(`could not write ${path}`);
+      registry.packages[record.id] = {
+        repository: "sadgirlsclub", package_format: record.package_format,
+        id: record.id, name: record.name, summary: record.summary || "", version: record.version,
+        runtime_min: record.runtime_min, runtime_max_exclusive: record.runtime_max_exclusive,
+        sha256: record.sha256, size: record.size, url: record.url, path
+      };
+      saveRegistry(fileSystem, registry);
+      if (managed?.path && managed.path !== path) fileSystem.delete(managed.path);
+    } catch (error) {
+      fileSystem.restore(snapshot);
+      throw error;
+    }
     return { record, path };
+  }
+
+  async update(id, fileSystem) {
+    await this.refresh(true);
+    const registry = loadRegistry(fileSystem);
+    const targets = id && Object.hasOwn(registry.packages, id) ? [registry.packages[id]] : id ? [] : Object.values(registry.packages);
+    if (id && !targets.length) throw new Error(`not installed: ${id}`);
+    const results = [];
+    for (const installed of targets) {
+      const available = await this.select(installed.id);
+      if (compareVersions(available.version, installed.version) <= 0) {
+        results.push({ id: installed.id, version: installed.version, current: true, path: installed.path });
+      } else {
+        const root = installed.path.startsWith("/sd/apps/") ? "/sd/apps" : "/apps";
+        const result = await this.install(installed.id, fileSystem, root);
+        results.push({ id: result.record.id, version: result.record.version, current: false, path: result.path });
+      }
+    }
+    return results;
+  }
+
+  remove(id, fileSystem) {
+    const registry = loadRegistry(fileSystem);
+    const installed = Object.hasOwn(registry.packages, id) ? registry.packages[id] : null;
+    if (!installed) return null;
+    const snapshot = fileSystem.snapshot();
+    try {
+      if (fileSystem.exists(installed.path) && !fileSystem.delete(installed.path)) throw new Error(`could not remove ${installed.path}`);
+      delete registry.packages[id];
+      saveRegistry(fileSystem, registry);
+      return installed;
+    } catch (error) {
+      fileSystem.restore(snapshot);
+      throw error;
+    }
+  }
+
+  async doctor(fileSystem) {
+    const issues = [];
+    let registry;
+    try { registry = loadRegistry(fileSystem); }
+    catch (error) { return { ok: false, count: 0, issues: [error.message] }; }
+    const packages = Object.values(registry.packages);
+    for (const installed of packages) {
+      if (!installed?.id || !installed.path || !["/apps/", "/sd/apps/"].some(root => installed.path.startsWith(root))) {
+        issues.push(`invalid registry entry: ${installed?.id || "unknown"}`);
+        continue;
+      }
+      const source = fileSystem.read(installed.path);
+      if (source === null) {
+        issues.push(`${installed.id}: managed file is missing`);
+        continue;
+      }
+      const digest = await sha256(new TextEncoder().encode(source), this.cryptoImpl);
+      if (digest !== installed.sha256) issues.push(`${installed.id}: installed file hash does not match registry`);
+    }
+    return { ok: issues.length === 0, count: packages.length, issues };
   }
 }

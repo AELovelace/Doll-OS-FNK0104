@@ -1,4 +1,5 @@
 import { evaluateExpression } from "./dapp-runtime.js";
+import { WEB_RUNTIME } from "./runtime-config.js";
 
 const COLORS = ["black", "red", "green", "yellow", "blue", "magenta", "cyan", "pink", "white"];
 export const FILE_SYSTEM_LIMITS = Object.freeze({
@@ -8,11 +9,15 @@ export const FILE_SYSTEM_LIMITS = Object.freeze({
   totalBytes: 4 * 1024 * 1024,
   pathLength: 256
 });
+export const SETTINGS_FILE_PATH = "/system/conf/settings.dsys";
+const SETTINGS_MAX_ENTRIES = 32;
+const SETTINGS_KEY_MAX = 32;
+const SETTINGS_VALUE_MAX = 160;
 
 export const COMMAND_COMPATIBILITY = Object.freeze({
-  faithful: Object.freeze(["alias", "apps", "battery", "calc", "cat", "cd", "clear", "cp", "del", "dice", "free", "help", "ls", "mkdir", "mv", "pwd", "reboot", "rm", "run", "status", "unalias", "uptime"]),
-  adapted: Object.freeze(["dapper", "edit", "ip", "radio", "wifi"]),
-  gateway: Object.freeze(["asuka", "ftp", "gb", "motoko", "ping", "slave", "ssh", "telnet", "usb"])
+  faithful: Object.freeze(["alias", "apps", "calc", "cat", "cd", "clear", "cp", "del", "dice", "help", "ls", "mkdir", "mv", "pwd", "rm", "run", "settings", "unalias"]),
+  adapted: Object.freeze(["battery", "dapper", "edit", "free", "gb", "ip", "radio", "reboot", "status", "uptime", "wifi"]),
+  unavailable: Object.freeze(["asuka", "ftp", "motoko", "ping", "slave", "ssh", "telnet", "usb"])
 });
 
 export function normalizePath(base = "/", target = "") {
@@ -52,6 +57,44 @@ export function splitCommand(input, maxParts = 8) {
     }
   }
   return parts;
+}
+
+function settingsKeyValid(key) {
+  const value = String(key);
+  return value.length > 0 && value.length <= SETTINGS_KEY_MAX
+    && ![...value].some(character => character <= " " || "=\"'#".includes(character));
+}
+
+function settingsKeyLooksSecret(key) {
+  const lower = String(key).toLowerCase();
+  return lower.includes("pass") || lower.includes("key");
+}
+
+export function loadSettings(fileSystem) {
+  const entries = [];
+  for (const rawLine of (fileSystem.read(SETTINGS_FILE_PATH) || "").split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    const equals = line.indexOf("=");
+    if (equals <= 0) continue;
+    const key = line.slice(0, equals).trim();
+    const value = line.slice(equals + 1).trim().slice(0, SETTINGS_VALUE_MAX);
+    if (settingsKeyValid(key) && entries.length < SETTINGS_MAX_ENTRIES) entries.push({ key, value });
+  }
+  return entries;
+}
+
+export function settingsGet(fileSystem, key, fallback = "") {
+  return loadSettings(fileSystem).find(entry => entry.key === key)?.value ?? String(fallback);
+}
+
+function saveSettings(fileSystem, entries) {
+  const lines = [
+    "# DOLL-OS runtime settings -- overrides config.h defaults",
+    "# Format: key=value",
+    ...entries.map(entry => `${entry.key}=${entry.value}`)
+  ];
+  return fileSystem.write(SETTINGS_FILE_PATH, `${lines.join("\n")}\n`);
 }
 
 function parentPath(path) {
@@ -207,17 +250,34 @@ export class VirtualFileSystem {
     let to = normalizePath("/", destination);
     if (!this.files.has(from)) return null;
     if (this.directories.has(to)) to = normalizePath(to, leafName(from));
-    if (!this.directories.has(parentPath(to))) return null;
+    if (this.exists(to) || !this.directories.has(parentPath(to))) return null;
     if (!this.write(to, this.files.get(from))) return null;
     return to;
   }
 
   move(source, destination) {
     const from = normalizePath("/", source);
-    if (isSystemAppPath(from)) return null;
-    const to = this.copy(from, destination);
-    if (!to) return null;
-    this.files.delete(from);
+    let to = normalizePath("/", destination);
+    if (["/", "/system", "/system/apps", "/sd"].includes(from) || isSystemAppPath(from)) return null;
+    if (this.directories.has(to)) to = normalizePath(to, leafName(from));
+    if (this.exists(to) || !this.directories.has(parentPath(to))) return null;
+    if (this.files.has(from)) {
+      const copied = this.copy(from, to);
+      if (!copied) return null;
+      this.files.delete(from);
+      this.persist();
+      return copied;
+    }
+    if (!this.directories.has(from) || to.startsWith(`${from}/`)) return null;
+    const fromSd = from === "/sd" || from.startsWith("/sd/");
+    const toSd = to === "/sd" || to.startsWith("/sd/");
+    if (fromSd !== toSd) return null;
+    const movedDirectories = [...this.directories].filter(path => path === from || path.startsWith(`${from}/`));
+    const movedFiles = [...this.files].filter(([path]) => path.startsWith(`${from}/`));
+    for (const directory of movedDirectories) this.directories.delete(directory);
+    for (const [path] of movedFiles) this.files.delete(path);
+    for (const directory of movedDirectories) this.directories.add(`${to}${directory.slice(from.length)}`);
+    for (const [path, content] of movedFiles) this.files.set(`${to}${path.slice(from.length)}`, content);
     this.persist();
     return to;
   }
@@ -287,11 +347,22 @@ export class DollMachine {
     this.ip = "192.168.4.23";
     this.sdMounted = true;
     this.radioPlaying = false;
+    this.radioDefaultsInitialized = false;
   }
 
   reboot() {
     this.bootedAt = this.now();
     this.radioPlaying = false;
+    this.volume = 12;
+    this.radioDefaultsInitialized = false;
+  }
+
+  ensureRadioDefaults() {
+    if (this.radioDefaultsInitialized) return false;
+    this.radioDefaultsInitialized = true;
+    const configured = Number.parseInt(settingsGet(this.fileSystem, "radio.volume", "12"), 10);
+    if (Number.isInteger(configured) && configured >= 0 && configured <= 21) this.volume = configured;
+    return true;
   }
 
   uptimeSeconds() {
@@ -302,8 +373,8 @@ export class DollMachine {
 const HELP_LINES = [
   "Commands: alias, apps, asuka, battery, calc, cat, cd, clear, cp, dapper,",
   "          del, dice, edit, free, ftp, gb, help, ip, ls, mkdir, motoko, mv,",
-  "          ping, pwd, radio, reboot, rm, run, slave, ssh, status, telnet,",
-  "          unalias, uptime, usb, wifi"
+  "          ping, pwd, radio, reboot, rm, run, settings, slave, ssh, status,",
+  "          telnet, unalias, uptime, usb, wifi"
 ];
 
 export class DollShell {
@@ -522,21 +593,77 @@ export class DollShell {
     this.hooks.edit?.(path, this.fs.read(path) || "");
   }
 
+  command_settings(parts) {
+    const entries = loadSettings(this.fs);
+    if (parts.length === 1) {
+      this.write("Settings", "cyan");
+      this.write("--------");
+      if (!entries.length) {
+        this.write("(none -- all values are using their browser defaults)");
+        this.write("Use: settings set <key> <value>");
+        return;
+      }
+      entries.forEach(entry => this.write(`${entry.key}=${settingsKeyLooksSecret(entry.key) ? "****" : entry.value}`));
+      this.write(`File: ${SETTINGS_FILE_PATH}`, "cyan");
+      return;
+    }
+
+    const sub = parts[1].toLowerCase();
+    if (sub === "help") {
+      this.write("Usage: settings");
+      this.write("       settings get <key>");
+      this.write("       settings set <key> <value...>");
+      this.write("       settings unset <key>");
+      this.write("Web keys: radio.url, radio.volume");
+      this.write("Hardware-only keys may be stored here but do not enable FTP, MQTT, ASUKA, or remote gateways.", "yellow");
+      this.write(`Overrides persist in ${SETTINGS_FILE_PATH}.`);
+      return;
+    }
+    if (sub === "get") {
+      if (!parts[2]) return this.write("Usage: settings get <key>", "red");
+      const entry = entries.find(candidate => candidate.key === parts[2]);
+      return entry
+        ? this.write(`${entry.key}=${entry.value}`)
+        : this.write(`settings: ${parts[2]} is unset (using browser default)`, "yellow");
+    }
+    if (sub === "unset") {
+      if (!parts[2]) return this.write("Usage: settings unset <key>", "red");
+      const index = entries.findIndex(entry => entry.key === parts[2]);
+      if (index < 0) return this.write(`settings: ${parts[2]} not found`, "red");
+      entries.splice(index, 1);
+      if (!saveSettings(this.fs, entries)) return this.write(`settings: could not unset ${parts[2]}`, "red");
+      return this.write(`settings: ${parts[2]} unset (reboot to apply)`, "green");
+    }
+    if (sub === "set") {
+      if (!parts[2] || parts.length < 4) return this.write("Usage: settings set <key> <value...>", "red");
+      const key = parts[2];
+      if (!settingsKeyValid(key)) {
+        return this.write(`settings: invalid key (no spaces, quotes, #, or =; max ${SETTINGS_KEY_MAX} chars)`, "red");
+      }
+      const value = parts.slice(3).join(" ").trim().slice(0, SETTINGS_VALUE_MAX);
+      const index = entries.findIndex(entry => entry.key === key);
+      if (index < 0 && entries.length >= SETTINGS_MAX_ENTRIES) return this.write(`settings: could not save ${key}`, "red");
+      if (index < 0) entries.push({ key, value });
+      else entries[index] = { key, value };
+      if (!saveSettings(this.fs, entries)) return this.write(`settings: could not save ${key}`, "red");
+      const shown = settingsKeyLooksSecret(key) ? "****" : value;
+      return this.write(`settings: ${key}=${shown} (reboot to apply)`, "green");
+    }
+    this.write(`settings: unknown subcommand: ${sub}`, "red");
+    this.write("Usage: settings | settings get|set|unset <key> [value]");
+  }
+
   async command_dapper(parts) {
     const action = (parts[1] || "help").toLowerCase();
     const query = action === "search" ? parts.slice(2).join(" ") : (parts[2] || "");
     const dapper = this.hooks.dapper;
     if (action === "runtime") {
-      this.write("Board: fnk0104-web");
-      this.write("AppRunner: 1.7.0");
-      this.write("Package format: 1");
-    } else if (action === "remove") {
-      const id = query.replace(/@.+$/, "");
-      const removed = this.fs.delete(`/apps/${id}.dapp`) || this.fs.delete(`/sd/apps/${id}.dapp`);
-      this.write(removed ? `dapper: removed ${id}` : `dapper: ${id} is not installed`, removed ? "green" : "red");
+      this.write(`Board: ${WEB_RUNTIME.displayBoardId}`);
+      this.write(`AppRunner: ${WEB_RUNTIME.appRunnerVersion}`);
+      this.write(`Package format: ${WEB_RUNTIME.packageFormat}`);
       return;
     }
-    if (["help", ""].includes(action)) return this.write("dapper search [text] | info <id> | install <id>[@version] [--internal|--sd] | remove <id> | refresh | runtime");
+    if (["help", ""].includes(action)) return this.write("dapper search [text] | info <id> | install <id>[@version] [--internal|--sd] [--force] | list | update [id] | remove <id> | doctor | refresh | runtime");
     if (!dapper) return this.write("dapper: repository client is unavailable", "red");
     try {
       if (action === "refresh") {
@@ -553,17 +680,38 @@ export class DollShell {
         this.write(`Version: ${app.version}`);
         this.write(app.summary || "");
         this.write(`Size: ${app.size} bytes`);
+        const installed = dapper.installed(this.fs).find(item => item.id === app.id);
+        this.write(installed ? `Installed: ${installed.version} at ${installed.path}` : "Installed: no", installed ? "green" : "white");
       } else if (action === "install") {
-        if (!query) return this.write("Usage: dapper install <id>[@version] [--internal|--sd]", "red");
+        if (!query) return this.write("Usage: dapper install <id>[@version] [--internal|--sd] [--force]", "red");
         const root = parts.includes("--sd") ? "/sd/apps" : "/apps";
         if (root.startsWith("/sd") && !this.machine.sdMounted) return this.write("dapper: SD not mounted", "red");
         this.write(`Dapper: downloading ${query}...`, "cyan");
-        const installed = await dapper.install(query, this.fs, root);
-        this.write(`Dapper: installed ${installed.record.id} ${installed.record.version} to ${installed.path}`, "green");
+        const installed = await dapper.install(query, this.fs, root, { force: parts.includes("--force") });
+        this.write(installed.current
+          ? `${installed.record.id} ${installed.record.version} is already installed at ${installed.path}`
+          : `Dapper: installed ${installed.record.id} ${installed.record.version} to ${installed.path}`, "green");
+      } else if (action === "list") {
+        const installed = dapper.installed(this.fs);
+        installed.forEach(item => this.write(`${item.id} ${item.version} - ${item.path}`, "cyan"));
+        this.write(`${installed.length} managed package(s)`);
       } else if (action === "doctor") {
-        this.write("Dapper: browser installs use verified HTTPS + SHA-256 artifacts", "green");
+        const report = await dapper.doctor(this.fs);
+        report.issues.forEach(issue => this.write(`Dapper: ${issue}`, "red"));
+        this.write(report.ok ? `Dapper: ${report.count} managed package(s); registry and hashes are healthy`
+          : `Dapper: doctor found ${report.issues.length} issue(s)`, report.ok ? "green" : "red");
       } else if (action === "update") {
-        this.write("dapper update: reinstall the desired package to fetch its newest compatible version", "yellow");
+        this.write("Dapper: checking managed packages...", "cyan");
+        const results = await dapper.update(query, this.fs);
+        if (!results.length) this.write("Dapper: no managed packages are installed", "yellow");
+        results.forEach(item => this.write(item.current
+          ? `${item.id} is current at ${item.version}`
+          : `Updated ${item.id} to ${item.version} at ${item.path}`, "green"));
+      } else if (action === "remove") {
+        const id = query.replace(/@.+$/, "");
+        if (!id) return this.write("Usage: dapper remove <id>", "red");
+        const removed = dapper.remove(id, this.fs);
+        this.write(removed ? `Dapper: removed ${id} from ${removed.path}` : `Dapper: ${id} is not installed`, removed ? "green" : "red");
       } else this.write("dapper: unknown subcommand", "red");
     } catch (error) {
       this.write(`dapper: ${error.message}`, "red");
@@ -648,36 +796,58 @@ export class DollShell {
     if (!this.machine.wifiConnected) return this.write("ip: WiFi not connected. Run 'wifi connect' first.", "red");
     if (parts[1] === "scan" || parts[1] === "arp") return this.write(`ip ${parts[1]}: raw network discovery is unavailable in browsers`, "yellow");
     this.write(`IP: ${this.machine.ip}`);
+    this.write("Adapter: browser simulation", "cyan");
     this.write("Gateway: 192.168.4.1");
     this.write("Subnet: 255.255.255.0");
     this.write("MAC: 02:44:4F:4C:4C:53");
     this.write("DNS: 192.168.4.1");
   }
 
-  command_radio(parts) {
+  async command_radio(parts) {
     const action = (parts[1] || "status").toLowerCase();
-    if (action === "vol") this.machine.volume = Math.max(0, Math.min(21, Number.parseInt(parts[2], 10) || 0));
-    else if (action === "stop") this.machine.radioPlaying = false;
-    else if (action === "play") this.machine.radioPlaying = true;
-    this.write(`Radio: ${this.machine.radioPlaying ? "playing" : "stopped"}, volume ${this.machine.volume}${action === "play" ? " (browser audio requires a compatible stream URL)" : ""}`, this.machine.radioPlaying ? "green" : "cyan");
-    this.hooks.stateChanged?.();
+    if (!["status", "play", "pause", "stop", "vol"].includes(action)) {
+      return this.write("Usage: radio [status|play [url]|pause|stop|vol <0-21>]", "red");
+    }
+    if (action === "vol" && parts[2] === undefined) return this.write("Usage: radio vol <0-21>", "red");
+    if (!this.hooks.radio) return this.unsupported("radio", "browser audio is unavailable");
+    try {
+      if (this.machine.ensureRadioDefaults()) this.hooks.radioDefaults?.(this.machine.volume);
+      const state = await this.hooks.radio({
+        action,
+        url: parts.slice(2).join(" "),
+        defaultUrl: action === "play" ? settingsGet(this.fs, "radio.url", "") : "",
+        volume: parts[2]
+      });
+      this.machine.volume = state.volume;
+      this.machine.radioPlaying = state.playing;
+      const stream = state.url ? `, ${state.url}` : "";
+      this.write(`Radio: ${state.playing ? "playing" : action === "pause" ? "paused" : "stopped"}, volume ${state.volume}${stream}`, state.playing ? "green" : "cyan");
+      this.hooks.stateChanged?.();
+    } catch (error) {
+      this.machine.radioPlaying = false;
+      this.write(`radio: ${error.message}`, "red");
+      this.hooks.stateChanged?.();
+    }
   }
 
   command_reboot() {
-    this.write("Restarting...");
+    this.write("Restarting browser machine...");
     this.machine.reboot();
     this.cwd = "/";
     this.hooks.reboot?.();
   }
 
   unsupported(name, detail) { this.write(`${name}: ${detail}`, "yellow"); }
-  command_asuka() { this.unsupported("asuka", "requires an OpenAI-compatible proxy; browser secrets are not enabled"); }
+  command_asuka() { this.unsupported("asuka", "excluded from the static emulator; the local LLM remains hardware-only"); }
   command_ftp() { this.unsupported("ftp", "browsers cannot expose an FTP server"); }
-  command_gb() { this.unsupported("gb", "Game Boy WASM support is planned but not included yet"); }
-  command_motoko() { this.unsupported("motoko", "MQTT requires a WebSocket-capable broker adapter"); }
+  command_gb(parts) {
+    if (!this.hooks.gameBoy) return this.unsupported("gb", "Game Boy WASM module is unavailable");
+    this.hooks.gameBoy({ scale: parts[1] || "fit" });
+  }
+  command_motoko() { this.unsupported("motoko", "excluded; this browser emulator never sends MQTT requests"); }
   command_ping() { this.unsupported("ping", "raw ICMP is unavailable in browsers"); }
   command_slave() { this.unsupported("slave", "DS-Slave UART hardware is simulated by your keyboard"); }
-  command_ssh() { this.unsupported("ssh", "raw SSH needs a WebSocket gateway"); }
-  command_telnet() { this.unsupported("telnet", "raw TCP needs a WebSocket gateway"); }
+  command_ssh() { this.unsupported("ssh", "excluded; no remote-session gateway is configured"); }
+  command_telnet() { this.unsupported("telnet", "excluded; no remote-session gateway is configured"); }
   command_usb() { this.unsupported("usb", "use EXPORT DISK to download the virtual filesystem"); }
 }

@@ -294,7 +294,7 @@ static String asukaUrlEncode(const String& input) {
 }
 
 static bool asukaBraveSearch(const String& query, int resultCount, String& toolResult) {
-    if (ASUKA_BRAVE_API_KEY == nullptr || ASUKA_BRAVE_API_KEY[0] == '\0') {
+    if (asukaBraveApiKey.length() == 0) {
         toolResult = "{\"error\":\"Brave Search API key is not configured.\"}";
         return false;
     }
@@ -311,7 +311,7 @@ static bool asukaBraveSearch(const String& query, int resultCount, String& toolR
     http.setTimeout(15000);
     http.addHeader("Accept", "application/json");
     http.addHeader("Accept-Encoding", "identity");
-    http.addHeader("X-Subscription-Token", ASUKA_BRAVE_API_KEY);
+    http.addHeader("X-Subscription-Token", asukaBraveApiKey);
 
     ledPulseNetwork();
     int httpCode = http.GET();
@@ -357,7 +357,7 @@ static bool asukaBraveSearch(const String& query, int resultCount, String& toolR
 }
 
 static bool asukaOpenWeatherCurrent(String requestedUnits, String& toolResult) {
-    if (ASUKA_OPENWEATHER_API_KEY == nullptr || ASUKA_OPENWEATHER_API_KEY[0] == '\0') {
+    if (asukaOpenWeatherApiKey.length() == 0) {
         toolResult = "{\"error\":\"OpenWeather API key is not configured.\"}";
         return false;
     }
@@ -375,7 +375,7 @@ static bool asukaOpenWeatherCurrent(String requestedUnits, String& toolResult) {
     String url = String(ASUKA_OPENWEATHER_WEATHER_URL) +
         "?lat=" + String(asukaWeatherLat, 6) +
         "&lon=" + String(asukaWeatherLon, 6) +
-        "&appid=" + asukaUrlEncode(ASUKA_OPENWEATHER_API_KEY) +
+        "&appid=" + asukaUrlEncode(asukaOpenWeatherApiKey) +
         "&units=" + requestedUnits;
 
     WiFiClientSecure secureClient;

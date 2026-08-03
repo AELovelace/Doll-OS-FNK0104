@@ -94,8 +94,8 @@ struct CommandEntry {
 void helpCommandHandler(const String parts[], int partCount) {
     outLine("Commands: alias, apps, asuka, battery, calc, cat, cd, clear, cp, dapper,");
     outLine("          del, dice, edit, free, ftp, gb, help, ip, ls, mkdir, motoko, mv,");
-    outLine("          ping, pwd, radio, reboot, rm, run, slave, ssh, status, telnet,");
-    outLine("          unalias, uptime, usb, wifi");
+    outLine("          ping, pwd, radio, reboot, rm, run, settings, slave, ssh, status,");
+    outLine("          telnet, unalias, uptime, usb, wifi");
 }
 
 void handleRebootCommand(const String parts[], int partCount) {
@@ -163,6 +163,7 @@ static const CommandEntry commandTable[] = {
     { "reboot", handleRebootCommand },
     { "rm",     handleRmCommand },
     { "run",    handleRunCommand },
+    { "settings", handleSettingsCommand },
     { "slave",  handleSlaveCommand },
     { "ssh",    handleSshCommand },
     { "status", handleStatusCommand },

@@ -6,7 +6,8 @@ This directory contains two static, browser-only experiences:
   emulator. Source written in the left editor is syntax-highlighted, saved into
   the device's `/apps` volume, and launched through its emulated shell and
   AppRunner 1.7.0 runtime.
-- `index.html` — the original IDE and runtime for practicing `.dapp` programs.
+- `index.html` — the original IDE, now backed by the same AppRunner, virtual
+  disk, Dapper client, and browser-audio adapter as the integrated emulator.
 
 ## Run locally
 
@@ -28,8 +29,9 @@ keyboard input offscreen; click the terminal before typing.
 Upload the contents of `dapp-web/` to any static web host. There is no build
 step, server code, package manager, or external asset dependency.
 
-The editor draft and files created by `FOPEN`/`FWRITE` are stored in the
-visitor's browser with `localStorage`. They are not uploaded anywhere.
+The editor draft, virtual filesystem, Game Boy battery RAM, and save states are
+stored in the visitor's browser with `localStorage`. They are not uploaded
+anywhere. ROMs are always selected by the visitor; no ROM content is bundled.
 
 The emulator's filesystem also stays in browser storage. Its control panel can
 export and import a JSON disk image or perform a confirmed factory reset.
@@ -48,9 +50,10 @@ node tools/build-web-app-bundle.mjs
 node tools/build-web-app-bundle.mjs --check
 ```
 
-The emulator classifies commands that require raw sockets or physical hardware
-as unavailable instead of pretending that SSH, telnet, FTP, ICMP, UART, or USB
-can run inside an ordinary browser sandbox.
+The emulator classifies commands that require raw sockets, a local LLM, MQTT,
+or physical hardware as unavailable instead of pretending that ASUKA, Motoko,
+SSH, telnet, FTP, ICMP, UART, or USB can run inside an ordinary browser sandbox.
+No gateway or server-side component is included.
 
 ## Static-hosting safety
 
@@ -73,5 +76,27 @@ The browser interpreter mirrors the command set documented in `docs/DAPP.md`,
 including variables, strings, arrays, expressions, labels, subroutines,
 interactive input and keys, character canvases, and the one-file API.
 
-Browser built-ins use simulated values: `$cwd` is `/apps`, `$ip` is `browser`,
-`$battery` is `100`, `$wifi` is `1`, and `$heap` is `0`.
+Browser built-ins are connected to the emulated machine state. `$audiook` stays
+`0` until a user gesture successfully starts Web Audio. The `radio` command
+plays a visitor-supplied HTTP(S) stream through the browser, and `gb` opens the
+vendored client-side WASM player.
+
+The firmware-style `settings` command persists overrides in the shared virtual
+file `/system/conf/settings.dsys`. The web runner applies `radio.url` and
+`radio.volume` after reboot:
+
+```text
+settings set radio.url https://radio.example/live.mp3
+settings set radio.volume 7
+reboot
+radio play
+```
+
+FTP, Motoko/MQTT, ASUKA, and remote-session settings are hardware-only. The web
+runner may preserve those keys as plain text for disk compatibility, but it
+never activates the corresponding service. Do not put real API keys or
+passwords into the browser disk.
+
+Dapper 1.7 maintains an ownership registry under `/.dapper`, refuses unmanaged
+overwrites unless `--force` is explicit, verifies HTTPS artifacts before any
+write, and supports `list`, `update`, `remove`, and hash-checking `doctor`.

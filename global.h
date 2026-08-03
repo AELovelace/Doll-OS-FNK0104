@@ -128,6 +128,15 @@ struct AliasEntry {
     String expansion;
 };
 
+//Settings.ino: file-backed runtime settings overriding config.h defaults. The
+//struct lives here for the same reason as AliasEntry above -- Settings.ino's
+//static helpers take SettingsEntry parameters, and Arduino hoists prototypes
+//for every file above the tab that declares the type.
+struct SettingsEntry {
+    String key;
+    String value;
+};
+
 //explicit prototype for readLineEditedInput (TelnetServer.ino), needed because
 //Motoko.ino and Ssh.ino call it but sort alphabetically before TelnetServer.ino in
 //the concatenated build
@@ -331,6 +340,10 @@ bool expandCommandAlias(String& command, String& aliasName, String& aliasExpansi
 String resolvePath(const String& cwd, const String& inputPath);
 RoutedPath routePath(const String& resolvedPath);
 bool ensureSystemConfDirectory();
+String settingsGet(const String& key, const String& fallback);
+bool settingsSet(const String& key, const String& value);
+bool settingsUnset(const String& key);
+void handleSettingsCommand(const String parts[], int partCount);
 void handleAliasCommand(const String parts[], int partCount);
 void handleAppsCommand(const String parts[], int partCount);
 void handleDapperCommand(const String parts[], int partCount);

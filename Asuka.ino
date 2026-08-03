@@ -12,6 +12,8 @@ String asukaClassifierPrompt = "";
 String asukaWeatherLocationLabel = "";
 double asukaWeatherLat = ASUKA_OPENWEATHER_LAT;
 double asukaWeatherLon = ASUKA_OPENWEATHER_LON;
+String asukaBraveApiKey = "";
+String asukaOpenWeatherApiKey = "";
 bool asukaBraveSearchEnabled = true;
 static bool asukaDefaultsInitialized = false;
 
@@ -27,16 +29,24 @@ const char* ASUKA_LEGACY_CLASSIFIER_PROMPT_FILE = "/asuka-classifier.txt";
 
 //Global String constructors run before setup() enables the PSRAM-backed general
 //heap. Delay their payloads until ASUKA is actually launched so its long classifier
-//prompt cannot permanently occupy scarce internal heap from boot.
+//prompt cannot permanently occupy scarce internal heap from boot. This is also the
+//lazy-init point for settingsGet() overrides -- LittleFS isn't mounted yet when this
+//file's global initializers above run, so a "settings set asuka.*" value has to be
+//read here instead, same as radioEnsureDefaults() in Radio.ino.
 static void asukaEnsureDefaults() {
     if (asukaDefaultsInitialized) {
         return;
     }
-    asukaLlmHost = ASUKA_DEFAULT_LLM_HOST;
-    asukaLlmPath = ASUKA_DEFAULT_LLM_PATH;
+    asukaLlmHost = settingsGet("asuka.llm_host", ASUKA_DEFAULT_LLM_HOST);
+    asukaLlmPort = (uint16_t)settingsGet("asuka.llm_port", String(ASUKA_DEFAULT_LLM_PORT)).toInt();
+    asukaLlmPath = settingsGet("asuka.llm_path", ASUKA_DEFAULT_LLM_PATH);
     asukaSystemPrompt = ASUKA_SYSTEM_PROMPT;
     asukaClassifierPrompt = ASUKA_CLASSIFIER_PROMPT;
-    asukaWeatherLocationLabel = ASUKA_OPENWEATHER_LOCATION_LABEL;
+    asukaWeatherLocationLabel = settingsGet("asuka.owm_location", ASUKA_OPENWEATHER_LOCATION_LABEL);
+    asukaWeatherLat = settingsGet("asuka.owm_lat", String(ASUKA_OPENWEATHER_LAT, 6)).toDouble();
+    asukaWeatherLon = settingsGet("asuka.owm_lon", String(ASUKA_OPENWEATHER_LON, 6)).toDouble();
+    asukaBraveApiKey = settingsGet("asuka.brave_key", ASUKA_BRAVE_API_KEY);
+    asukaOpenWeatherApiKey = settingsGet("asuka.owm_key", ASUKA_OPENWEATHER_API_KEY);
     asukaDefaultsInitialized = true;
 }
 
@@ -131,7 +141,7 @@ static String asukaPromptLoadStatus(bool loadedFromFile, bool createdFile) {
 }
 
 static bool asukaWeatherConfigured() {
-    return ASUKA_OPENWEATHER_API_KEY != nullptr && ASUKA_OPENWEATHER_API_KEY[0] != '\0';
+    return asukaOpenWeatherApiKey.length() > 0;
 }
 
 static String asukaJsonEscape(const String& value) {

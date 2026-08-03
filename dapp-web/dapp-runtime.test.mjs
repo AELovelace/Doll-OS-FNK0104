@@ -123,6 +123,25 @@ test("@echo off tells the input UI not to echo submitted lines", async () => {
   assert.equal(runtime.strings.get("line"), "quiet");
 });
 
+test("WAVE awaits the browser adapter and audiook reflects live readiness", async () => {
+  let ready = false;
+  let waveFinished = false;
+  const io = {
+    output() {}, clear() {}, status() {}, input() {}, canvas() {}, endCanvas() {}, waveStop() {},
+    async wave() {
+      await Promise.resolve();
+      ready = true;
+      waveFinished = true;
+    }
+  };
+  const runtime = new DappRuntime(io, new MemoryFiles(), { audiook: () => Number(ready) });
+  const result = await runtime.run("SET before $audiook\nWAVE 1 square 440 80\nSET after $audiook\nEND");
+  assert.equal(result.ok, true);
+  assert.equal(waveFinished, true);
+  assert.equal(runtime.numbers.get("before"), 0);
+  assert.equal(runtime.numbers.get("after"), 1);
+});
+
 test("HTTPGET bounds the decoded body and reports status", async (t) => {
   const previousFetch = globalThis.fetch;
   t.after(() => { globalThis.fetch = previousFetch; });

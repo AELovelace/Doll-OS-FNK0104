@@ -62,7 +62,7 @@ END</textarea>
           <button id="studio-save" type="button">SAVE TO DEVICE</button>
           <button id="studio-run" class="primary" type="button" disabled>&gt; RUN ON DOLL-OS</button>
         </div>
-        <p class="studio-note">Apps execute inside the bounded AppRunner 1.4.2 environment. Saving here writes to the emulated device, never to the hosting server.</p>
+        <p class="studio-note" id="studio-runtime-label">Apps execute inside the bounded AppRunner 1.7.0 environment. Saving here writes to the emulated device, never to the hosting server.</p>
       </article>
 
       <article class="device-column" aria-label="Emulated DOLL-OS device">
@@ -111,7 +111,7 @@ END</textarea>
         </label>
         <label class="toggle-row"><span>WI-FI CONNECTED</span><input id="wifi-toggle" type="checkbox" checked></label>
         <label class="toggle-row"><span>SD CARD INSERTED</span><input id="sd-toggle" type="checkbox" checked></label>
-        <label class="toggle-row"><span>APP NETWORK ACCESS</span><input id="network-toggle" type="checkbox" checked></label>
+        <label class="toggle-row"><span>APP NETWORK ACCESS</span><input id="network-toggle" type="checkbox"></label>
 
         <div class="quick-head"><span>QUICK COMMANDS</span><span>CLICK TO RUN</span></div>
         <div class="quick-commands">
@@ -121,6 +121,9 @@ END</textarea>
           <button type="button" data-command="run snake">run snake</button>
           <button type="button" data-command="dapper search game">dapper</button>
           <button type="button" data-command="free details">memory</button>
+          <button type="button" data-command="gb">game boy</button>
+          <button type="button" data-command="radio status">radio</button>
+          <button type="button" data-command="settings">settings</button>
         </div>
 
         <div class="storage-head"><span>VIRTUAL STORAGE</span><button id="refresh-files" type="button">REFRESH</button></div>
@@ -145,6 +148,28 @@ END</textarea>
     </form>
   </dialog>
 
-  <script type="module" src="emulator.js?v=20260801c"></script>
+  <dialog id="gameboy-dialog" aria-labelledby="gameboy-title">
+    <div class="gameboy-window">
+      <div class="editor-title"><strong id="gameboy-title">GB://LOCAL ROM</strong><button type="button" data-gb-close aria-label="Close Game Boy">Ã—</button></div>
+      <div class="gameboy-stage">
+        <canvas id="gameboy-screen" width="160" height="144" aria-label="Game Boy display"></canvas>
+        <p id="gameboy-status" data-state="ready">CHOOSE A ROM FROM THIS DEVICE</p>
+        <input id="gameboy-rom" type="file" accept=".gb,.gbc,application/octet-stream" hidden>
+        <div class="gameboy-actions">
+          <button type="button" data-gb-open>OPEN ROM</button>
+          <button type="button" data-gb-pause>PAUSE</button>
+          <button type="button" data-gb-save>SAVE STATE</button>
+          <button type="button" data-gb-load>LOAD STATE</button>
+        </div>
+        <div class="gameboy-pad" aria-label="On-screen Game Boy controls">
+          <span></span><button type="button" data-gb-key="ArrowUp">â†‘</button><span></span><button type="button" data-gb-key="z">B</button><button type="button" data-gb-key="x">A</button>
+          <button type="button" data-gb-key="ArrowLeft">â†</button><button type="button" data-gb-key="ArrowDown">â†“</button><button type="button" data-gb-key="ArrowRight">â†’</button><button type="button" data-gb-key="Tab">SELECT</button><button type="button" data-gb-key="Enter">START</button>
+        </div>
+        <p class="gameboy-help">KEYS: ARROWS MOVE Â· Z=B Â· X=A Â· TAB=SELECT Â· ENTER=START<br>ROM AND SAVE DATA NEVER LEAVE THIS BROWSER.</p>
+      </div>
+    </div>
+  </dialog>
+
+  <script type="module" src="emulator.js?v=20260803a"></script>
 </body>
 </html>

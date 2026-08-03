@@ -16,7 +16,9 @@
 //   unit, so the SD_MMC selection lives in its config header (libraries/
 //   SimpleFTPServer/FtpServerKey.h -> DEFAULT_STORAGE_TYPE_ESP32 STORAGE_SD_MMC),
 //   not here. begin() does NOT re-mount SD_MMC -- it uses the card Storage.ino
-//   already mounted with this board's custom pins. Creds come from config.h.
+//   already mounted with this board's custom pins. Creds default from config.h
+//   (FTP_USER/FTP_PASS) but can be overridden without recompiling via
+//   "settings set ftp.user/ftp.pass" (Settings.ino).
 #include <Arduino.h>
 #include <SimpleFTPServer.h>
 #include <esp_heap_caps.h>
@@ -90,8 +92,11 @@ static void ftpStart() {
         return;
     }
     //begin() only starts the listeners + allocates the transfer buffer; the SD card
-    //stays mounted exactly as Storage.ino left it
-    ftpSrv->begin(FTP_USER, FTP_PASS);
+    //stays mounted exactly as Storage.ino left it. Creds can be overridden at runtime
+    //via "settings set ftp.user/ftp.pass" without recompiling -- see Settings.ino.
+    String ftpUser = settingsGet("ftp.user", FTP_USER);
+    String ftpPass = settingsGet("ftp.pass", FTP_PASS);
+    ftpSrv->begin(ftpUser.c_str(), ftpPass.c_str());
     ftpActive = true;
     ledSetFtpActive(true);
 
@@ -101,7 +106,7 @@ static void ftpStart() {
     } else {
         outLine("  (WiFi not connected -- reachable once STA joins)", C_YELLOW);
     }
-    outLine("  user: " + String(FTP_USER) + "   pass: " + String(FTP_PASS));
+    outLine("  user: " + ftpUser + "   pass: " + ftpPass);
     outLine("  serving the SD card -- 'ftp off' to stop");
 }
 
@@ -126,7 +131,7 @@ static void ftpStatus() {
     if (wifiIsConnected() == 1) {
         outLine("  ftp://" + WiFi.localIP().toString() + "/");
     }
-    outLine("  user: " + String(FTP_USER) + "   pass: " + String(FTP_PASS));
+    outLine("  user: " + settingsGet("ftp.user", FTP_USER) + "   pass: " + settingsGet("ftp.pass", FTP_PASS));
 }
 
 //handles the "ftp" command: "ftp on"/"start" begins, "ftp off"/"stop" ends, bare

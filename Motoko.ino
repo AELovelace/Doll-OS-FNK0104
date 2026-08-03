@@ -132,8 +132,9 @@ void handleMotokoCommand(const String parts[], int partCount) {
         return;
     }
 
-    String broker = (partCount > 1) ? parts[1] : String(MOTOKO_DEFAULT_BROKER);
-    int port = (partCount > 2) ? parts[2].toInt() : MOTOKO_DEFAULT_PORT;
+    //defaults come from config.h unless overridden with "settings set motoko.broker/motoko.port"
+    String broker = (partCount > 1) ? parts[1] : settingsGet("motoko.broker", MOTOKO_DEFAULT_BROKER);
+    int port = (partCount > 2) ? parts[2].toInt() : settingsGet("motoko.port", String(MOTOKO_DEFAULT_PORT)).toInt();
     if (port <= 0) {
         port = MOTOKO_DEFAULT_PORT;
     }
