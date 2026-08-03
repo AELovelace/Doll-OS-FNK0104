@@ -276,6 +276,10 @@ html.terminal-embed body {
   opacity: .94;
 }
 
+.iframe-embed .gameboy-console:not([hidden]) {
+  display: none;
+}
+
 @media (max-width: 1250px) {
   .workbench { grid-template-columns: minmax(330px, .85fr) minmax(430px, 1.15fr); }
   .control-panel { grid-column: 1 / -1; }

@@ -21,9 +21,11 @@ Then open `http://localhost:8080/emulator.html` for the emulator or
 `http://localhost:8080/` for the `.dapp` IDE.
 
 When loaded in an iframe, the emulator automatically switches to the compact
-terminal view with no studio, machine controls, or visible command dock. You can
-also force that layout outside an iframe with `emulator.html?terminal=1`. The
-canvas tracks the viewport; click the terminal before typing.
+terminal view with no studio, machine controls, visible command dock, or Game
+Boy control overlay. Game Boy keyboard bindings continue working while framed.
+You can also force the general terminal layout outside an iframe with
+`emulator.html?terminal=1`. The canvas tracks the viewport; click the terminal
+before typing.
 
 ## Host it
 
