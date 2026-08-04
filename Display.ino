@@ -22,10 +22,9 @@
 //   every FLIP. That transfer, not the interpreter, is what set the ceiling on how fast a
 //   dapp game could feel.
 //
-//   AB/S frames are diffed against a shadow copy of what the panel was last sent, and only
-//   the rows that actually differ go over the bus. The N's official ST77922 driver only
-//   exercises landscape writes as complete frames; its subregion math is unsafe for
-//   nonzero origins, so that variant uses a full-frame push whenever the display is dirty.
+//   Frames are diffed against a shadow copy of what the panel was last sent, and only the
+//   rows that actually differ go over the bus. On N, those logical landscape rows are
+//   transformed into native portrait strips before reaching Freenove's rotation-0 writer.
 //
 //   The shadow can go wrong one way -- if something draws to the panel *without* going through the
 //   sprite, the shadow no longer describes the glass. Gameboy.ino does exactly that, so any
@@ -44,11 +43,13 @@ static void pushDisplayRows(int y, int rowCount) {
     }
     uint16_t* src = (uint16_t*)frameSprite.getPointer() + (size_t)y * DISPLAY_WIDTH;
 #ifdef FNK0104N_3P5_320x480_ST77922
-    // Freenove's ST77922 driver only exercises rotated transfers as complete
-    // frames. Its subregion indexing is not safe for nonzero origins, so the N
-    // always uses the vendor-supported full-frame path.
-    tft_st77922.Fill_Colors(0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT,
-                            (uint16_t*)frameSprite.getPointer());
+    // Freenove's LVGL path rounds native regions to four-pixel boundaries.
+    // Align logical rows the same way; after rotation these become native X.
+    int alignedY = y & ~0x3;
+    int alignedEnd = min(DISPLAY_HEIGHT, (y + rowCount + 3) & ~0x3);
+    int alignedRows = alignedEnd - alignedY;
+    src = (uint16_t*)frameSprite.getPointer() + (size_t)alignedY * DISPLAY_WIDTH;
+    tft_st77922.Fill_Colors_Landscape(0, alignedY, DISPLAY_WIDTH, alignedRows, src);
 #else
     //mirrors what TFT_eSprite::pushSprite does for a 16bpp sprite -- the sprite's buffer is
     //already in the panel's byte order, so the swap has to be off for the transfer
@@ -69,11 +70,6 @@ void pushDisplayFrame() {
     if (!frame) {
         return;
     }
-
-#ifdef FNK0104N_3P5_320x480_ST77922
-    pushDisplayRows(0, DISPLAY_HEIGHT);
-    return;
-#endif
 
     if (!displayShadow || !displayShadowValid) {
         pushDisplayRows(0, DISPLAY_HEIGHT);
@@ -115,7 +111,7 @@ void initDisplay() {
     size_t psramFreeBeforeSprite = ESP.getFreePsram();
 #ifdef FNK0104N_3P5_320x480_ST77922
     tft_st77922.Init();
-    tft_st77922.Set_Rotation(1);
+    tft_st77922.Set_Rotation(0);
     frameSprite.setColorDepth(16);
     frameSprite.createSprite(DISPLAY_WIDTH, DISPLAY_HEIGHT);
     frameSprite.setSwapBytes(true);
@@ -132,10 +128,6 @@ void initDisplay() {
     //   psramOrInternalCalloc: this buffer only buys speed, and taking 150KB of the scarce
     //   internal pool to get it would be a bad trade. A null result costs nothing but the
     //   old full-frame push.
-#ifdef FNK0104N_3P5_320x480_ST77922
-    displayShadow = nullptr;
-    Serial.println("[psram] displayShadow: disabled (ST77922 uses full-frame pushes)");
-#else
     displayShadow = (uint16_t*) heap_caps_calloc(
         (size_t)DISPLAY_WIDTH * DISPLAY_HEIGHT, sizeof(uint16_t), MALLOC_CAP_SPIRAM);
     displayShadowValid = false;
@@ -143,7 +135,6 @@ void initDisplay() {
                   (unsigned)((size_t)DISPLAY_WIDTH * DISPLAY_HEIGHT * sizeof(uint16_t)),
                   displayShadow ? "PSRAM (partial frame pushes enabled)"
                                 : "unavailable (full frame pushes)");
-#endif
 
     frameSprite.setTextColor(TFT_WHITE, TFT_BLACK);
     frameSprite.fillSprite(TFT_BLACK);

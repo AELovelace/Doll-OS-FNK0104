@@ -62,11 +62,14 @@ public:
 	uint8_t Get_Rotation(void);
 	void Set_Windows(uint16_t sx, uint16_t sy, uint16_t ex, uint16_t ey);
 	void Fill_Colors(uint16_t sx, uint16_t sy, uint16_t w, uint16_t h, uint16_t* color);
+	void Fill_Colors_Landscape(uint16_t sx, uint16_t sy, uint16_t w, uint16_t h, uint16_t* color);
 	uint16_t Get_Width(void);
 	uint16_t Get_Height(void);
 private:
 	uint16_t width, height, rotation;
 	bool initialized;
+	uint16_t* landscapeBuffer;
+	size_t landscapeCapacity;
 };
 
 typedef struct {

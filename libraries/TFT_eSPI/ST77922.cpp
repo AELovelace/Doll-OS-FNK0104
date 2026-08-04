@@ -78,6 +78,8 @@ ST77922::ST77922(void)
 	height = LCD_HEIGHT;
 	rotation = 0;
     initialized = false;
+    landscapeBuffer = nullptr;
+    landscapeCapacity = 0;
 }
 
 void ST77922::Write_Reg(uint32_t cmd, void *data, uint8_t len)
@@ -304,6 +306,36 @@ void ST77922::Fill_Colors(uint16_t sx, uint16_t sy, uint16_t w, uint16_t h, uint
 	  cbuf = nullptr;
   	}
   }
+}
+
+void ST77922::Fill_Colors_Landscape(uint16_t sx, uint16_t sy, uint16_t w, uint16_t h, uint16_t* color)
+{
+    if (!initialized || rotation != 0 || color == nullptr ||
+        sx + w > LCD_HEIGHT || sy + h > LCD_WIDTH || w == 0 || h == 0) {
+        return;
+    }
+
+    const size_t pixels = (size_t)w * h;
+    if (landscapeCapacity < pixels) {
+        uint16_t* resized = (uint16_t*)ps_realloc(landscapeBuffer, pixels * sizeof(uint16_t));
+        if (resized == nullptr) {
+            return;
+        }
+        landscapeBuffer = resized;
+        landscapeCapacity = pixels;
+    }
+
+    // Logical landscape (480x320) is a clockwise view of native portrait
+    // (320x480). Build a tightly packed portrait strip for Freenove's tested
+    // rotation-0 region writer.
+    for (uint16_t row = 0; row < h; row++) {
+        for (uint16_t col = 0; col < w; col++) {
+            landscapeBuffer[(size_t)col * h + (h - row - 1)] =
+                color[(size_t)row * w + col];
+        }
+    }
+
+    Fill_Colors(LCD_WIDTH - (sy + h), sx, h, w, landscapeBuffer);
 }
 
 uint16_t ST77922::Get_Width(void)

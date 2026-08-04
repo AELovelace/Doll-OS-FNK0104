@@ -11,6 +11,9 @@
 #pragma once
 
 #include <WiFi.h>
+#ifdef FNK0104N_3P5_320x480_ST77922
+    #include "DollST77922.h"
+#endif
 #include <TFT_eSPI.h>
 #include <ArduinoJson.h>
 //   Pulled in here (not just in Radio.ino) so the ESP32-audioI2S `Audio` class is
@@ -422,10 +425,9 @@ extern WiFiClient remoteTelnetClient;   //outbound socket for the "telnet" clien
 //   same single full-screen frameSprite, so Display.ino's drawing code itself
 //   doesn't need to branch per panel, only the final "push this frame" step does.
 #ifdef FNK0104N_3P5_320x480_ST77922
-    #include "ST77922.h"
     TFT_eSPI tft_qspi = TFT_eSPI();
     TFT_eSprite frameSprite = TFT_eSprite(&tft_qspi);
-    ST77922 tft_st77922 = ST77922();
+    DollST77922 tft_st77922 = DollST77922();
 #else
     TFT_eSPI tft = TFT_eSPI();
     TFT_eSprite frameSprite = TFT_eSprite(&tft);

@@ -124,9 +124,9 @@ one -- the API shapes are close enough that the port is mostly a rename:
 see "Building this sketch" above for why. `BoardVariant.h` is the single model
 selector shared by TFT_eSPI and the sketch; `BoardPins.h` derives display,
 storage, audio, battery, LED, and DS-Slave wiring from it. The ST77922 path uses
-the vendor QSPI driver. The N uses full-frame landscape writes because Freenove's
-ST77922 implementation only exercises `(0,0)` complete-frame transfers; AB/S retain
-the row-diff partial-update optimization.
+the vendor QSPI driver. Landscape row bands are transformed into four-pixel-aligned
+native portrait strips before using Freenove's tested rotation-0 region writer, so
+the row-diff partial-update optimization remains available on every variant.
 
 ### Hardware differences
 

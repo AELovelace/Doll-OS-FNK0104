@@ -46,7 +46,7 @@ static void printI2cDevices() {
 
 static bool testDisplay() {
     panel.Init();
-    panel.Set_Rotation(1);
+    panel.Set_Rotation(0);
 
     frame.setColorDepth(16);
     if (!frame.createSprite(480, 320)) {
@@ -61,14 +61,14 @@ static bool testDisplay() {
     frame.setTextColor(TFT_WHITE, TFT_BLUE);
     frame.setTextDatum(MC_DATUM);
     frame.drawString("FNK0104N", 400, 160, 4);
-    panel.Fill_Colors(0, 0, 480, 320, (uint16_t*)frame.getPointer());
+    panel.Fill_Colors_Landscape(0, 0, 480, 320, (uint16_t*)frame.getPointer());
 
     // Exercise a second update through Freenove's supported full-frame path.
     frame.fillRect(180, 250, 120, 40, TFT_BLACK);
     frame.setTextColor(TFT_YELLOW, TFT_BLACK);
     frame.setTextDatum(MC_DATUM);
     frame.drawString("REDRAW OK", 240, 270, 2);
-    panel.Fill_Colors(0, 0, 480, 320, (uint16_t*)frame.getPointer());
+    panel.Fill_Colors_Landscape(0, 0, 480, 320, (uint16_t*)frame.getPointer());
     return true;
 }
 

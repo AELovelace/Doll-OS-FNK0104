@@ -66,7 +66,11 @@ static bool gbFitMode = true;
 // is drawn. It only binds in fit mode, where a 38ms push plus ~3ms of emulation
 // needs roughly one frame in four to leave any slack at all; at 2 the loop can
 // just barely hold realtime, which is no margin for a heavier scene.
+#ifdef FNK0104N_3P5_320x480_ST77922
+static const int kMaxFrameSkip = 5;
+#else
 static const int kMaxFrameSkip = 3;
+#endif
 static const int kGbRomMenuMax = 128;
 static const char* kGbRomDir = "/sd/gb";
 
@@ -80,6 +84,31 @@ static void gbFreeScale() {
 // PSRAM for the scaled frame couldn't be had -- caller falls back to 1x, which
 // needs no scale buffer at all.
 static bool gbSetupScale() {
+#ifdef FNK0104N_3P5_320x480_ST77922
+    // Use an exact 2x fit on N. It leaves a small letterbox, but avoids the
+    // generic 355x320 resampler and produces a four-aligned native region.
+    if (gbFitMode) {
+        gbOutW = GB_W * 2;
+        gbOutH = GB_H * 2;
+    } else {
+        gbOutW = GB_W;
+        gbOutH = GB_H;
+    }
+    gbOutX = (DISPLAY_WIDTH - gbOutW) / 2;
+    gbOutY = (DISPLAY_HEIGHT - gbOutH) / 2;
+
+    gbColMap = (int16_t*)heap_caps_malloc(gbOutW * sizeof(int16_t), MALLOC_CAP_8BIT);
+    gbRowMap = (int16_t*)heap_caps_malloc(gbOutH * sizeof(int16_t), MALLOC_CAP_8BIT);
+    gbScaleBuf = (uint16_t*)heap_caps_malloc((size_t)gbOutW * gbOutH * sizeof(uint16_t),
+                                             MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!gbColMap || !gbRowMap || !gbScaleBuf) {
+        gbFreeScale();
+        return false;
+    }
+    for (int x = 0; x < gbOutW; x++) gbColMap[x] = (x * GB_W) / gbOutW;
+    for (int y = 0; y < gbOutH; y++) gbRowMap[y] = (y * GB_H) / gbOutH;
+    return true;
+#else
     if (gbFitMode) {
         gbOutH = DISPLAY_HEIGHT;                 // fill the height
         gbOutW = (GB_W * DISPLAY_HEIGHT) / GB_H; // keep aspect (~266 on 320x240)
@@ -95,15 +124,7 @@ static bool gbSetupScale() {
     gbOutY = (DISPLAY_HEIGHT - gbOutH) / 2;
 
     if (!gbFitMode) {
-#ifdef FNK0104N_3P5_320x480_ST77922
-        // The QSPI driver expects panel-order words in a tightly packed region.
-        // Keep one small conversion buffer; SPI panels blit the GB frame directly.
-        gbScaleBuf = (uint16_t*)heap_caps_malloc((size_t)GB_W * GB_H * sizeof(uint16_t),
-                                                 MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-        return gbScaleBuf != nullptr;
-#else
         return true;
-#endif
     }
 
     gbColMap = (int16_t*)heap_caps_malloc(gbOutW * sizeof(int16_t), MALLOC_CAP_8BIT);
@@ -117,6 +138,7 @@ static bool gbSetupScale() {
     for (int x = 0; x < gbOutW; x++) gbColMap[x] = (x * GB_W) / gbOutW;
     for (int y = 0; y < gbOutH; y++) gbRowMap[y] = (y * GB_H) / gbOutH;
     return true;
+#endif
 }
 
 // Pushes one emulator frame to the panel. gnuboy renders GB_PIXEL_565_LE (native
@@ -125,6 +147,22 @@ static bool gbSetupScale() {
 static void gbBlitFrame() {
     const uint16_t* frame = gbHost.frame();
     if (!frame) return;
+#ifdef FNK0104N_3P5_320x480_ST77922
+    // Render directly in native portrait order. Each destination row is
+    // contiguous in PSRAM and can be handed straight to Freenove's rotation-0
+    // region writer, avoiding a second full-buffer landscape transpose.
+    for (int nativeRow = 0; nativeRow < gbOutW; nativeRow++) {
+        const int srcX = gbColMap[nativeRow];
+        uint16_t* dst = gbScaleBuf + (size_t)nativeRow * gbOutH;
+        for (int nativeCol = 0; nativeCol < gbOutH; nativeCol++) {
+            const int logicalY = gbOutH - nativeCol - 1;
+            dst[nativeCol] = __builtin_bswap16(
+                frame[(size_t)gbRowMap[logicalY] * GB_W + srcX]);
+        }
+    }
+    tft_st77922.Fill_Colors(LCD_WIDTH - (gbOutY + gbOutH), gbOutX,
+                            gbOutH, gbOutW, gbScaleBuf);
+#else
     const uint16_t* pixels = frame;
     int width = GB_W;
     int height = GB_H;
@@ -155,19 +193,13 @@ static void gbBlitFrame() {
     }
 
 #ifdef FNK0104N_3P5_320x480_ST77922
-    uint16_t* panelFrame = (uint16_t*)frameSprite.getPointer();
-    if (!panelFrame) return;
-    memset(panelFrame, 0, (size_t)DISPLAY_WIDTH * DISPLAY_HEIGHT * sizeof(uint16_t));
-    for (int row = 0; row < height; row++) {
-        memcpy(panelFrame + (size_t)(gbOutY + row) * DISPLAY_WIDTH + gbOutX,
-               pixels + (size_t)row * width,
-               (size_t)width * sizeof(uint16_t));
-    }
-    tft_st77922.Fill_Colors(0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, panelFrame);
+    tft_st77922.Fill_Colors_Landscape(gbOutX, gbOutY, width, height,
+                                      const_cast<uint16_t*>(pixels));
 #else
     tft.setSwapBytes(true);
     tft.pushImage(gbOutX, gbOutY, width, height,
                   const_cast<uint16_t*>(pixels));
+#endif
 #endif
 }
 
