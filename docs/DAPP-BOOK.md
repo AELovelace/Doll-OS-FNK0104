@@ -12,9 +12,10 @@ fits on one line, every program is a text file you can read top to bottom, and
 nothing is hiding anywhere.
 
 **How to use this book.** Each chapter teaches a handful of commands, shows
-them working, and ends with practice problems. Type the examples in — really
-type them; that is where the learning happens. Answers to the practice problems
-are in Appendix D, but wrestle with them first. The last three chapters are the
+them working, and ends with practice problems plus project ideas for exploring
+on your own. Type the examples in — really type them; that is where the learning
+happens. Selected answers and hints are in Appendix D, but wrestle with the
+problems first. The last three chapters are the
 payoff: a full walkthrough of the Tetris that ships on this device, a real app
 that talks to an LLM over `/v1/chat/completions`, and then teaching Tetris to
 remember its high score after the power goes out.
@@ -47,6 +48,25 @@ about what is a command, which makes the colors a free spell-checker.
 Create `/sd/apps/first.dapp` with `edit`, put `PRINT "hello"` in it, save, and
 `run first`. If you see hello, your toolchain works and you are a DOLL-OS programmer
 now. The rest is vocabulary.
+
+### Practice 0
+
+1. Create `/sd/apps/second.dapp`, make it print a different message, save it,
+   and run it by its bare name.
+2. Put a made-up command such as `PRONT "hello"` in a test app. What color does
+   it stay in the editor, and what happens when you try to run it? Fix the typo
+   and run it again.
+3. Create one app on the SD card and one in internal flash. Use `apps` to find
+   both, then run each one by its full path.
+
+### Project Ideas 0
+
+1. **Pocket introductions.** Make three tiny apps that each print a different
+   one-line introduction: who you are, what you like, and what you want to build.
+2. **App shelf.** Create a small, clearly named collection such as `hello.dapp`,
+   `mood.dapp`, and `goal.dapp`, then practice listing, editing, and running each.
+3. **Typo laboratory.** Copy a working one-line app several times, introduce one
+   spelling mistake in each copy, and record what the editor and runner tell you.
 
 ---
 
@@ -136,6 +156,22 @@ EXIT
    each line in a different color.
 3. What is the difference between `PRINT "  hi  "` and `PRINT   hi  `? Predict,
    then test.
+4. Make a two-line status display: clear the screen, print `BOOTING` in
+   yellow, wait one second, then print `READY` in green.
+5. Set the color to cyan, print two lines, call `CLEAR`, and print a third line.
+   Predict the third line's color before you run it. What does this show about
+   `COLOR` state?
+6. Write the shortest program you can that prints a title, waits half a second,
+   clears it, prints a second title, and exits before an unreachable final line.
+
+### Project Ideas 1
+
+1. **Animated welcome card.** Reveal a greeting one colored line at a time with
+   short pauses, then clear the screen for a final message.
+2. **Mini traffic signal.** Turn the traffic-light exercise into a polished
+   sequence with a title, realistic timing, and a final safety message.
+3. **Text trailer.** Make a dramatic title sequence for an imaginary game using
+   only `PRINT`, `COLOR`, `WAIT`, and `CLEAR`.
 
 ---
 
@@ -240,6 +276,21 @@ Chapter 8 is built around it.
    print `2m 17s`.
 4. Predict what `SET x 7` then `DIV x 2` leaves in `x`. Then predict `MOD x 2`
    applied after that. Test both.
+5. Store a rectangle's width and height in variables. Calculate and print both
+   its area and its perimeter without writing either answer directly.
+6. Use the three-argument form of `RAND` to roll a number from 10 through 20.
+   Run it enough times to convince yourself that both endpoints are possible.
+7. Save `$seconds`, wait 2500 milliseconds, and subtract the saved value from
+   the new `$seconds`. Why might the result sometimes be 2 and sometimes be 3?
+
+### Project Ideas 2
+
+1. **Tabletop dice bag.** Roll common dice such as d6, d12, and d20, total the
+   results, and print a colorful character-attack report.
+2. **Unit converter.** Convert a distance in inches into whole feet plus leftover
+   inches, or seconds into hours, minutes, and seconds.
+3. **Uptime dashboard.** Display `$millis`, `$seconds`, `$heap`, and a few values
+   calculated from them in a tidy device-status report.
 
 ---
 
@@ -329,6 +380,21 @@ PRINT "letter: $letter"     letter: A
 3. `CHR` only accepts codes 32–126 (printable ASCII); anything else becomes a
    space. Why do you think the language refuses to put control characters in
    strings? (Think about what `PRINT` would do with them.)
+4. Ask separately for a first and last name, join them with exactly one space,
+   and print the result without changing either original variable.
+5. Ask for a word, extract its first three characters with `SUBSTR`, and print
+   both the original word and the shorter result. Test a two-letter word too.
+6. Use `CHARAT` to get the code of a character, then `CHR` to turn that code
+   back into text. Explain why the round trip works for printable ASCII.
+
+### Project Ideas 3
+
+1. **Name badge maker.** Ask for a name, role, and favorite thing, then assemble
+   a multi-line badge from string pieces.
+2. **Text microscope.** Ask for a short word and report its length, selected
+   character codes, and several slices made with `SUBSTR`.
+3. **Mad Lib card.** Collect several words with `INPUT`, combine them with
+   `SETSTR` and `APPEND`, and print a silly miniature story.
 
 ---
 
@@ -443,6 +509,22 @@ statement written long-hand.
    :done
    PRINT "done"
    ```
+5. Add the whole numbers from 1 through 100 and print the total. Use one
+   variable as the counter and another as the running sum.
+6. Ask a three-question text quiz. Use `IFEQ`/`IFNE` to score each answer, then
+   choose a different final message for scores 0–1, 2, and 3.
+7. Trace this without running it: `SET n 4`, `IF $n > 5 GOTO big`, `PRINT
+   "small"`, `GOTO done`, `:big`, `PRINT "big"`, `:done`, `PRINT "done"`.
+   Which two lines print, and why?
+
+### Project Ideas 4
+
+1. **Choose-your-path story.** Use text choices, labels, and jumps to build a
+   short story with at least three endings and a way to play again.
+2. **Flash-card trainer.** Loop through questions until each answer is correct,
+   counting attempts and giving different feedback along the way.
+3. **Command menu.** Present several text commands such as `status`, `help`, and
+   `quit`, dispatch them with `IFEQ`, and return to the menu after each action.
 
 ---
 
@@ -606,6 +688,22 @@ GOTO guess
    :done
    RETURN
    ```
+5. Write one routine that receives `w` and `h` and returns both `area` and
+   `perimeter`. Call it for three different rectangles.
+6. Make a `border` routine that receives a width and a character, then prints a
+   line made from that character. Use it above and below two different messages.
+7. Deliberately remove the `EXIT` before a routine at the bottom of a small
+   program. Predict the error, run it, then restore `EXIT` and explain why the
+   call stack is safe again.
+
+### Project Ideas 5
+
+1. **Reusable banner kit.** Build routines for a title, divider, warning, and
+   success message, with clear input/output comments for each.
+2. **Tiny math library.** Make and test routines for factorial, minimum,
+   maximum, absolute difference, and rectangle measurements.
+3. **Number-text toolkit.** Expand the chapter's `str2num` example with routines
+   that validate digit strings and format several numeric results consistently.
 
 ---
 
@@ -677,6 +775,21 @@ Memorize it; Chapter 7 is built on it.
    `EXPR x floor(5 / 10)`? Now run both.
 4. A circle's area is πr². There is no `$pi` built-in — get π from
    `EXPR pi 4 * atan(1)` and compute the area for r = 10.
+5. Predict, then test, `EXPR x 2 + 3 * 4` and `EXPR y (2 + 3) * 4`. Explain
+   what the difference says about precedence and parentheses.
+6. Given points (`x1`, `y1`) and (`x2`, `y2`), use `sqrt` and `EXPR` to find
+   their straight-line distance. Test (0, 0) to (3, 4).
+7. Compute `sin(0)`, `sin(30)`, and `sin(90)`. If the last two surprise you,
+   investigate whether the trig functions expect degrees or radians.
+
+### Project Ideas 6
+
+1. **Geometry bench.** Calculate distances, midpoints, rectangle diagonals, and
+   circle measurements from a set of input variables.
+2. **Formula comparison lab.** Evaluate several formulas with and without
+   `floor`/`ceil`, printing the rounded results side by side.
+3. **Motion calculator.** Model a position updated from speed, direction, and
+   elapsed time, keeping the whole-number rounding rule visible in the output.
 
 ---
 
@@ -777,6 +890,21 @@ array's size is for life.)
    count how many cells got set. (Careful: the diagonals cross. What does
    your count say, and why?)
 4. Predict the error message: `DIM a 5` then `SET i 5` then `PRINT "$a[$i]"`.
+5. Fill a 10-cell array with 1 through 10, shift every value one place to the
+   left, and move the old first value to the final cell.
+6. Roll a six-sided die 60 times, store the counts, then print one `*` for each
+   hit beside every face. Reuse a loop instead of writing six separate blocks.
+7. `DIM bag 4`, fill every cell, then run `DIM bag 4` again. Predict and test
+   what happened to the old contents and explain when re-`DIM` is useful.
+
+### Project Ideas 7
+
+1. **Scoreboard statistics.** Store ten scores, then find the total, average,
+   highest, and lowest values with loops.
+2. **Treasure map.** Represent a small grid in one array, place walls and treasure
+   by row/column math, and print a text version of the map.
+3. **Survey tally.** Generate or collect category choices, count them in an
+   array, and display a simple histogram.
 
 ---
 
@@ -886,6 +1014,22 @@ nothing more; the loop redraws once, however many things changed.
 3. What goes wrong with the 8.4 loop if you write `EXPR dropat $dropat + 650`
    instead of `$millis + 650`? When would you *want* that version? (This is a
    real design choice — think about what happens after a lag spike.)
+4. Write a key tester that prints a message only when a key is pressed and exits
+   on `$kesc`. Why should the loop still contain a small `WAIT`?
+5. Make the left and right arrows move a numeric position between 0 and 20.
+   Attempts to move past either edge must leave the value unchanged.
+6. Add a `dirty` flag to Exercise 8.5 so the position prints only after it
+   changes, not on every trip through the loop. List every line that sets the
+   flag and the one place that clears it.
+
+### Project Ideas 8
+
+1. **Reaction timer.** Wait a random delay, signal `GO`, and measure the
+   milliseconds until the player presses a key; detect an early press.
+2. **Keyboard inspector.** Show the latest key code and friendly names for arrows,
+   Enter, Backspace, and Escape while remaining responsive.
+3. **Dual-timer console.** Run a stopwatch and countdown at the same time, with
+   keys for start, pause, reset, and quit.
 
 ---
 
@@ -999,6 +1143,22 @@ spelling above is just to show sign-flipping without negative literals.)
 4. Put a live clock in the corner of the bouncing-ball screen: `$seconds`
    since boot, updated only when it changes. (Dirty-flag thinking: what marks
    it stale?)
+5. Draw a movable `@` controlled by the arrow keys. Clamp its coordinates so it
+   never leaves the canvas, even when a key is held.
+6. Split the canvas into a play area and sidebar. Put a moving object in the
+   play area and update score, time, and controls in the sidebar each frame.
+7. Move `FLIP` into the middle of a frame, before every object has been drawn.
+   Observe the result, restore one `FLIP` at the end, and explain the visual
+   difference.
+
+### Project Ideas 9
+
+1. **Pong practice.** Build one paddle, one bouncing ball, collision checks, and
+   a score; add a second paddle only after the first version works.
+2. **Maze walker.** Draw a maze stored in an array and move a player through
+   empty cells while walls block movement.
+3. **Particle fountain.** Store several particles in arrays, update their
+   positions on different schedules, and redraw them as one clean frame.
 
 ---
 
@@ -1433,6 +1593,26 @@ Extensions, in rough order of difficulty — the honest way to own this code:
 6. **Two-player.** There is a second set of... no. Some things need a bigger
    language. Everything above fits in this one.
 
+### Practice 10
+
+1. Choose one tetromino, one rotation, and one position. Work out its four well
+   indexes by hand, then add temporary `PRINT` lines to `cellat` and compare the
+   program's results with yours.
+2. Build a tiny test well containing one almost-full row with a single gap.
+   Stamp the missing block, call the line-clear routine, and verify both the
+   cleared row and the rows shifted down above it.
+3. Add a debug flag that can show `piece`, `rot`, `px`, `py`, and `score` in the
+   sidebar. Make sure the normal game does no extra drawing when the flag is 0.
+
+### Project Ideas 10
+
+1. **Sokoban.** Reuse grid arrays, collision routines, canvas drawing, and key
+   handling to push crates onto goals in a hand-built puzzle.
+2. **Breakout.** Adapt the frame loop and move-test-undo pattern for a paddle,
+   bouncing ball, brick array, lives, and score.
+3. **Snake.** Store body coordinates in arrays, advance them on a timer, reject
+   wall/self collisions, and grow after food is collected.
+
 ---
 
 ## Chapter 11 — Project: Talk to an LLM
@@ -1602,6 +1782,21 @@ messages while watching the 4096-character ceiling.
 2. Warn when `$httptruncated` is 1.
 3. Include the previous assistant reply in the next request.
 4. Add `/model` to change the model string without sending a request.
+5. Handle a non-2xx response separately from a transport failure. Print the
+   HTTP status code in one case and a connection-oriented message in the other.
+6. Add `/clear` to forget the previous assistant reply and rebuild an empty
+   conversation without contacting the endpoint.
+7. Intentionally place quotes and a backslash in the prompt. Inspect the request
+   body before and after `JSONESC` and explain which version is valid.
+
+### Project Ideas 11
+
+1. **LAN service monitor.** Query a small local JSON status endpoint and display
+   service state, response time, and a clear error message.
+2. **Weather desk.** Call a weather endpoint through a safe proxy, extract a few
+   JSON fields, and present a compact forecast without embedding a private key.
+3. **API explorer.** Let the user choose among several pre-approved endpoints,
+   send bounded requests, and show status, truncation, and selected JSON values.
 
 ---
 
@@ -1811,6 +2006,23 @@ bookkeeping fell short.
    exists, its first line is the `WAIT` delay; otherwise use 50.
 4. `FWRITE "hello"` immediately followed by `FREAD line` stops the app. Why —
    and what is the correct sequence to write a file and then read it back?
+5. Make a persistent launch counter in `/apps/count.txt`. A missing or malformed
+   file must behave like zero, and each successful run must store the new value.
+6. Start with a file containing `old`. Predict the final contents after opening
+   it in `append` and writing `new`, then repeat with `write`. Test both and
+   explain the difference.
+7. Design a two-line settings file for player name and game speed. Load it with
+   safe defaults when the file is missing, empty, truncated, or contains an
+   unusable speed.
+
+### Project Ideas 12
+
+1. **Pocket journal.** Append timestamped entries, read them back, count them,
+   and offer a clearly confirmed way to start a new journal.
+2. **Saveable adventure.** Store the current room, score, and inventory flags so
+   a choose-your-path game can resume after power loss.
+3. **Arcade records.** Give several games a shared, small high-score file with
+   player names, careful parsing, and graceful recovery from bad data.
 
 ---
 
@@ -2060,7 +2272,7 @@ correct — that is why both spellings exist.
 growing snake of `o`s. The clear-and-redraw is what creates the illusion of
 motion: each frame repaints the world as it is *now*, not as it has ever been.
 
-**11.1**
+**12.1**
 ```text
 # count previous runs, then rewrite the whole file
 SET runs 0
@@ -2108,7 +2320,7 @@ entries don't. Keeping both is possible but means holding every line in
 string variables while rewriting, and 32 string variables bounds how far
 that scales. Real save files stay small on purpose.)
 
-**11.2**
+**12.2**
 ```text
 FOPEN "/apps/log.txt" read
 IF $fok = 0 GOTO missing
@@ -2131,20 +2343,21 @@ PRINT "no such file"
 EXIT
 ```
 
-**11.3** Before the ball's main loop: `SET delay 50`, then `FEXISTS` /
+**12.3** Before the ball's main loop: `SET delay 50`, then `FEXISTS` /
 `FOPEN read` / `FREAD text` / `FCLOSE` / `GOSUB str2num` / `IF $num > 0` →
 `SET delay $num` — the same tolerate-everything shape as tetris's `loadhs`.
 Then `WAIT $delay` in the loop. (Guarding `$num > 0` matters: a garbled
 config parsing to 0 would make `WAIT 0` — a loop the step guard will kill.)
 
-**11.4** The handle is open for *writing* — `FREAD` against it is a
+**12.4** The handle is open for *writing* — `FREAD` against it is a
 programming error, so the app stops. The correct sequence: `FWRITE`, then
 `FCLOSE` (which is what actually commits the bytes), then `FOPEN ... read`.
 The close in the middle is not ceremony — until it happens, the data may not
 be on flash at all.
 
-Chapters 8–9's remaining exercises, and everything in Chapter 10, are games —
-their answer is the shipped `tetris.dapp`, and yours will be better.
+The open-ended exercises and Project Ideas deliberately have no single answer.
+For the game work in Chapters 8–10, the shipped `tetris.dapp` is one useful
+reference, and yours will be better.
 
 ---
 
