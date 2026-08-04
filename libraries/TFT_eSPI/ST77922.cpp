@@ -70,44 +70,21 @@ static const lcd_init_cmd st77922_lcd_init[] = {
 };
 
 
-static spi_device_handle_t qspi;
+static spi_device_handle_t qspi = nullptr;
 
 ST77922::ST77922(void)
 {
 	width = LCD_WIDTH;
 	height = LCD_HEIGHT;
 	rotation = 0;
-	pinMode(LCD_CS, OUTPUT);
-	digitalWrite(LCD_CS, HIGH);
- 	pinMode(LCD_BL, OUTPUT);
-	digitalWrite(LCD_BL, LOW);
-	const spi_bus_config_t buscfg = 
-    {
-        .data0_io_num = QSPI_D0,
-        .data1_io_num = QSPI_D1,
-        .sclk_io_num = QSPI_SCLK,
-        .data2_io_num = QSPI_D2,
-        .data3_io_num = QSPI_D3,
-        .max_transfer_sz = (TX_LEN*16)+8,
-        .flags = SPICOMMON_BUSFLAG_MASTER | SPICOMMON_BUSFLAG_IOMUX_PINS |SPICOMMON_BUSFLAG_QUAD,
-    };
-    ESP_ERROR_CHECK(spi_bus_initialize(QSPI_PORT, &buscfg, SPI_DMA_CH_AUTO));
-    spi_device_interface_config_t devcfg = {
-        .command_bits = 0,
-        .address_bits = 0,
-        .mode = QSPI_MODE,
-        .clock_speed_hz = QSPI_FREQUENCY,
-        .spics_io_num = LCD_CS,
-        .flags = SPI_DEVICE_HALFDUPLEX ,
-        .queue_size = 17,
-    };
-    ESP_ERROR_CHECK(spi_bus_add_device(QSPI_PORT, &devcfg, &qspi));
-	Init();
-	Set_Rotation(0);
+    initialized = false;
 }
 
 void ST77922::Write_Reg(uint32_t cmd, void *data, uint8_t len)
 {
+    if (!initialized || qspi == nullptr) {
+        return;
+    }
 	LCD_CS_LOW; 
     spi_transaction_ext_t qspit;
     memset(&qspit, 0, sizeof(qspit));
@@ -132,6 +109,46 @@ void ST77922::Write_Reg(uint32_t cmd, void *data, uint8_t len)
 
 void ST77922::Init(void)
 {
+    if (initialized) {
+        return;
+    }
+
+	pinMode(LCD_CS, OUTPUT);
+	digitalWrite(LCD_CS, HIGH);
+	pinMode(LCD_BL, OUTPUT);
+	digitalWrite(LCD_BL, LOW);
+	const spi_bus_config_t buscfg =
+    {
+        .data0_io_num = QSPI_D0,
+        .data1_io_num = QSPI_D1,
+        .sclk_io_num = QSPI_SCLK,
+        .data2_io_num = QSPI_D2,
+        .data3_io_num = QSPI_D3,
+        .max_transfer_sz = (TX_LEN*16)+8,
+        .flags = SPICOMMON_BUSFLAG_MASTER | SPICOMMON_BUSFLAG_IOMUX_PINS |SPICOMMON_BUSFLAG_QUAD,
+    };
+    esp_err_t result = spi_bus_initialize(QSPI_PORT, &buscfg, SPI_DMA_CH_AUTO);
+    if (result != ESP_OK && result != ESP_ERR_INVALID_STATE) {
+        Serial.printf("ST77922: SPI bus init failed: %s\n", esp_err_to_name(result));
+        return;
+    }
+    spi_device_interface_config_t devcfg = {
+        .command_bits = 0,
+        .address_bits = 0,
+        .mode = QSPI_MODE,
+        .clock_speed_hz = QSPI_FREQUENCY,
+        .spics_io_num = LCD_CS,
+        .flags = SPI_DEVICE_HALFDUPLEX ,
+        .queue_size = 17,
+    };
+    result = spi_bus_add_device(QSPI_PORT, &devcfg, &qspi);
+    if (result != ESP_OK) {
+        qspi = nullptr;
+        Serial.printf("ST77922: SPI device init failed: %s\n", esp_err_to_name(result));
+        return;
+    }
+    initialized = true;
+
 	uint16_t i = 0;
     for(i=0; i<sizeof(st77922_lcd_init)/sizeof(lcd_init_cmd); i++)
     {
@@ -166,7 +183,9 @@ void ST77922::Set_Rotation(uint8_t r)
         default:
             break;
     }
-    Write_Reg(MADCTL_CMD, &value, 1);
+    if (initialized) {
+        Write_Reg(MADCTL_CMD, &value, 1);
+    }
 }
 
 uint8_t ST77922::Get_Rotation(void)
@@ -200,15 +219,24 @@ void ST77922::Fill_Colors(uint16_t sx, uint16_t sy, uint16_t w, uint16_t h, uint
     size_t tx_len;
 	uint16_t* cbuf = nullptr;
 	uint16_t* tx_buf = nullptr;
-    uint16_t i, j, tmp;
+    uint16_t tmp;
     spi_transaction_ext_t espit = {0};
 	size_t total = 0;
+    if (!initialized || qspi == nullptr || color == nullptr)
+        return;
     if((sx >= width) || (sy >= height))
         return;
     if(((sx + w) > width) || ((sy + h) > height))
         return;
-    if(((w < 1) || (w > width)) || ((h < 1) || (h > height)))
+    if(((w < 1) || (w > width)) || ((h < 1) || (h > height))) {
         return;
+    }
+	if(((rotation == 1)||(rotation == 3)) &&
+       (sx != 0 || sy != 0 || w != width || h != height))
+    {
+        Serial.println("ST77922: rotated partial writes are unsupported; use a full frame");
+        return;
+    }
 	if((rotation == 1)||(rotation == 3))
     {
         cbuf = (uint16_t *)ps_malloc(sizeof(uint16_t)*w*h);
@@ -216,17 +244,17 @@ void ST77922::Fill_Colors(uint16_t sx, uint16_t sy, uint16_t w, uint16_t h, uint
 		{
 			return;
 		}
-        for(i = sy; i<sy + h; i++)
+		for(uint16_t row = 0; row < h; row++)
         {
-            for(j = sx; j<sx + w; j++)
+            for(uint16_t col = 0; col < w; col++)
             {
                 if(rotation == 1)
                 {
-                    *(cbuf + j*h + (h-i-1)) = *(color + i*w + sx + j);
+                    cbuf[(size_t)col * h + (h - row - 1)] = color[(size_t)row * w + col];
                 }
                 else
                 {
-                    *(cbuf + (w - j -1)*h + i) = *(color + i*w + sx + j);
+                    cbuf[(size_t)(w - col - 1) * h + row] = color[(size_t)row * w + col];
                 }
             }
         }
@@ -243,11 +271,11 @@ void ST77922::Fill_Colors(uint16_t sx, uint16_t sy, uint16_t w, uint16_t h, uint
         tx_buf = color;
     }
 	total = w*h;
-	Set_Windows(sx, sy, sx + w, sy + h);    
+	Set_Windows(sx, sy, sx + w, sy + h);
     LCD_CS_LOW;
      do
      {
-         if(flag)
+        if(flag)
         {
             espit.base.flags = (SPI_TRANS_MODE_QIO | SPI_TRANS_VARIABLE_CMD | SPI_TRANS_VARIABLE_ADDR);
             espit.base.cmd = QSPI_4W_CMD;

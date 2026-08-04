@@ -1,4 +1,5 @@
 #include "AudioOut.h"
+#include "../BoardPins.h"
 
 #include "driver/i2s_std.h"
 #include "esp_heap_caps.h"
@@ -12,13 +13,10 @@ int radioGetVolume();
 
 namespace {
 
-// ES8311 / I2S pins, FNK0104AB -- must match RADIO_I2S_* in Radio.ino. Kept as
-// literals here rather than shared through config.h because config.h defines
-// (not just declares) its constants and can only be included by the sketch.
-constexpr gpio_num_t kPinMclk = GPIO_NUM_4;
-constexpr gpio_num_t kPinBclk = GPIO_NUM_5;
-constexpr gpio_num_t kPinWs   = GPIO_NUM_7;
-constexpr gpio_num_t kPinDout = GPIO_NUM_8;
+constexpr gpio_num_t kPinMclk = static_cast<gpio_num_t>(AUDIO_I2S_MCLK_PIN);
+constexpr gpio_num_t kPinBclk = static_cast<gpio_num_t>(AUDIO_I2S_BCLK_PIN);
+constexpr gpio_num_t kPinWs   = static_cast<gpio_num_t>(AUDIO_I2S_WS_PIN);
+constexpr gpio_num_t kPinDout = static_cast<gpio_num_t>(AUDIO_I2S_DOUT_PIN);
 
 // ~62ms of slack in the DMA ring (8 x 256 frames at 32768Hz). Sized against the
 // worst hole the game loop can punch: one fit-mode panel push is ~38ms of SPI

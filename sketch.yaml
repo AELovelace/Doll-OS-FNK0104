@@ -1,7 +1,7 @@
 default_profile: esp32s3
 profiles:
   esp32s3:
-    fqbn: esp32:esp32:esp32s3:FlashSize=16M,PartitionScheme=custom,PSRAM=opi,USBMode=default
+    fqbn: esp32:esp32:esp32s3:FlashSize=16M,PartitionScheme=custom,PSRAM=opi,USBMode=default,CDCOnBoot=cdc,UploadMode=cdc
     platforms:
       - platform: esp32:esp32 (3.3.10)
     libraries:
@@ -13,7 +13,7 @@ profiles:
       # reference the shared sketchbook install directly instead
       - dir: ../libraries/ESP32Ping
       - dir: ../libraries/esp32ARP
-      - dir: ../libraries/ESP32-audioI2S-master
+      - dir: ../libraries/ESP32-audioI2S
       # FNK0104B onboard RGB uses the ESP32 core RMT API with Freenove's tested
       # timing in Led.ino; the full Freenove object reserves 24KB for 256 pixels.
       - PubSubClient (2.8)

@@ -9,25 +9,18 @@
 //   a telnet client attached.
 //
 //   Wiring (this board <-> DS-Slave):
-//     DOLL-OS RX = GPIO21  <-  DS-Slave TX = GPIO17   (keystrokes flow in on this wire)
-//     DOLL-OS TX = GPIO2   ->  DS-Slave RX = GPIO18   (DS-Slave's STATUS/LED/... command channel)
+//     DOLL-OS RX = KEYBOARD_SERIAL_RX_PIN <- DS-Slave TX = GPIO17
+//     DOLL-OS TX = SLAVE_LINK_TX_PIN      -> DS-Slave RX = GPIO18
 //     DOLL-OS GND          <-> DS-Slave GND           (shared ground -- carried by the power pair below)
 //     DOLL-OS 5V/VIN       ->  DS-Slave 5V/VIN        (DOLL-OS powers DS-Slave; see the current note in setup)
-//   The link originally sat on GPIO15/16, but on this board those pins are the PCB-routed
-//   I2C bus to the onboard ES8311 codec + FT6336U touch (SCL=15, SDA=16) -- they only
-//   *looked* free while nothing talked to the codec. Radio.ino now does, so the link moved
-//   to GPIO21 (RX) and GPIO2 (TX), which have no on-board role on the FNK0104AB variant.
-//   Both ends run 115200 8N1.
+//   BoardPins.h selects GPIO21/2 on AB/S and GPIO46/45 on N; the N's GPIO21/2
+//   are occupied by audio WS and SD D2. Both ends run 115200 8N1.
 
 //UART peripheral 1 -- UART0 backs the USB serial console (Serial), so the keyboard link
-//gets its own peripheral. ESP32-S3's GPIO matrix routes it to any pins, hence 21.
+//gets its own peripheral. The ESP32-S3 GPIO matrix routes it to the selected board pin.
 HardwareSerial KeyboardSerial(1);
 
-static const int KEYBOARD_SERIAL_RX_PIN = 21;   //<- DS-Slave TX (GPIO17)
-//GPIO2 (-> DS-Slave RX / GPIO18) is the outbound command channel, but it is NOT driven
-//by this UART: KeyboardSerial is started RX-only and SlaveLink.ino bit-bangs GPIO2 in
-//software instead (see SlaveLink.ino for why). Passing TX=-1 below leaves GPIO2 free for it.
-static const int KEYBOARD_SERIAL_TX_PIN = -1;   //RX-only; outbound is bit-banged on GPIO2 (SlaveLink.ino)
+static const int KEYBOARD_SERIAL_TX_PIN = -1;   //RX-only; outbound uses SlaveLink.ino
 static const uint32_t KEYBOARD_SERIAL_BAUD = 115200;
 
 //own line-edit parse state (see LineEditState in global.h) so a mid-escape keystroke
@@ -37,8 +30,9 @@ static LineEditState keyboardLineState;
 void initKeyboardSerial() {
     KeyboardSerial.begin(KEYBOARD_SERIAL_BAUD, SERIAL_8N1, KEYBOARD_SERIAL_RX_PIN, KEYBOARD_SERIAL_TX_PIN);
     ledSetKeyboardActive(true);
-    Serial.printf("[boot] keyboard UART RX=%d TX=bitbang(GPIO2) baud=%lu\n",
-                  KEYBOARD_SERIAL_RX_PIN, (unsigned long)KEYBOARD_SERIAL_BAUD);
+    Serial.printf("[boot] keyboard UART RX=%d TX=bitbang(GPIO%d) baud=%lu\n",
+                  KEYBOARD_SERIAL_RX_PIN, SLAVE_LINK_TX_PIN,
+                  (unsigned long)KEYBOARD_SERIAL_BAUD);
 }
 
 //drains whatever DS-Slave has sent this tick, feeding each byte through the same line

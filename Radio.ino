@@ -19,28 +19,14 @@
 //   the telnet socket and display history the main loop owns); they stash an
 //   announcement instead, which radioService() (called every loop() tick) prints.
 //
-//   Pin note: the codec's control bus is I2C SDA=16/SCL=15 -- PCB-routed, not
-//   movable, and the reason the DS-Slave serial link vacated those pins for
-//   GPIO21/2 (see KeyboardSerial.ino). Values below are the FNK0104AB variant's,
-//   from Freenove's Sketch_07.1_Music; the N/S variants use different I2S/I2C pins
-//   (see that sketch's alternate pin block) and haven't been wired up here.
+//   Codec, SD, and DS-Slave wiring differs substantially on the N variant. All
+//   values come through BoardPins.h so every audio owner uses the same map.
 
 #include "Audio.h"
 #include "ESP_I2S.h"
 #include <Wire.h>
 #include <new>   //std::nothrow -- radioEnsureCodec heap-constructs the Audio engine
 #include "es8311.h"
-
-//   ES8311 codec / I2S pins (FNK0104AB)
-#define RADIO_I2S_MCK 4
-#define RADIO_I2S_BCK 5
-#define RADIO_I2S_DINT 6
-#define RADIO_I2S_DOUT 8
-#define RADIO_I2S_WS 7
-#define RADIO_AMP_ENABLE 1        //driven low = amp on, matching Freenove's example
-#define RADIO_I2C_SCL 15
-#define RADIO_I2C_SDA 16
-#define RADIO_I2C_SPEED 400000
 
 //RADIO_VOLUME_MAX lives in global.h -- Gameboy.ino's settings menu shows the level
 //too, and the .ino files concatenate alphabetically, so Gameboy.ino is compiled
@@ -137,7 +123,8 @@ static void radioSetState(RadioState s) {
 //splits the diagnosis -- 0x38 answering but no 0x18/0x19 means the bus is fine and the
 //codec specifically isn't responding; a silent bus points at wiring/pull-ups/pin conflict.
 static void radioScanI2cBus() {
-    Serial.println("[radio] I2C scan (SDA=16 SCL=15):");
+    Serial.printf("[radio] I2C scan (SDA=%d SCL=%d):\n",
+                  AUDIO_I2C_SDA_PIN, AUDIO_I2C_SCL_PIN);
     int found = 0;
     esp_log_level_set("i2c.master", ESP_LOG_NONE);   //~100 expected NACKs -- don't let the driver's
                                                       //error spam bury the scan's own output
@@ -169,10 +156,10 @@ bool audioCodecEnsure() {
         return true;
     }
 
-    pinMode(RADIO_AMP_ENABLE, OUTPUT);
-    digitalWrite(RADIO_AMP_ENABLE, LOW);
+    pinMode(AUDIO_AMP_ENABLE_PIN, OUTPUT);
+    digitalWrite(AUDIO_AMP_ENABLE_PIN, LOW);
 
-    if (!Wire.begin(RADIO_I2C_SDA, RADIO_I2C_SCL, RADIO_I2C_SPEED)) {
+    if (!Wire.begin(AUDIO_I2C_SDA_PIN, AUDIO_I2C_SCL_PIN, AUDIO_I2C_SPEED)) {
         Serial.println("[audio] I2C init failed");
         return false;
     }
@@ -196,7 +183,8 @@ static bool radioEnsureCodec() {
     }
 
     if (!radioI2sReady) {
-        radioI2s.setPins(RADIO_I2S_BCK, RADIO_I2S_WS, RADIO_I2S_DOUT, RADIO_I2S_DINT, RADIO_I2S_MCK);
+        radioI2s.setPins(AUDIO_I2S_BCLK_PIN, AUDIO_I2S_WS_PIN, AUDIO_I2S_DOUT_PIN,
+                         AUDIO_I2S_DIN_PIN, AUDIO_I2S_MCLK_PIN);
         if (!radioI2s.begin(I2S_MODE_STD, 44100, I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_STEREO, I2S_STD_SLOT_LEFT)) {
             radioAnnounce("radio: I2S init failed", C_RED);
             return false;
@@ -223,7 +211,8 @@ static bool radioEnsureCodec() {
     //setPinout fails if the ctor couldn't get an I2S controller (or the reconfig itself
     //fails) -- tear the engine back down so the next attempt starts from a clean slate
     //instead of driving a NULL channel handle
-    if (!radioAudio->setPinout(RADIO_I2S_BCK, RADIO_I2S_WS, RADIO_I2S_DOUT, RADIO_I2S_MCK)) {
+    if (!radioAudio->setPinout(AUDIO_I2S_BCLK_PIN, AUDIO_I2S_WS_PIN,
+                               AUDIO_I2S_DOUT_PIN, AUDIO_I2S_MCLK_PIN)) {
         delete radioAudio;
         radioAudio = nullptr;
         radioAnnounce("radio: audio engine could not attach I2S", C_RED);

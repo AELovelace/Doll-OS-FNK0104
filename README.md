@@ -44,15 +44,15 @@ usable with no network.
 | | |
 |---|---|
 | Board | Freenove FNK0104-series ESP32-S3 display kit |
-| Panel | 2.8" 240×320 ILI9341 (default) — also 3.5" ST77922, 4.0" ST7796 |
+| Panel | 2.8" 240×320 ILI9341, 3.5" 320×480 ST77922 QSPI, or 4.0" ST7796 |
 | Flash / PSRAM | 16MB flash, OPI PSRAM (required) |
 | Storage | SD_MMC card slot + LittleFS |
 | Audio | ES8311 codec over I²S |
 | Companion | second ESP32-S3 running `DS-Slave` (BLE HID → UART) |
 
-> TODO: wiring notes — DS ↔ DS-Slave (UART on GPIO17/18, command channel on
-> GPIO2), speaker, battery divider. A small diagram or table would help here.
-So far, supported hardware is limited to FNK0104A/B, though support for larger screens is coming. 
+DS-Slave always uses GPIO17 TX and GPIO18 RX on its end. On DOLL-OS, connect
+RX/TX to GPIO21/2 for FNK0104AB/S or GPIO46/45 for FNK0104N. The N move keeps
+the link clear of its audio WS (GPIO21) and SD D2 (GPIO2) lines.
 
 Recommended build:
 https://store.freenove.com/products/fnk0104
@@ -71,8 +71,9 @@ copy config.h.example config.h
 ```
 
 Fill in Wi-Fi credentials, FTP password, and any API keys. `config.h` is
-gitignored so secrets stay local. Uncomment the `#define` matching your panel
-variant at the top.
+gitignored so secrets stay local. Select the hardware model once in
+`BoardVariant.h`; that selection drives the panel, storage, audio, battery,
+rear LED, and DS-Slave wiring together.
 
 ### 2. Build and flash
 
@@ -80,6 +81,10 @@ Open the sketch in the Arduino IDE and select the **`esp32s3 Dev Module` profile
 toolbar dropdown before Verify/Upload. That covers board, flash size, custom
 partition scheme, PSRAM, and USB mode in one selection, and keeps this fork's
 sketch-local `TFT_eSPI` from colliding with a global install.
+
+For a new FNK0104N, flash `examples/FNK0104NBringup` first. Its serial report
+checks SD, battery, codec I2C, and DS-Slave pins; the panel should show three
+color bands plus `PARTIAL OK` near the bottom before the full OS is installed.
 
 Install the following libraries:
 WiFi at version 3.3.10

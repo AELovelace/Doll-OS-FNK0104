@@ -3,32 +3,10 @@
 //   defaults. config.h is intentionally ignored so secrets stay local.
 #pragma once
 
-//   Board variant
-//   This firmware targets the Freenove ESP32-S3 display family (FNK0104-series,
-//   sold as the "FNK1014B" kit). Only the SD_MMC bus and battery ADC pin differ
-//   between panel variants -- uncomment the one you have. Values below are taken
-//   directly from Freenove's own example sketches for this board.
-#define FNK0104AB_2P8_240x320_ILI9341
-//#define FNK0104N_3P5_320x480_ST77922
-//#define FNK0104S_4P0_320x480_ST7796
-
-#ifdef FNK0104N_3P5_320x480_ST77922
-    const int SD_MMC_CLK_PIN = 5;
-    const int SD_MMC_CMD_PIN = 4;
-    const int SD_MMC_D0_PIN  = 6;
-    const int SD_MMC_D1_PIN  = 7;
-    const int SD_MMC_D2_PIN  = 2;
-    const int SD_MMC_D3_PIN  = 3;
-    const int BATTERY_ADC_PIN = 8;
-#else
-    const int SD_MMC_CLK_PIN = 38;
-    const int SD_MMC_CMD_PIN = 40;
-    const int SD_MMC_D0_PIN  = 39;
-    const int SD_MMC_D1_PIN  = 41;
-    const int SD_MMC_D2_PIN  = 48;
-    const int SD_MMC_D3_PIN  = 47;
-    const int BATTERY_ADC_PIN = 9;
-#endif
+// Board selection and every board-dependent pin live in BoardVariant.h and
+// BoardPins.h. They are separate from this ignored secrets file so TFT_eSPI and
+// native .cpp modules compile against the same hardware map.
+#include "BoardPins.h"
 
 //   Rear WS2812 RGB LED (used by indicators and the .dapp LED opcode). Leave
 //   unset to use Freenove's documented default: GPIO42 on AB/S, GPIO40 on N.

@@ -19,7 +19,7 @@ void setup() {
     }
 
     Serial.println();
-    Serial.println("Starting DOLL-OS...");
+    Serial.printf("Starting DOLL-OS on %s...\n", DOLL_BOARD_NAME);
     Serial.flush();   //force this out over UART now, in case something below hangs before the next line
     ledBegin();
 
@@ -70,8 +70,8 @@ void setup() {
     Serial.flush();
     initKeyboardSerial();
 
-    //bit-banged outbound command channel to DS-Slave on GPIO2 (SlaveLink.ino) -- must
-    //come after initKeyboardSerial(), which now leaves GPIO2 unclaimed for the bitbang
+    //Bit-banged outbound command channel to DS-Slave. BoardPins.h selects a pin
+    //that is clear of the active variant's SD, display, and audio buses.
     slaveLinkBegin();
 
     telnetServer.begin();

@@ -27,11 +27,7 @@
 //   FNK0104 RGB examples: GPIO42 on the AB/S variants, GPIO40 on the N variant.
 //   Set REAR_RGB_LED_PIN in config.h to override, or -1 to disable LED control.
 #ifndef REAR_RGB_LED_PIN
-    #ifdef FNK0104N_3P5_320x480_ST77922
-        #define REAR_RGB_LED_PIN 40
-    #else
-        #define REAR_RGB_LED_PIN 42
-    #endif
+    #define REAR_RGB_LED_PIN DOLL_REAR_RGB_LED_PIN
 #endif
 #ifndef REAR_RGB_LED_BRIGHTNESS
     #define REAR_RGB_LED_BRIGHTNESS 255

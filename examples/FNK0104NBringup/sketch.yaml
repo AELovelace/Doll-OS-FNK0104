@@ -1,0 +1,8 @@
+default_profile: esp32s3
+profiles:
+  esp32s3:
+    fqbn: esp32:esp32:esp32s3:FlashSize=16M,PSRAM=opi,USBMode=default,CDCOnBoot=cdc,UploadMode=cdc
+    platforms:
+      - platform: esp32:esp32 (3.3.10)
+    libraries:
+      - dir: ../../libraries/TFT_eSPI

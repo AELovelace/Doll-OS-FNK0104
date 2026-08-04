@@ -13,12 +13,8 @@
 //     KeyboardSerial (UART1, KeyboardSerial.ino) owns this board's only spare
 //     hardware UART, and its job is to *receive* keystrokes on GPIO21. We only ever
 //     need to *send* a handful of short control lines the other way, and infrequently.
-//     So rather than share the UART peripheral's TX, we drive the outbound wire in
-//     software on GPIO2 -- the exact pin KeyboardSerial.ino already documents as
-//     "DOLL-OS TX = GPIO2 -> DS-Slave RX = GPIO18". KeyboardSerial is now started RX-only
-//     so nothing else touches GPIO2 (see initKeyboardSerial()). (The link originally
-//     used GPIO15/16, vacated because they are the codec/touch I2C bus -- see
-//     KeyboardSerial.ino's wiring note.)
+//     So rather than share the UART peripheral's TX, we drive SLAVE_LINK_TX_PIN in
+//     software. BoardPins.h keeps it clear of each variant's onboard peripherals.
 //
 //   The link is deliberately one-way. DS-Slave prints every command's reply to its
 //   own USB serial console (Serial.print, never back onto its UART1 TX), so DOLL-OS cannot
@@ -30,7 +26,6 @@
 
 #include "driver/gpio.h"   //gpio_set_level -- IRAM-resident, unlike Arduino's digitalWrite (see slaveLinkWriteByte)
 
-static const int SLAVE_LINK_TX_PIN = 2;           //-> DS-Slave RX (GPIO18); same wire KeyboardSerial.ino documents
 static const uint32_t SLAVE_LINK_BAUD = 115200;   //must match DS-Slave's LinkSerial (UART_BAUD)
 
 //per-byte we hold a critical section so no interrupt can stretch a bit period and

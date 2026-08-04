@@ -18,6 +18,10 @@
 #ifndef USER_SETUP_LOADE //  Lets PlatformIO users define settings in
                           //  platformio.ini, see notes in "Tools" folder.
 
+// BoardVariant.h is shared with the sketch so the panel driver cannot drift
+// from the SD, audio, battery, LED, and DS-Slave pin selection.
+#include "../../BoardVariant.h"
+
 ///////////////////////////////////////////////////////
 //   User configuration selection lines are below    //
 ///////////////////////////////////////////////////////
@@ -33,9 +37,6 @@
 //#define FNK0103L_3P2_240x320_ST7789
 //#define FNK0103N_3P5_320x480_ST7796
 //#define FNK0103S_4P0_320x480_ST7796
-#define FNK0104AB_2P8_240x320_ILI9341
-//#define FNK0104N_3P5_320x480_ST77922
-//#define FNK0104S_4P0_320x480_ST7796
 //#define FNK0115A_4P3_320x480_ST7796
 
 #ifdef FNK0086A_2P8_240x320_ST7789

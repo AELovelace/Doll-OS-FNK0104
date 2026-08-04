@@ -7,9 +7,9 @@
 //   This is the one place in DOLL-OS that does NOT follow the telnet-mirror model:
 //   an emulator is a real-time framebuffer + low-latency input, so `gb <rom>`
 //   seizes loop() (it runs its own inner loop until the player quits), draws
-//   the 160x144 GB frame straight to `tft` instead of through the mirrored
-//   history sprite, and reads raw button events off the keyboard link instead
-//   of the line editor. On exit it hands control cleanly back to the shell.
+//   the 160x144 GB frame through the active panel's fastest supported path,
+//   and reads raw button events off the keyboard link instead of the line
+//   editor. On exit it hands control cleanly back to the shell.
 //
 //   Input: DOLL-OS tells DS-Slave to enter gamepad mode ("GAME 1"). In that mode the
 //   slave stops sending ASCII and instead sends 2-byte button events:
@@ -44,12 +44,6 @@
 #include "esp_heap_caps.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-
-// The panel draw path targets the plain TFT_eSPI `tft` object (global.h), which
-// only exists on the SPI panel variants. The QSPI ST77922 variant uses a
-// different object and pushes whole frames differently -- unsupported here for
-// now, so compile the app out to a stub on that variant.
-#ifndef FNK0104N_3P5_320x480_ST77922
 
 static GameBoyHost gbHost;
 
@@ -100,7 +94,17 @@ static bool gbSetupScale() {
     gbOutX = (DISPLAY_WIDTH - gbOutW) / 2;
     gbOutY = (DISPLAY_HEIGHT - gbOutH) / 2;
 
-    if (!gbFitMode) return true;   // 1x blits straight from the GB frame
+    if (!gbFitMode) {
+#ifdef FNK0104N_3P5_320x480_ST77922
+        // The QSPI driver expects panel-order words in a tightly packed region.
+        // Keep one small conversion buffer; SPI panels blit the GB frame directly.
+        gbScaleBuf = (uint16_t*)heap_caps_malloc((size_t)GB_W * GB_H * sizeof(uint16_t),
+                                                 MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        return gbScaleBuf != nullptr;
+#else
+        return true;
+#endif
+    }
 
     gbColMap = (int16_t*)heap_caps_malloc(gbOutW * sizeof(int16_t), MALLOC_CAP_8BIT);
     gbRowMap = (int16_t*)heap_caps_malloc(gbOutH * sizeof(int16_t), MALLOC_CAP_8BIT);
@@ -121,17 +125,59 @@ static bool gbSetupScale() {
 static void gbBlitFrame() {
     const uint16_t* frame = gbHost.frame();
     if (!frame) return;
-    tft.setSwapBytes(true);
+    const uint16_t* pixels = frame;
+    int width = GB_W;
+    int height = GB_H;
     if (!gbFitMode) {
-        tft.pushImage(gbOutX, gbOutY, GB_W, GB_H, (uint16_t*)frame);
-        return;
+#ifdef FNK0104N_3P5_320x480_ST77922
+        for (size_t i = 0; i < (size_t)GB_W * GB_H; i++) {
+            gbScaleBuf[i] = __builtin_bswap16(frame[i]);
+        }
+        pixels = gbScaleBuf;
+#else
+        pixels = frame;
+#endif
+    } else {
+        for (int oy = 0; oy < gbOutH; oy++) {
+            const uint16_t* srcRow = frame + (int)gbRowMap[oy] * GB_W;
+            uint16_t* dst = gbScaleBuf + (size_t)oy * gbOutW;
+            for (int ox = 0; ox < gbOutW; ox++) {
+                uint16_t color = srcRow[gbColMap[ox]];
+#ifdef FNK0104N_3P5_320x480_ST77922
+                color = __builtin_bswap16(color);
+#endif
+                dst[ox] = color;
+            }
+        }
+        pixels = gbScaleBuf;
+        width = gbOutW;
+        height = gbOutH;
     }
-    for (int oy = 0; oy < gbOutH; oy++) {
-        const uint16_t* srcRow = frame + (int)gbRowMap[oy] * GB_W;
-        uint16_t* dst = gbScaleBuf + (size_t)oy * gbOutW;
-        for (int ox = 0; ox < gbOutW; ox++) dst[ox] = srcRow[gbColMap[ox]];
+
+#ifdef FNK0104N_3P5_320x480_ST77922
+    uint16_t* panelFrame = (uint16_t*)frameSprite.getPointer();
+    if (!panelFrame) return;
+    memset(panelFrame, 0, (size_t)DISPLAY_WIDTH * DISPLAY_HEIGHT * sizeof(uint16_t));
+    for (int row = 0; row < height; row++) {
+        memcpy(panelFrame + (size_t)(gbOutY + row) * DISPLAY_WIDTH + gbOutX,
+               pixels + (size_t)row * width,
+               (size_t)width * sizeof(uint16_t));
     }
-    tft.pushImage(gbOutX, gbOutY, gbOutW, gbOutH, gbScaleBuf);
+    tft_st77922.Fill_Colors(0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, panelFrame);
+#else
+    tft.setSwapBytes(true);
+    tft.pushImage(gbOutX, gbOutY, width, height,
+                  const_cast<uint16_t*>(pixels));
+#endif
+}
+
+static void gbClearPanel() {
+#ifdef FNK0104N_3P5_320x480_ST77922
+    frameSprite.fillSprite(TFT_BLACK);
+    pushDisplayFrame();
+#else
+    tft.fillScreen(TFT_BLACK);
+#endif
 }
 
 // One-shot requests the slave can raise alongside the held-button bitmap.
@@ -728,10 +774,14 @@ void handleGbCommand(const String parts[], int partCount) {
     }
 
     if (!gbSetupScale()) {
-        // Couldn't get PSRAM for the scaled frame -- drop to native 1x, which
-        // needs no scale buffer, rather than failing the launch.
+        // Couldn't get the fitted frame buffer -- native 1x needs none on SPI
+        // panels and only a much smaller byte-order buffer on the QSPI panel.
         gbFitMode = false;
-        gbSetupScale();
+        if (!gbSetupScale()) {
+            gbHost.stop();
+            outLine("gb: not enough PSRAM for the display buffer", C_RED);
+            return;
+        }
         outLine("gb: low memory, running native 1x", C_YELLOW);
     }
 
@@ -752,7 +802,7 @@ void handleGbCommand(const String parts[], int partCount) {
     // Hand the panel and the keyboard over to the game.
     slaveLinkSendLine("GAME 1");   // DS-Slave: emit raw button events, not ASCII
     delay(20);
-    tft.fillScreen(TFT_BLACK);
+    gbClearPanel();
 
     uint8_t buttons = 0;
     const uint32_t frameUs = 16743;   // ~59.7 Hz, true GB frame period
@@ -767,8 +817,13 @@ void handleGbCommand(const String parts[], int partCount) {
         if (events & GB_EVT_MENU) {
             // Modal: emulation is paused for the duration. Audio goes quiet on
             // its own once the DMA ring drains -- nothing is producing samples.
+#ifdef FNK0104N_3P5_320x480_ST77922
+            // Game frames bypass frameSprite, so force the menu's first push to
+            // replace every game pixel rather than trusting the shell shadow.
+            displayInvalidateShadow();
+#endif
             if (gbRunMenu(buttons)) break;
-            tft.fillScreen(TFT_BLACK);        // clear the menu and any old letterbox
+            gbClearPanel();                   // clear the menu and any old letterbox
             nextFrame = micros() + frameUs;   // menu time isn't the emulator falling behind
             skipRun = kMaxFrameSkip;          // and draw the frame after it, whatever the clock says
         }
@@ -842,16 +897,7 @@ void handleGbCommand(const String parts[], int partCount) {
                               + String(underruns) + " gaps") : ""), C_CYAN);
     }
     displayDirty = true;         // force a full shell repaint over the game frame
-    displayInvalidateShadow();   // the game drew straight to the panel, so the partial-push
-                                 // shadow no longer describes what is on the glass
+    displayInvalidateShadow();   // game frames bypass the shell's panel shadow
     drawDisplayFrame();
     printPrompt();
 }
-
-#else   // FNK0104N_3P5_320x480_ST77922 -- QSPI panel path not implemented
-
-void handleGbCommand(const String parts[], int partCount) {
-    outLine("gb: not supported on the ST77922 QSPI panel variant yet", C_RED);
-}
-
-#endif

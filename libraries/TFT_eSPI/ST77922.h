@@ -66,6 +66,7 @@ public:
 	uint16_t Get_Height(void);
 private:
 	uint16_t width, height, rotation;
+	bool initialized;
 };
 
 typedef struct {

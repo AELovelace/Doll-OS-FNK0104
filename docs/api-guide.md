@@ -574,13 +574,14 @@ The status bar and the `battery` command both read these.
 ## 14. DS-Slave link (`KeyboardSerial.ino`, `SlaveLink.ino`)
 
 DS-Slave is a companion ESP32-S3 (`../DS-Slave/`) that bridges a BLE HID
-keyboard (and optionally a controller) to a UART. Keystrokes arrive on GPIO21
-(hardware UART1, RX-only) as exactly the byte vocabulary the line editor already
-speaks: printable ASCII, CR for Enter, `0x08` for Backspace, ESC/CSI for the
-arrow/Home/End/Delete cluster, and real control codes for Ctrl+letter.
+keyboard (and optionally a controller) to a UART. Keystrokes arrive on the
+`BoardPins.h` RX pin (GPIO21 on AB/S, GPIO46 on N; hardware UART1, RX-only) as
+exactly the byte vocabulary the line editor already speaks: printable ASCII,
+CR for Enter, `0x08` for Backspace, ESC/CSI for the arrow/Home/End/Delete
+cluster, and real control codes for Ctrl+letter.
 
-Outbound commands go the other way on GPIO2, **bit-banged in software** (the one
-spare hardware UART is busy receiving):
+Outbound commands use the paired board pin (GPIO2 on AB/S, GPIO45 on N),
+**bit-banged in software** while the spare hardware UART receives:
 
 ```cpp
 void slaveLinkBegin();                        // called from setup(), after initKeyboardSerial()

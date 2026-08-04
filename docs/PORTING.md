@@ -121,19 +121,20 @@ one -- the API shapes are close enough that the port is mostly a rename:
 **TFT_eSPI fork**: this board needs Freenove's customized TFT_eSPI (adds the
 `ST77922` driver + real per-panel pin configs), installed sketch-locally
 (`DS/libraries/TFT_eSPI` + `DS/libraries/TFT_eSPI_Setups`) via `sketch.yaml` --
-see "Building this sketch" above for why, and pick the panel variant the same
-way as `config.h`'s `FNK0104*` macro (`global.h` reads the same macro for
-`DISPLAY_WIDTH`/`DISPLAY_HEIGHT`). The N-variant (ST77922, QSPI) path compiles
-but wasn't exercised as thoroughly as the default AB/S path, since AB is what
-this port was built and tested against.
+see "Building this sketch" above for why. `BoardVariant.h` is the single model
+selector shared by TFT_eSPI and the sketch; `BoardPins.h` derives display,
+storage, audio, battery, LED, and DS-Slave wiring from it. The ST77922 path uses
+the vendor QSPI driver. The N uses full-frame landscape writes because Freenove's
+ST77922 implementation only exercises `(0,0)` complete-frame transfers; AB/S retain
+the row-diff partial-update optimization.
 
 ### Hardware differences
 
 - **SD card**: DOLL-OS's M5Cardputer wires SD over SPI. This board's SD slot
   is on the ESP32-S3's dedicated SDMMC peripheral (4-bit bus), so `Storage.ino`
-  uses `SD_MMC` instead of `SD`/`SPI`. Pins live in `config.h`, taken from
+  uses `SD_MMC` instead of `SD`/`SPI`. Pins live in `BoardPins.h`, taken from
   Freenove's own example sketches for this board (`SD_MMC_CLK/CMD/D0-D3_PIN`);
-  a `#define` switches between the AB/S panel variant's pins and the N variant's.
+  the `BoardVariant.h` selection switches between AB/S and N wiring.
 - **Battery**: DOLL-OS read `M5Cardputer.Power` directly. This board has no
   fuel-gauge chip, just a divided ADC pin (confirmed against Freenove's own
   `Battery_Voltage` example) -- `SysInfo.ino`'s `readBatteryVoltage()`/
@@ -172,13 +173,11 @@ fire in the task and only stash announcements, which `radioService()` (called
 each `loop()` tick) prints -- the main loop stays the single writer of the telnet
 socket and display history.
 
-**This forced a pin move**: the codec/touch I2C bus is PCB-routed to SCL=15/
-SDA=16, which the DS-Slave link had been squatting on (it only worked because
-nothing talked I2C). The link moved to GPIO21 (keyboard RX) and GPIO2 (bit-bang
-TX); GPIO2's old convenience-ground role in setup() is gone, so that jumper must
-land on a real GND pin. I2S (4-8) and amp-enable (GPIO1) pins are the AB
-variant's; the N/S variants' differ (see Freenove's `Sketch_07.1_Music`) and
-aren't wired up.
+**This forced variant-specific DS-Slave wiring**: AB/S use GPIO21 for keyboard
+RX and GPIO2 for bit-bang TX. The N cannot: GPIO21 is its I2S word-select and
+GPIO2 is SD D2, so it uses GPIO46/45 instead. Audio is selected from the same
+map: AB/S use I2S GPIO4-8 and I2C SDA16/SCL15; N uses MCLK17, BCLK18, DIN16,
+DOUT15, WS21 and I2C SDA38/SCL39. Amp-enable remains GPIO1 on all variants.
 
 ### Editor (new, not from DOLL-OS)
 
