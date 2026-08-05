@@ -1,7 +1,7 @@
 # @dapp-format 1
 # @id tracker-music
 # @name Tracker Music
-# @version 1.3.2
+# @version 1.3.3
 # @boards fnk0104
 # @runtime >=1.7.0 <2.0.0
 # @echo off
@@ -10,7 +10,8 @@
 # Arrows move, space toggles a step, 1-6 set the selected note tone, [] changes
 # pattern, comma/dot moves the song cursor, A assigns pattern to song, P plays
 # song, +/- changes tempo, Enter plays one loop, H/? helps, S opens save browser,
-# C clears the current pattern, X trims song length, Escape exits.
+# L opens load browser, C clears the current pattern, X trims song length,
+# Escape exits.
 
 CANVAS 60 20
 DIM p1 128
@@ -55,6 +56,7 @@ SET tone3 3
 SETSTR saveDir "/apps"
 SETSTR saveName "tracker-music.dat"
 SETSTR savePath "/apps/tracker-music.dat"
+SETSTR browseMode "save"
 GOSUB inittones
 GOSUB initsong
 GOSUB load
@@ -254,7 +256,7 @@ RETURN
 GOSUB savebrowser
 GOTO redraw
 :loadkey
-GOSUB load
+GOSUB loadbrowser
 GOTO redraw
 :clearkey
 SET i 0
@@ -382,8 +384,8 @@ PUT 0 6 "enter   play pattern   P play song"
 PUT 0 8 "[ / ]   switch pattern"
 PUT 0 10 ", / .   move song cursor, . extends"
 PUT 0 12 "A       assign pattern to song slot"
-PUT 0 14 "S       save browser   L load current file"
-PUT 0 16 "N       new dir in save browser"
+PUT 0 14 "S       save browser   L load browser"
+PUT 0 16 "N       new dir in save/load browser"
 PUT 0 18 "+/- tempo  C clear pattern  X trim  esc quit"
 COLOR cyan
 PUT 0 19 "S square, T triangle, N noise. Any key returns."
@@ -420,6 +422,14 @@ RETURN
 
 :savebrowser
 WAVESTOP
+SETSTR browseMode "save"
+SET savePick 0
+SET savePage 0
+SETSTR saveMsg ""
+GOTO sb_loop
+:loadbrowser
+WAVESTOP
+SETSTR browseMode "load"
 SET savePick 0
 SET savePage 0
 SETSTR saveMsg ""
@@ -467,7 +477,13 @@ GOTO sb_loop
 GOSUB sb_select
 IF $selected = 0 GOTO sb_loop
 IFEQ $sbtype "D" GOTO sb_opendir
+IFEQ $browseMode "load" GOTO sb_loadfile
 GOTO sb_loop
+:sb_loadfile
+GOSUB sb_join_entry
+SETSTR savePath $saveTarget
+GOSUB load
+GOTO sb_done
 :sb_opendir
 GOSUB sb_join_entry
 SETSTR saveDir $saveTarget
@@ -497,6 +513,7 @@ SET savePage 0
 SETSTR saveMsg "directory created"
 GOTO sb_loop
 :sb_saveas
+IFEQ $browseMode "load" GOTO sb_loop
 INPUT saveName "save name> "
 LEN n $saveName
 IF $n = 0 GOTO sb_loop
@@ -513,7 +530,13 @@ RETURN
 :sb_draw
 CLS
 COLOR pink
-PUT 0 0 "SAVE TRACKER"
+SETSTR sbtitle "SAVE TRACKER"
+IFEQ $browseMode "load" GOTO sb_draw_title_load
+GOTO sb_draw_title_done
+:sb_draw_title_load
+SETSTR sbtitle "LOAD TRACKER"
+:sb_draw_title_done
+PUT 0 0 "$sbtitle"
 COLOR white
 PUT 0 2 "$saveDir"
 GOSUB sb_refresh_count
@@ -560,8 +583,13 @@ FCLOSE
 COLOR yellow
 PUT 0 15 "$saveMsg"
 PUT 0 16 "up/down choose  enter open  bksp/u up"
+IFEQ $browseMode "load" GOTO sb_draw_footer_load
 PUT 0 17 "S save here  N new dir  esc cancel"
 PUT 0 19 "file: $saveName"
+GOTO sb_draw_footer_done
+:sb_draw_footer_load
+PUT 0 17 "enter loads file  N new dir  esc cancel"
+:sb_draw_footer_done
 FLIP
 RETURN
 :sb_draw_fail

@@ -1167,14 +1167,23 @@ test("Tracker Music save browser creates a directory and saves a named file", as
   assert.equal(saved[0], "TM3");
 });
 
-test("Tracker Music loads back from the save browser's last location, not the default path", async () => {
+test("Tracker Music's load browser opens on L, lists the last save location, and loads the picked file", async () => {
   const files = new MemoryFiles();
   const frames = [];
   let runtime;
   let step = 0;
   let saveFrame = 0;
+  let loadFrame = 0;
   const answers = ["songs", "jam.dat"];
   const push = key => runtime.pushKey({ key, ctrlKey: false });
+  //character right after the "S" row label: the step-0 cell. The cursor "@" only
+  //overlays it while the cursor sits on step 0, which the ArrowRight below moves
+  //off of, so this reads the real digit/dot for the rest of the run.
+  const step0Cell = frame => {
+    const line = frame.split("\n").find(l => l.startsWith("S"));
+    const stripped = line ? line.replace(/\s+/g, "") : "";
+    return stripped[1];
+  };
   const io = {
     output() {}, clear() {}, status() {}, endCanvas() {}, waveStop() {},
     input(_prompt, resolve) { resolve(answers.shift() || ""); },
@@ -1189,16 +1198,25 @@ test("Tracker Music loads back from the save browser's last location, not the de
         else if (saveFrame >= 3) push("Escape");
         return;
       }
+      if (text.includes("LOAD TRACKER")) {
+        loadFrame += 1;
+        //first frame: land on the "/apps/songs" listing left behind by the save above,
+        //with jam.dat as the only (and so already-selected) entry -- Enter loads it
+        if (loadFrame === 1) push("Enter");
+        else if (loadFrame >= 2) push("Escape");
+        return;
+      }
       step += 1;
-      //set a distinctive tone, save it to a custom directory via the browser, clear the
-      //pattern so the in-memory state no longer proves anything, then load: if `load` still
-      //reads the hardcoded default path instead of $savePath it finds nothing there and the
-      //pattern stays cleared
+      //set a distinctive tone (which also switches step 0 on), move the cursor off
+      //step 0 so its cell is readable, save to a custom directory via the browser,
+      //clear the pattern so the in-memory state no longer proves anything, then open
+      //the load browser (L) and pick the file back up
       if (step === 1) push("4");
-      else if (step === 2) push("s");
-      else if (step === 3) push("c");
-      else if (step === 4) push("l");
-      else if (step >= 5) push("Escape");
+      else if (step === 2) push("ArrowRight");
+      else if (step === 3) push("s");
+      else if (step === 4) push("c");
+      else if (step === 5) push("l");
+      else if (step >= 6) push("Escape");
     }
   };
   runtime = new DappRuntime(io, files);
@@ -1208,7 +1226,11 @@ test("Tracker Music loads back from the save browser's last location, not the de
   assert.equal(result.ok, true, result.error?.message);
   assert.ok(files.exists("/apps/songs/jam.dat"));
   assert.ok(!files.exists("/apps/tracker-music.dat"));
-  assert.ok(frames.some(frame => frame.includes("PAT 1/8") && frame.includes("TONE 4")));
+  assert.ok(loadFrame >= 1, "L should have opened the load browser instead of loading silently");
+  const clearedIndex = frames.findIndex(frame => step0Cell(frame) === ".");
+  assert.ok(clearedIndex >= 0, "clearing the pattern should have switched step 0 off before the reload");
+  assert.ok(frames.slice(clearedIndex + 1).some(frame => step0Cell(frame) === "4"),
+    "loading the picked file through the browser should restore step 0's tone-4 note");
 });
 
 test("Tracker Music save browser opens the SD app directory from root", async () => {
