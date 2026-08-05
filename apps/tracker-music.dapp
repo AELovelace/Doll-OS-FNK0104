@@ -1,17 +1,18 @@
 # @dapp-format 1
 # @id tracker-music
 # @name Tracker Music
-# @version 1.3.3
+# @version 1.4.0
 # @boards fnk0104
-# @runtime >=1.7.0 <2.0.0
+# @runtime >=1.8.0 <2.0.0
 # @echo off
 # @summary An eight-pattern song sequencer for the three-channel synth
 # /apps/tracker-music.dapp
 # Arrows move, space toggles a step, 1-6 set the selected note tone, [] changes
 # pattern, comma/dot moves the song cursor, A assigns pattern to song, P plays
-# song, +/- changes tempo, Enter plays one loop, H/? helps, S opens save browser,
-# L opens load browser, C clears the current pattern, X trims song length,
-# Escape exits.
+# song, +/- changes tempo, Enter plays one loop, W cycles the current channel's
+# waveform (sine/triangle/square/sawtooth/noise), H/? helps, S opens save
+# browser, L opens load browser, C clears the current pattern, X trims song
+# length, Escape exits.
 
 CANVAS 60 20
 DIM p1 128
@@ -53,6 +54,9 @@ SET bpm 120
 SET tone1 0
 SET tone2 2
 SET tone3 3
+SET wave1 2
+SET wave2 1
+SET wave3 4
 SETSTR saveDir "/apps"
 SETSTR saveName "tracker-music.dat"
 SETSTR savePath "/apps/tracker-music.dat"
@@ -90,6 +94,8 @@ IF $k = 108 GOTO loadkey
 IF $k = 76 GOTO loadkey
 IF $k = 99 GOTO clearkey
 IF $k = 67 GOTO clearkey
+IF $k = 119 GOTO cyclewave
+IF $k = 87 GOTO cyclewave
 IF $k = 104 GOTO helpkey
 IF $k = 72 GOTO helpkey
 IF $k = 63 GOTO helpkey
@@ -112,6 +118,24 @@ GOTO redraw
 SET tone2 $tone
 SET t2[$idx] $tone
 SET p2[$idx] 1
+GOTO redraw
+
+:cyclewave
+IF $channel = 1 GOTO cyclewave1
+IF $channel = 2 GOTO cyclewave2
+ADD wave3 1
+IF $wave3 <= 4 GOTO redraw
+SET wave3 0
+GOTO redraw
+:cyclewave1
+ADD wave1 1
+IF $wave1 <= 4 GOTO redraw
+SET wave1 0
+GOTO redraw
+:cyclewave2
+ADD wave2 1
+IF $wave2 <= 4 GOTO redraw
+SET wave2 0
 GOTO redraw
 
 :left
@@ -226,15 +250,21 @@ EXPR playidx $playpat * 16 + $playstep
 WAVESTOP
 IF $p1[$playidx] = 0 GOTO pl2
 SET playtone $t1[$playidx]
-WAVE 1 square $f1[$playtone] 22
+SET widx $wave1
+GOSUB wavename
+WAVE 1 $wname $f1[$playtone] 22
 :pl2
 IF $p2[$playidx] = 0 GOTO pl3
 SET playtone $t2[$playidx]
-WAVE 2 triangle $f2[$playtone] 18
+SET widx $wave2
+GOSUB wavename
+WAVE 2 $wname $f2[$playtone] 18
 :pl3
 IF $p3[$playidx] = 0 GOTO plwait
 SET playtone $t3[$playidx]
-WAVE 3 noise $f3[$playtone] 12
+SET widx $wave3
+GOSUB wavename
+WAVE 3 $wname $f3[$playtone] 12
 :plwait
 SET step $playstep
 GOSUB draw
@@ -288,21 +318,26 @@ EXPR idx $pattern * 16 + $step
 IF $channel = 1 GOTO cur1
 IF $channel = 2 GOTO cur2
 SET curtone $t3[$idx]
+SET curwave $wave3
 GOTO curdone
 :cur1
 SET curtone $t1[$idx]
+SET curwave $wave1
 GOTO curdone
 :cur2
 SET curtone $t2[$idx]
+SET curwave $wave2
 :curdone
 EXPR curmark $curtone + 1
 EXPR patdisp $pattern + 1
 EXPR songdisp $songpos + 1
+SET widx $curwave
+GOSUB wavename
 COLOR pink
 PUT 0 0 "TRACKER MUSIC"
 COLOR white
 PUT 0 1 "PAT $patdisp/8  SONG $songdisp/$songLen  BPM $bpm"
-PUT 0 2 "CH $channel  TONE $curmark"
+PUT 0 2 "CH $channel  TONE $curmark  WAVE $wlabel"
 COLOR cyan
 PUT 0 4 "    1 2 3 4 5 6 7 8 9 A B C D E F G"
 SET i 0
@@ -341,9 +376,15 @@ ADD i 1
 GOTO drawloop
 :drawcursor
 COLOR white
-PUT 0 7 "S"
-PUT 0 10 "T"
-PUT 0 13 "N"
+SET widx $wave1
+GOSUB wavename
+PUT 0 7 "$wlabel"
+SET widx $wave2
+GOSUB wavename
+PUT 0 10 "$wlabel"
+SET widx $wave3
+GOSUB wavename
+PUT 0 13 "$wlabel"
 EXPR x 4 + $step * 2
 EXPR y 4 + $channel * 3
 COLOR green
@@ -382,18 +423,46 @@ PUT 0 2 "arrows  move channels and steps"
 PUT 0 4 "space   toggle note    1-6 set tone"
 PUT 0 6 "enter   play pattern   P play song"
 PUT 0 8 "[ / ]   switch pattern"
+PUT 0 9 "W       cycle channel's waveform"
 PUT 0 10 ", / .   move song cursor, . extends"
 PUT 0 12 "A       assign pattern to song slot"
 PUT 0 14 "S       save browser   L load browser"
 PUT 0 16 "N       new dir in save/load browser"
 PUT 0 18 "+/- tempo  C clear pattern  X trim  esc quit"
 COLOR cyan
-PUT 0 19 "S square, T triangle, N noise. Any key returns."
+PUT 0 19 "SIN/TRI/SQR/SAW/NSE = waveform. Any key returns."
 FLIP
 :helpwait
 WAIT 16
 KEY hk
 IF $hk = 0 GOTO helpwait
+RETURN
+
+#looks up $widx (0=sine 1=triangle 2=square 3=sawtooth, else noise) into
+#$wname (the WAVE opcode's kind argument) and $wlabel (3-char row display)
+:wavename
+IF $widx = 0 GOTO wn_sine
+IF $widx = 1 GOTO wn_tri
+IF $widx = 2 GOTO wn_sq
+IF $widx = 3 GOTO wn_saw
+SETSTR wname "noise"
+SETSTR wlabel "NSE"
+RETURN
+:wn_sine
+SETSTR wname "sine"
+SETSTR wlabel "SIN"
+RETURN
+:wn_tri
+SETSTR wname "triangle"
+SETSTR wlabel "TRI"
+RETURN
+:wn_sq
+SETSTR wname "square"
+SETSTR wlabel "SQR"
+RETURN
+:wn_saw
+SETSTR wname "sawtooth"
+SETSTR wlabel "SAW"
 RETURN
 
 :inittones
@@ -707,9 +776,10 @@ RETURN
 :save
 FOPEN $savePath write
 IF $fok = 0 GOTO svdone
-FWRITE "TM3"
+FWRITE "TM4"
 FWRITE "$bpm"
 FWRITE "$tone1 $tone2 $tone3"
+FWRITE "$wave1 $wave2 $wave3"
 FWRITE "$pattern"
 FWRITE "$patternCount"
 FWRITE "$songpos"
@@ -800,6 +870,7 @@ IF $have = 0 GOTO lddone
 FOPEN $savePath read
 IF $fok = 0 GOTO lddone
 FREAD text
+IFEQ $text "TM4" GOTO ldv4
 IFEQ $text "TM3" GOTO ldv3
 IFEQ $text "TM2" GOTO ldv2
 GOSUB str2num
@@ -818,6 +889,107 @@ SET pat 0
 SET ldabort 0
 GOSUB loadpat
 GOTO lddone
+
+:ldv4
+FREAD text
+GOSUB str2num
+IF $got = 1 GOTO ldv4_bpm
+GOTO ldv4_tones
+:ldv4_bpm
+SET bpm $num
+:ldv4_tones
+FREAD line
+SET pos 0
+GOSUB readnum
+SET tone1 $num
+GOSUB readnum
+SET tone2 $num
+GOSUB readnum
+SET tone3 $num
+GOSUB inittones
+FREAD line
+SET pos 0
+GOSUB readnum
+SET wave1 $num
+GOSUB readnum
+SET wave2 $num
+GOSUB readnum
+SET wave3 $num
+GOSUB clampwaves
+FREAD text
+GOSUB str2num
+IF $got = 1 GOTO ldv4_pattern
+GOTO ldv4_count
+:ldv4_pattern
+SET pattern $num
+IF $pattern >= 0 GOTO ldv4_pat_hi
+SET pattern 0
+:ldv4_pat_hi
+IF $pattern < $patternCount GOTO ldv4_count
+EXPR pattern $patternCount - 1
+:ldv4_count
+FREAD text
+GOSUB str2num
+IF $got = 1 GOTO ldv4_count_ok
+SET loadpatterns $patternCount
+GOTO ldv4_songpos
+:ldv4_count_ok
+SET loadpatterns $num
+IF $loadpatterns >= 1 GOTO ldv4_count_high
+SET loadpatterns 1
+:ldv4_count_high
+IF $loadpatterns <= $patternCount GOTO ldv4_songpos
+SET loadpatterns $patternCount
+:ldv4_songpos
+FREAD text
+GOSUB str2num
+IF $got = 1 GOTO ldv4_songpos_ok
+GOTO ldv4_songlen
+:ldv4_songpos_ok
+SET songpos $num
+IF $songpos >= 0 GOTO ldv4_songpos_hi
+SET songpos 0
+:ldv4_songpos_hi
+IF $songpos < 16 GOTO ldv4_songlen
+SET songpos 15
+:ldv4_songlen
+FREAD text
+GOSUB str2num
+IF $got = 1 GOTO ldv4_songlen_ok
+GOTO ldv4_songline
+:ldv4_songlen_ok
+SET songLen $num
+IF $songLen >= 1 GOTO ldv4_songlen_hi
+SET songLen 1
+:ldv4_songlen_hi
+IF $songLen <= 16 GOTO ldv4_songpos_len
+SET songLen 16
+:ldv4_songpos_len
+IF $songpos < $songLen GOTO ldv4_songline
+EXPR songpos $songLen - 1
+:ldv4_songline
+FREAD line
+IF $feof = 1 GOTO lddone
+SET i 0
+:ldv4_songread
+IF $i >= 16 GOTO ldv4_read
+CHARAT val $line $i
+IF $val < 48 GOTO ldv4_songnext
+IF $val > 55 GOTO ldv4_songnext
+SUB val 48
+SET song[$i] $val
+:ldv4_songnext
+ADD i 1
+GOTO ldv4_songread
+:ldv4_read
+SET pat 0
+SET ldabort 0
+:ldv4_pat
+IF $pat >= $loadpatterns GOTO lddone
+GOSUB loadpat
+IF $ldabort = 1 GOTO lddone
+ADD pat 1
+GOTO ldv4_pat
 
 :ldv3
 FREAD text
@@ -1072,6 +1244,29 @@ GOTO sn_loop
 :sn_bad
 SET got 0
 :sn_done
+RETURN
+
+#clamps a loaded wave1/wave2/wave3 into 0..4 (sine..noise), in case a hand-edited
+#or corrupted save has something out of range
+:clampwaves
+IF $wave1 >= 0 GOTO cw1_hi
+SET wave1 0
+:cw1_hi
+IF $wave1 <= 4 GOTO cw2_lo
+SET wave1 4
+:cw2_lo
+IF $wave2 >= 0 GOTO cw2_hi
+SET wave2 0
+:cw2_hi
+IF $wave2 <= 4 GOTO cw3_lo
+SET wave2 4
+:cw3_lo
+IF $wave3 >= 0 GOTO cw3_hi
+SET wave3 0
+:cw3_hi
+IF $wave3 <= 4 GOTO cwdone
+SET wave3 4
+:cwdone
 RETURN
 
 :leave

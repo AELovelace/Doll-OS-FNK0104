@@ -31,6 +31,7 @@ static DappWaveType dappSynthParseType(String name) {
     if (name == "sine" || name == "sin") return DAPP_WAVE_SINE;
     if (name == "triangle" || name == "tri") return DAPP_WAVE_TRIANGLE;
     if (name == "square" || name == "sq") return DAPP_WAVE_SQUARE;
+    if (name == "sawtooth" || name == "saw") return DAPP_WAVE_SAWTOOTH;
     if (name == "noise") return DAPP_WAVE_NOISE;
     return DAPP_WAVE_OFF;
 }
@@ -41,6 +42,13 @@ static int16_t dappSynthTriangle(uint32_t phase) {
         ? (-32767 + (int32_t)p * 512)
         : (32767 - (int32_t)(p - 128) * 512);
     return (int16_t)value;
+}
+
+//linear ramp: the top 16 bits of the running phase counter, recentered around
+//zero, rise for one full cycle and then wrap -- no lookup table needed, unlike
+//sine, because the ramp *is* the phase.
+static int16_t dappSynthSawtooth(uint32_t phase) {
+    return (int16_t)((int32_t)(phase >> 16) - 32768);
 }
 
 static void dappSynthTask(void* parameter) {
@@ -69,6 +77,8 @@ static void dappSynthTask(void* parameter) {
                     raw = dappSynthSine[(uint8_t)(phase[channel] >> 24)];
                 } else if (setting.type == DAPP_WAVE_TRIANGLE) {
                     raw = (int32_t)dappSynthTriangle(phase[channel]) * DAPP_SYNTH_PEAK_PER_CHANNEL / 32767;
+                } else if (setting.type == DAPP_WAVE_SAWTOOTH) {
+                    raw = (int32_t)dappSynthSawtooth(phase[channel]) * DAPP_SYNTH_PEAK_PER_CHANNEL / 32767;
                 } else if (setting.type == DAPP_WAVE_SQUARE) {
                     raw = (phase[channel] & 0x80000000U)
                         ? -DAPP_SYNTH_PEAK_PER_CHANNEL : DAPP_SYNTH_PEAK_PER_CHANNEL;
@@ -143,7 +153,8 @@ bool dappSynthSetChannel(int channelNumber, String waveform, long frequency, lon
     lowered.toLowerCase();
     bool validType = lowered == "off" || lowered == "sine" || lowered == "sin" ||
                      lowered == "triangle" || lowered == "tri" ||
-                     lowered == "square" || lowered == "sq" || lowered == "noise";
+                     lowered == "square" || lowered == "sq" ||
+                     lowered == "sawtooth" || lowered == "saw" || lowered == "noise";
     if (!validType || frequency < 1 || frequency > 12000 || level < 0 || level > 100) {
         return false;
     }

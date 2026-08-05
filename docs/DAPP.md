@@ -258,13 +258,15 @@ WAIT 2000
 WAVESTOP
 ```
 
-Kinds are `sine`, `triangle`, `square`, `noise`, and `off`; frequency is
-`1..12000` Hz and level is `0..100` per channel. Noise frequency controls its
-sample-and-hold rate. The three voices are mixed and clamped before reaching the
-onboard ES8311 speaker. Starting the synth stops/relinquishes internet radio,
-and leaving the app always silences and releases the synth. `$audiook` reports
-whether the most recent hardware start succeeded. `run synth` is the interactive
-three-channel mixer and waveform display.
+Kinds are `sine`, `triangle`, `square`, `sawtooth`, `noise`, and `off`;
+frequency is `1..12000` Hz and level is `0..100` per channel. `sawtooth`
+requires AppRunner `>=1.8.0` -- older runtimes reject it as an invalid
+waveform. Noise frequency controls its sample-and-hold rate. The three voices
+are mixed and clamped before reaching the onboard ES8311 speaker. Starting the
+synth stops/relinquishes internet radio, and leaving the app always silences
+and releases the synth. `$audiook` reports whether the most recent hardware
+start succeeded. `run synth` is the interactive three-channel mixer and
+waveform display.
 
 `CANVAS` replaces the scrolling terminal with a grid you address by cell. `PUT`
 writes into the grid without drawing anything, and `FLIP` shows the result — so a

@@ -2420,7 +2420,17 @@ static long appDecodeKeyByte(uint8_t b, DappKeyState& st) {
             st.params += (char)b;
             return DAPP_KEY_NONE;
         }
+        const String params = st.params;
         st.phase = DKEY_NORMAL;
+
+        //Ctrl+Up/Down nudges radio volume everywhere else (shell prompt, raw ssh/telnet,
+        //the text editor) -- this decoder collapsed the params and read every CSI...A/B
+        //as a plain arrow, so the same chord silently steered whatever app was running
+        //instead of touching the volume at all while one was open
+        if (params == "1;5" && (b == 'A' || b == 'B')) {
+            radioAdjustVolume(b == 'A' ? 1 : -1);
+            return DAPP_KEY_NONE;
+        }
         switch ((char)b) {
             case 'A': return DAPP_KEY_UP;
             case 'B': return DAPP_KEY_DOWN;
@@ -2919,7 +2929,7 @@ static bool appExecute(DappProgram& program) {
             String parts[4];
             int count = splitCommand(arg, parts, 4);
             if (count < 4) {
-                outLine("run: WAVE needs <channel> sine|triangle|square|noise|off <hz> <level>", C_RED);
+                outLine("run: WAVE needs <channel> sine|triangle|square|sawtooth|noise|off <hz> <level>", C_RED);
                 return false;
             }
             int channel = (int)appValueOf(parts[0], program);
@@ -2931,7 +2941,8 @@ static bool appExecute(DappProgram& program) {
             bool validWaveform = loweredWaveform == "off" || loweredWaveform == "sine" ||
                 loweredWaveform == "sin" || loweredWaveform == "triangle" ||
                 loweredWaveform == "tri" || loweredWaveform == "square" ||
-                loweredWaveform == "sq" || loweredWaveform == "noise";
+                loweredWaveform == "sq" || loweredWaveform == "sawtooth" ||
+                loweredWaveform == "saw" || loweredWaveform == "noise";
             if (channel < 1 || channel > 3 || !validWaveform ||
                 frequency < 1 || frequency > 12000 || level < 0 || level > 100) {
                 outLine("run: WAVE needs channel 1..3, hz 1..12000, level 0..100, and a valid waveform", C_RED);

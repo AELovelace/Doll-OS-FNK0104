@@ -994,12 +994,12 @@ export class DappRuntime {
     }
     if (op === "WAVE") {
       const parts = splitArgs(arg, 4);
-      if (parts.length < 4) throw this.error("WAVE needs <channel> sine|triangle|square|noise|off <hz> <level>");
+      if (parts.length < 4) throw this.error("WAVE needs <channel> sine|triangle|square|sawtooth|noise|off <hz> <level>");
       const channel = this.valueOf(parts[0]);
       const waveform = this.stringOperand(parts[1]).toLowerCase();
       const frequency = this.valueOf(parts[2]);
       const level = this.valueOf(parts[3]);
-      if (channel < 1 || channel > 3 || !["off", "sine", "sin", "triangle", "tri", "square", "sq", "noise"].includes(waveform)
+      if (channel < 1 || channel > 3 || !["off", "sine", "sin", "triangle", "tri", "square", "sq", "sawtooth", "saw", "noise"].includes(waveform)
           || frequency < 1 || frequency > 12000 || level < 0 || level > 100) {
         throw this.error("WAVE needs channel 1..3, hz 1..12000, level 0..100, and a valid waveform");
       }

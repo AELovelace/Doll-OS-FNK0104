@@ -1033,14 +1033,17 @@ test("Tracker Music saves per-note tones and opens help", async () => {
   assert.ok(frames.some(frame => frame.includes("TRACKER MUSIC CONTROLS")));
   assert.ok(frames.some(frame => frame.includes("PAT 1/8") && frame.includes("TONE 4")));
   const saved = files.read("/apps/tracker-music.dat").trimEnd().split("\n");
-  assert.equal(saved.length, 56);
-  assert.deepEqual(saved.slice(0, 8), ["TM3", "120", "3 2 3", "0", "8", "0", "1", "0000000000000000"]);
-  assert.equal(saved[8], "1000000000000000");
-  assert.equal(saved[9], "0000000000000000");
+  assert.equal(saved.length, 57);
+  //"2 1 4" is the default square/triangle/noise per channel, unchanged since this
+  //test never presses W
+  assert.deepEqual(saved.slice(0, 9),
+    ["TM4", "120", "3 2 3", "2 1 4", "0", "8", "0", "1", "0000000000000000"]);
+  assert.equal(saved[9], "1000000000000000");
   assert.equal(saved[10], "0000000000000000");
-  assert.equal(saved[11], "3000000000000000");
-  assert.equal(saved[12], "2222222222222222");
-  assert.equal(saved[13], "3333333333333333");
+  assert.equal(saved[11], "0000000000000000");
+  assert.equal(saved[12], "3000000000000000");
+  assert.equal(saved[13], "2222222222222222");
+  assert.equal(saved[14], "3333333333333333");
 });
 
 test("Tracker Music switches and saves multiple patterns independently", async () => {
@@ -1079,10 +1082,11 @@ test("Tracker Music switches and saves multiple patterns independently", async (
   assert.equal(result.ok, true, result.error?.message);
   assert.ok(frames.some(frame => frame.includes("PAT 2/8") && frame.includes("TONE 5")));
   const saved = files.read("/apps/tracker-music.dat").trimEnd().split("\n");
-  assert.deepEqual(saved.slice(0, 8), ["TM3", "120", "4 2 3", "1", "8", "0", "1", "1000000000000000"]);
-  assert.equal(saved[8], "0000000000000000");
-  assert.equal(saved[14], "1000000000000000");
-  assert.equal(saved[17], "4000000000000000");
+  assert.deepEqual(saved.slice(0, 9),
+    ["TM4", "120", "4 2 3", "2 1 4", "1", "8", "0", "1", "1000000000000000"]);
+  assert.equal(saved[9], "0000000000000000");
+  assert.equal(saved[15], "1000000000000000");
+  assert.equal(saved[18], "4000000000000000");
 });
 
 test("Tracker Music migrates old one-pattern saves", async () => {
@@ -1127,9 +1131,10 @@ test("Tracker Music migrates old one-pattern saves", async () => {
 
   assert.equal(result.ok, true, result.error?.message);
   const saved = files.read("/apps/tracker-music.dat").trimEnd().split("\n");
-  assert.deepEqual(saved.slice(0, 8), ["TM3", "140", "3 2 3", "0", "8", "0", "1", "0000000000000000"]);
-  assert.equal(saved[8], "1000000000000000");
-  assert.equal(saved[11], "3000000000000000");
+  assert.deepEqual(saved.slice(0, 9),
+    ["TM4", "140", "3 2 3", "2 1 4", "0", "8", "0", "1", "0000000000000000"]);
+  assert.equal(saved[9], "1000000000000000");
+  assert.equal(saved[12], "3000000000000000");
 });
 
 test("Tracker Music save browser creates a directory and saves a named file", async () => {
@@ -1164,7 +1169,7 @@ test("Tracker Music save browser creates a directory and saves a named file", as
   assert.equal(result.ok, true, result.error?.message);
   assert.ok(files.exists("/apps/songs/jam.dat"));
   const saved = files.read("/apps/songs/jam.dat").trimEnd().split("\n");
-  assert.equal(saved[0], "TM3");
+  assert.equal(saved[0], "TM4");
 });
 
 test("Tracker Music's load browser opens on L, lists the last save location, and loads the picked file", async () => {
@@ -1176,13 +1181,14 @@ test("Tracker Music's load browser opens on L, lists the last save location, and
   let loadFrame = 0;
   const answers = ["songs", "jam.dat"];
   const push = key => runtime.pushKey({ key, ctrlKey: false });
-  //character right after the "S" row label: the step-0 cell. The cursor "@" only
-  //overlays it while the cursor sits on step 0, which the ArrowRight below moves
-  //off of, so this reads the real digit/dot for the rest of the run.
+  //character right after the "SQR" (channel 1's default square-wave label) row
+  //label: the step-0 cell. The cursor "@" only overlays it while the cursor
+  //sits on step 0, which the ArrowRight below moves off of, so this reads the
+  //real digit/dot for the rest of the run.
   const step0Cell = frame => {
-    const line = frame.split("\n").find(l => l.startsWith("S"));
+    const line = frame.split("\n").find(l => l.startsWith("SQR"));
     const stripped = line ? line.replace(/\s+/g, "") : "";
-    return stripped[1];
+    return stripped[3];
   };
   const io = {
     output() {}, clear() {}, status() {}, endCanvas() {}, waveStop() {},
@@ -1231,6 +1237,111 @@ test("Tracker Music's load browser opens on L, lists the last save location, and
   assert.ok(clearedIndex >= 0, "clearing the pattern should have switched step 0 off before the reload");
   assert.ok(frames.slice(clearedIndex + 1).some(frame => step0Cell(frame) === "4"),
     "loading the picked file through the browser should restore step 0's tone-4 note");
+});
+
+test("Tracker Music cycles a channel's waveform with W, actually plays the chosen kind, and persists it through save/load", async () => {
+  const files = new MemoryFiles();
+  const waves = [];
+  let runtime;
+  let step = 0;
+  let saveFrame = 0;
+  let loadFrame = 0;
+  let phase = "setup";
+  let playMark = 0;
+  const push = key => runtime.pushKey({ key, ctrlKey: false });
+  const io = {
+    output() {}, clear() {}, status() {}, endCanvas() {}, waveStop() {},
+    input(_prompt, resolve) { resolve("tracker-music.dat"); },
+    wave(value) { waves.push(value); },
+    canvas(canvas) {
+      const text = chatCanvasText(canvas);
+      if (!text.trim()) return;
+
+      if (text.includes("SAVE TRACKER")) {
+        saveFrame += 1;
+        if (saveFrame === 1) push("s");
+        else push("Escape");
+        return;
+      }
+      if (text.includes("LOAD TRACKER")) {
+        loadFrame += 1;
+        //only file in the (default) save directory, and already the selection
+        if (loadFrame === 1) push("Enter");
+        else push("Escape");
+        return;
+      }
+
+      if (phase === "setup") {
+        step += 1;
+        if (step === 1) { push(" "); return; }        //toggle step 0 on, channel 1
+        if (step === 2) { push("w"); return; }         //square -> sawtooth
+        if (step === 3) {
+          phase = "playSawtooth";
+          playMark = waves.length;
+          push("Enter");                               //play one loop
+          return;
+        }
+      }
+      if (phase === "playSawtooth") {
+        if (waves.slice(playMark).some(w => w.channel === 1 && w.waveform === "sawtooth")) {
+          phase = "opensave";
+          push("Escape");                              //abort the play-through early
+        }
+        return;
+      }
+      if (phase === "opensave") {
+        phase = "recycle";
+        push("s");                                     //open the save browser
+        return;
+      }
+      if (phase === "recycle") {
+        phase = "playNoise";
+        playMark = waves.length;
+        push("w");                                     //sawtooth -> noise, saved value unchanged
+        return;
+      }
+      if (phase === "playNoise") {
+        phase = "playNoiseGo";
+        push("Enter");
+        return;
+      }
+      if (phase === "playNoiseGo") {
+        if (waves.slice(playMark).some(w => w.channel === 1 && w.waveform === "noise")) {
+          phase = "openload";
+          push("Escape");
+        }
+        return;
+      }
+      if (phase === "openload") {
+        phase = "playReloaded";
+        push("l");                                     //open the load browser
+        return;
+      }
+      if (phase === "playReloaded") {
+        phase = "playReloadedGo";
+        playMark = waves.length;
+        push("Enter");
+        return;
+      }
+      if (phase === "playReloadedGo") {
+        if (waves.slice(playMark).some(w => w.channel === 1 && w.waveform === "sawtooth")) {
+          phase = "done";
+          push("Escape");
+        }
+        return;
+      }
+      push("Escape");
+    }
+  };
+  runtime = new DappRuntime(io, files);
+  const source = await readFile(new URL("../apps/tracker-music.dapp", import.meta.url), "utf8");
+  const result = await runtime.run(source);
+
+  assert.equal(result.ok, true, result.error?.message);
+  assert.equal(phase, "done", "the run should have reached every phase in order");
+  const saved = files.read("/apps/tracker-music.dat").trimEnd().split("\n");
+  //"3 1 4" is wave1=sawtooth (cycled from the square default), wave2/wave3 untouched
+  assert.equal(saved[3], "3 1 4");
 });
 
 test("Tracker Music save browser opens the SD app directory from root", async () => {
