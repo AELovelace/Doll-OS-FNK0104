@@ -81,6 +81,12 @@ const approvedNetworkOrigins = new Set();
 // private-network LLM server to this.
 const ASUKA_DEFAULT_SYSTEM_PROMPT = "You are ASUKA, a concise local assistant running through DOLL-OS.";
 const ASUKA_DEFAULT_ENDPOINT = "https://sadgirlsclub.wtf/asuka/v1/chat/completions";
+// Baked into the shipped JS so casual/automated hits on the deployed asuka-proxy
+// get turned away without a visitor having to type /token first. This is NOT a
+// real secret -- anyone reading page source or devtools can see it -- it only
+// deters drive-by requests, not a targeted one. Must match asuka-proxy's own
+// AUTH_TOKEN env var exactly (see asuka-proxy/README.md).
+const ASUKA_DEFAULT_TOKEN = "57d1e0b40790dc7d4c3775be58d8c5e4e34f101848fea05df597ebabbd2cb078";
 const ASUKA_SYSTEM_PROMPT_FILE = "/system/conf/asuka-system.dsys";
 const ASUKA_HISTORY_MAX = 6;
 const ASUKA_CLASSIFIER_PROMPT = "You are ASUKA's tool-selection pass running on DOLL-OS. If the user's " +
@@ -92,7 +98,7 @@ const ASUKA_CLASSIFIER_PROMPT = "You are ASUKA's tool-selection pass running on 
   'exactly {"tool":"fetch_url","arguments":{"url":"https://...","max_chars":4000}}. For current local ' +
   'date/time, use exactly {"tool":"current_datetime","arguments":{}}. If no live tool is needed, answer normally.';
 let asukaEndpoint = "";
-let asukaToken = ""; // session-only, never persisted -- same rule llm-chat.dapp follows
+let asukaToken = ""; // reset to ASUKA_DEFAULT_TOKEN per session in openAsuka(); /token overrides it, session-only
 let asukaSystemPrompt = ASUKA_DEFAULT_SYSTEM_PROMPT;
 let asukaHistory = [];
 let asukaActive = false;
@@ -939,7 +945,7 @@ function asukaHandleSlashCommand(text) {
   const arg = rest.join(" ").trim();
   if (cmd === "help") {
     appendOutput("ASUKA commands:", "cyan");
-    ["/help", "/status", "/endpoint <url>", "/token <bearer, blank clears it>",
+    ["/help", "/status", "/endpoint <url>", "/token <bearer>, /token clear",
       "/system", "/system <prompt>", "/system reset", "/search on|off",
       "/bravekey <key, blank clears it>", "/owmkey <key, blank clears it>",
       "/weather", "/weather <lat> <lon> <label>", "/clear", "/quit"].forEach(line => appendOutput(line));
@@ -962,8 +968,17 @@ function asukaHandleSlashCommand(text) {
     return false;
   }
   if (cmd === "token") {
+    if (!arg) {
+      appendOutput(`Token: ${asukaToken ? "set (session only)" : "(none)"}`, "cyan");
+      return false;
+    }
+    if (arg === "clear") {
+      asukaToken = "";
+      appendOutput("asuka: token cleared.", "green");
+      return false;
+    }
     asukaToken = arg;
-    appendOutput(arg ? "asuka: token set (kept in memory only, not saved)." : "asuka: token cleared.", "green");
+    appendOutput("asuka: token set (kept in memory only, not saved).", "green");
     return false;
   }
   if (cmd === "system") {
@@ -1054,7 +1069,7 @@ function openAsuka() {
   const storedPrompt = (fileSystem.read(ASUKA_SYSTEM_PROMPT_FILE) || "").trim();
   asukaSystemPrompt = storedPrompt || ASUKA_DEFAULT_SYSTEM_PROMPT;
   if (!storedPrompt) fileSystem.write(ASUKA_SYSTEM_PROMPT_FILE, asukaSystemPrompt);
-  asukaToken = "";
+  asukaToken = ASUKA_DEFAULT_TOKEN;
   asukaBraveKey = "";
   asukaOwmKey = "";
   asukaHistory = [];
