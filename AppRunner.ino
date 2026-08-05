@@ -2506,6 +2506,7 @@ static String appReadInput(const String& prompt, bool masked, bool echoInput) {
         appPollAbortChord();
         if (dappAbort) {
             commandCursorPos = 0;
+            setActiveInput("", "", false);
             return "";
         }
         LineInputResult r = readLineEditedInput(input);
@@ -2514,6 +2515,16 @@ static String appReadInput(const String& prompt, bool masked, bool echoInput) {
         }
         setActiveInput(prompt, input, masked);
         appRuntimeYield();
+        //appRuntimeYield() skips its own drawDisplayFrame() call while a canvas app is
+        //active, to keep a frame mid-construction (between CLS/PUT and FLIP) from
+        //flashing onto the panel half-built. That gate also caught this fully-formed,
+        //already-FLIPped frame just sitting behind a blocking INPUT prompt (e.g.
+        //tracker-music's save-browser "S"/"N" prompts) -- so every keystroke, including
+        //backspace, edited the buffer correctly but was never pushed to the panel, and
+        //only the state at the moment of the *next* unrelated FLIP ever became visible.
+        if (dappCanvasActive) {
+            drawDisplayFrame();
+        }
 
         if (r == LINE_SUBMITTED) {
             String submitted = input;
@@ -2522,6 +2533,9 @@ static String appReadInput(const String& prompt, bool masked, bool echoInput) {
             if (echoInput) {
                 outLine(prompt + (masked ? "[hidden]" : submitted), C_CYAN);
             }
+            //otherwise the submitted text sits in the command bar under a canvas app
+            //(e.g. tracker-music's save-name prompt) until something else overwrites it
+            setActiveInput("", "", false);
             return submitted;
         }
     }

@@ -1167,6 +1167,50 @@ test("Tracker Music save browser creates a directory and saves a named file", as
   assert.equal(saved[0], "TM3");
 });
 
+test("Tracker Music loads back from the save browser's last location, not the default path", async () => {
+  const files = new MemoryFiles();
+  const frames = [];
+  let runtime;
+  let step = 0;
+  let saveFrame = 0;
+  const answers = ["songs", "jam.dat"];
+  const push = key => runtime.pushKey({ key, ctrlKey: false });
+  const io = {
+    output() {}, clear() {}, status() {}, endCanvas() {}, waveStop() {},
+    input(_prompt, resolve) { resolve(answers.shift() || ""); },
+    canvas(canvas) {
+      const text = chatCanvasText(canvas);
+      if (!text.trim()) return;
+      frames.push(text);
+      if (text.includes("SAVE TRACKER")) {
+        saveFrame += 1;
+        if (saveFrame === 1) push("n");
+        else if (saveFrame === 2) push("s");
+        else if (saveFrame >= 3) push("Escape");
+        return;
+      }
+      step += 1;
+      //set a distinctive tone, save it to a custom directory via the browser, clear the
+      //pattern so the in-memory state no longer proves anything, then load: if `load` still
+      //reads the hardcoded default path instead of $savePath it finds nothing there and the
+      //pattern stays cleared
+      if (step === 1) push("4");
+      else if (step === 2) push("s");
+      else if (step === 3) push("c");
+      else if (step === 4) push("l");
+      else if (step >= 5) push("Escape");
+    }
+  };
+  runtime = new DappRuntime(io, files);
+  const source = await readFile(new URL("../apps/tracker-music.dapp", import.meta.url), "utf8");
+  const result = await runtime.run(source);
+
+  assert.equal(result.ok, true, result.error?.message);
+  assert.ok(files.exists("/apps/songs/jam.dat"));
+  assert.ok(!files.exists("/apps/tracker-music.dat"));
+  assert.ok(frames.some(frame => frame.includes("PAT 1/8") && frame.includes("TONE 4")));
+});
+
 test("Tracker Music save browser opens the SD app directory from root", async () => {
   const files = new MemoryFiles();
   let runtime;

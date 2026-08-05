@@ -1,7 +1,7 @@
 # @dapp-format 1
 # @id tracker-music
 # @name Tracker Music
-# @version 1.3.1
+# @version 1.3.2
 # @boards fnk0104
 # @runtime >=1.7.0 <2.0.0
 # @echo off
@@ -767,9 +767,9 @@ FCLOSE
 RETURN
 
 :load
-FEXISTS have "/apps/tracker-music.dat"
+FEXISTS have $savePath
 IF $have = 0 GOTO lddone
-FOPEN "/apps/tracker-music.dat" read
+FOPEN $savePath read
 IF $fok = 0 GOTO lddone
 FREAD text
 IFEQ $text "TM3" GOTO ldv3
