@@ -642,9 +642,17 @@ async function asukaCompletion(prompt, { onChunk } = {}) {
     }
     try {
       const parsed = JSON.parse(payload);
-      if (typeof parsed.content === "string" && parsed.content) {
-        full += parsed.content;
-        onChunk?.(parsed.content);
+      // Asuka.ino's own simplified dialect puts the token at a bare "content";
+      // a standard OpenAI-compatible server (what asuka-proxy actually fronts)
+      // streams choices[0].delta.content instead. Accept either shape so this
+      // works against both without needing to know which one is on the other end.
+      const token = typeof parsed.content === "string" ? parsed.content
+        : typeof parsed.choices?.[0]?.delta?.content === "string" ? parsed.choices[0].delta.content
+        : typeof parsed.choices?.[0]?.message?.content === "string" ? parsed.choices[0].message.content
+        : "";
+      if (token) {
+        full += token;
+        onChunk?.(token);
       }
     } catch {
       // a malformed SSE chunk is dropped, same tolerance asukaJsonFieldString gives it
