@@ -85,7 +85,7 @@ let asukaEndpoint = "";
 let asukaToken = ""; // session-only, never persisted -- same rule llm-chat.dapp follows
 let asukaSystemPrompt = ASUKA_DEFAULT_SYSTEM_PROMPT;
 let asukaHistory = [];
-let asukaBusy = false;
+let asukaActive = false;
 let asukaAbort = null;
 
 function appendOutput(text, color = "white") {
@@ -318,6 +318,11 @@ function beginShellSession() {
 
 function bootSequence() {
   gameBoy.exit();
+  asukaAbort?.abort();
+  asukaAbort = null;
+  asukaStreamEntry = null;
+  asukaActive = false;
+  stopButton.textContent = "STOP APP";
   displayState.powered = true;
   displayState.splash = true;
   displayState.canvas = null;
@@ -537,35 +542,20 @@ function openEditor(path, content) {
   $("#editor-dialog").showModal();
 }
 
-function asukaScrollToBottom() {
-  const log = $("#asuka-log");
-  log.scrollTop = log.scrollHeight;
+// the entry asukaStreamAppend() mutates in place as tokens arrive, so the
+// growing reply re-wraps through drawHistory() like any other output line
+let asukaStreamEntry = null;
+
+function asukaStreamStart() {
+  appendOutput("ASUKA:", "pink");
+  appendOutput("");
+  asukaStreamEntry = displayState.history[displayState.history.length - 1];
 }
 
-// kind: "user" | "asuka" | "system". Returns the element chunks get appended to
-// (asukaSendMessage streams tokens into it as they arrive).
-function asukaLog(text, kind = "system") {
-  const row = document.createElement("div");
-  row.className = `asuka-message ${kind}`;
-  if (kind === "user" || kind === "asuka") {
-    const who = document.createElement("span");
-    who.className = "who";
-    who.textContent = kind === "user" ? "you" : "ASUKA";
-    row.append(who);
-  }
-  const body = document.createElement("span");
-  body.textContent = text;
-  row.append(body);
-  $("#asuka-log").append(row);
-  asukaScrollToBottom();
-  return body;
-}
-
-function asukaSetBusy(busy) {
-  asukaBusy = busy;
-  $("#asuka-input").disabled = busy;
-  $("#asuka-send").disabled = busy;
-  if (!busy && $("#asuka-dialog").open) $("#asuka-input").focus();
+function asukaStreamAppend(chunk) {
+  if (!asukaStreamEntry) return;
+  asukaStreamEntry.text += chunk;
+  renderDisplay();
 }
 
 function asukaAddHistory(sender, message) {
@@ -594,7 +584,7 @@ async function asukaSendMessage(userText) {
   if (asukaToken) headers.Authorization = `Bearer ${asukaToken}`;
 
   if (io.authorizeHttp && !(await io.authorizeHttp({ url: asukaEndpoint, method: "POST" }))) {
-    asukaLog("Request blocked. Enable APP NETWORK ACCESS to allow it.", "system");
+    appendOutput("asuka: request blocked. Enable APP NETWORK ACCESS to allow it.", "yellow");
     return;
   }
 
@@ -611,16 +601,16 @@ async function asukaSendMessage(userText) {
       signal: asukaAbort.signal
     });
   } catch (err) {
-    asukaLog(err.name === "AbortError" ? "Request cancelled." : `Connection failed: ${err.message}`, "system");
+    appendOutput(err.name === "AbortError" ? "asuka: request cancelled." : `asuka: connection failed: ${err.message}`, "red");
     return;
   }
 
   if (!response.ok || !response.body) {
-    asukaLog(`LLM HTTP error: ${response.status} ${response.statusText || ""}`.trim(), "system");
+    appendOutput(`asuka: LLM HTTP error: ${response.status} ${response.statusText || ""}`.trim(), "red");
     return;
   }
 
-  const bubble = asukaLog("", "asuka");
+  asukaStreamStart();
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -639,8 +629,7 @@ async function asukaSendMessage(userText) {
       const parsed = JSON.parse(payload);
       if (typeof parsed.content === "string" && parsed.content) {
         full += parsed.content;
-        bubble.textContent += parsed.content;
-        asukaScrollToBottom();
+        asukaStreamAppend(parsed.content);
       }
     } catch {
       // a malformed SSE chunk is dropped, same tolerance asukaJsonFieldString gives it
@@ -660,90 +649,81 @@ async function asukaSendMessage(userText) {
     }
     if (!streamDone && buffer.trim()) consumeLine(buffer); // server didn't send a trailing newline
   } catch (err) {
-    if (err.name !== "AbortError") asukaLog(`Stream error: ${err.message}`, "system");
+    if (err.name !== "AbortError") appendOutput(`asuka: stream error: ${err.message}`, "red");
   }
 
-  if (full) {
-    asukaAddHistory("ASUKA", full);
-  } else if (!bubble.textContent) {
-    bubble.closest(".asuka-message")?.remove();
-    asukaLog("(no response)", "system");
-  }
+  if (full) asukaAddHistory("ASUKA", full);
+  else if (asukaStreamEntry && !asukaStreamEntry.text) asukaStreamEntry.text = "(no response)";
+  asukaStreamEntry = null;
 }
 
+// returns true if the line ended the session (/quit)
 function asukaHandleSlashCommand(text) {
   const [rawCmd, ...rest] = text.slice(1).split(" ");
   const cmd = rawCmd.toLowerCase();
   const arg = rest.join(" ").trim();
   if (cmd === "help") {
-    asukaLog([
-      "/help", "/status", "/endpoint <url>", "/token <bearer, blank clears it>",
-      "/system", "/system <prompt>", "/system reset", "/clear", "/quit"
-    ].join("\n"), "system");
-    return;
+    appendOutput("ASUKA commands:", "cyan");
+    ["/help", "/status", "/endpoint <url>", "/token <bearer, blank clears it>",
+      "/system", "/system <prompt>", "/system reset", "/clear", "/quit"].forEach(line => appendOutput(line));
+    return false;
   }
   if (cmd === "status") {
-    asukaLog([
-      `Endpoint: ${asukaEndpoint || "(not set -- use /endpoint <url>)"}`,
-      `Token: ${asukaToken ? "set (session only)" : "(none)"}`,
-      `History: ${asukaHistory.length} line(s) of ${ASUKA_HISTORY_MAX}`
-    ].join("\n"), "system");
-    return;
+    appendOutput(`Endpoint: ${asukaEndpoint || "(not set -- use /endpoint <url>)"}`, "cyan");
+    appendOutput(`Token: ${asukaToken ? "set (session only)" : "(none)"}`);
+    appendOutput(`History: ${asukaHistory.length} line(s) of ${ASUKA_HISTORY_MAX}`);
+    return false;
   }
   if (cmd === "endpoint") {
-    if (!arg) { asukaLog(`Endpoint: ${asukaEndpoint || "(not set)"}`, "system"); return; }
+    if (!arg) { appendOutput(`Endpoint: ${asukaEndpoint || "(not set)"}`, "cyan"); return false; }
     asukaEndpoint = arg;
     settingsSet(fileSystem, "asuka.endpoint", asukaEndpoint);
-    asukaLog(`Endpoint set to ${asukaEndpoint}`, "system");
-    return;
+    appendOutput(`asuka: endpoint set to ${asukaEndpoint}`, "green");
+    return false;
   }
   if (cmd === "token") {
     asukaToken = arg;
-    asukaLog(arg ? "Token set (kept in memory only, not saved)." : "Token cleared.", "system");
-    return;
+    appendOutput(arg ? "asuka: token set (kept in memory only, not saved)." : "asuka: token cleared.", "green");
+    return false;
   }
   if (cmd === "system") {
     if (arg === "reset") {
       asukaSystemPrompt = ASUKA_DEFAULT_SYSTEM_PROMPT;
       fileSystem.write(ASUKA_SYSTEM_PROMPT_FILE, asukaSystemPrompt);
-      asukaLog("System prompt reset to default.", "system");
-      return;
+      appendOutput("asuka: system prompt reset to default.", "green");
+      return false;
     }
-    if (!arg) { asukaLog(`System prompt: ${asukaSystemPrompt}`, "system"); return; }
+    if (!arg) { appendOutput(`System prompt: ${asukaSystemPrompt}`, "cyan"); return false; }
     asukaSystemPrompt = arg;
     fileSystem.write(ASUKA_SYSTEM_PROMPT_FILE, asukaSystemPrompt);
-    asukaLog("System prompt updated.", "system");
-    return;
+    appendOutput("asuka: system prompt updated.", "green");
+    return false;
   }
   if (cmd === "clear") {
     asukaHistory = [];
-    asukaLog("History cleared.", "system");
-    return;
+    appendOutput("asuka: history cleared.", "green");
+    return false;
   }
-  if (cmd === "quit") {
-    $("#asuka-dialog").close();
-    return;
+  if (cmd === "quit" || cmd === "exit") {
+    return true;
   }
-  asukaLog(`Unknown command: /${cmd}. Try /help.`, "system");
+  appendOutput(`asuka: unknown command: /${cmd}. Try /help.`, "red");
+  return false;
 }
 
-async function handleAsukaInput(text) {
-  if (asukaBusy) return;
-  if (text.startsWith("/")) {
-    asukaHandleSlashCommand(text);
-    return;
-  }
+// called from submitShellCommand while asukaActive; returns true once the
+// session should end, same role shouldExit plays in runAsukaBlocking()
+async function handleAsukaLine(rawText) {
+  const text = rawText.trim();
+  if (!text) return false;
+  appendOutput(`> ${text}`, "cyan");
+  if (text.startsWith("/")) return asukaHandleSlashCommand(text);
   if (!asukaEndpoint) {
-    asukaLog("No endpoint set yet. Use /endpoint <url> first.", "system");
-    return;
+    appendOutput("asuka: no endpoint set yet. Use /endpoint <url> first.", "yellow");
+    return false;
   }
-  asukaLog(text, "user");
-  asukaSetBusy(true);
-  try {
-    await asukaSendMessage(text);
-  } finally {
-    asukaSetBusy(false);
-  }
+  await asukaSendMessage(text);
+  return false;
 }
 
 function openAsuka() {
@@ -753,17 +733,30 @@ function openAsuka() {
   if (!storedPrompt) fileSystem.write(ASUKA_SYSTEM_PROMPT_FILE, asukaSystemPrompt);
   asukaToken = "";
   asukaHistory = [];
-  $("#asuka-log").replaceChildren();
-  asukaLog("ASUKA local chat -- browser build, no tool calling (see /help).", "system");
-  asukaLog(asukaEndpoint
+  asukaActive = true;
+  appendOutput("ASUKA local chat -- browser build, no tool calling (see /help).", "pink");
+  appendOutput(asukaEndpoint
     ? `Endpoint: ${asukaEndpoint}`
     : "No endpoint set -- use /endpoint <url> to point this at an OpenAI-compatible " +
       "chat-completions server (e.g. an asuka-proxy deployment). The target must send " +
-      "CORS headers, since this is a direct browser request.", "system");
-  asukaLog("/quit to exit, /help for commands", "system");
-  $("#asuka-input").value = "";
-  $("#asuka-dialog").showModal();
-  $("#asuka-input").focus();
+      "CORS headers, since this is a direct browser request.");
+  appendOutput("/quit to exit, /help for commands");
+  stopButton.textContent = "EXIT ASUKA";
+  stopButton.disabled = false;
+  setInputMode("ASUKA CHAT", "asuka> ");
+  updateStudioControls();
+}
+
+function exitAsuka() {
+  asukaAbort?.abort();
+  asukaAbort = null;
+  asukaStreamEntry = null;
+  asukaActive = false;
+  appendOutput("asuka: exited");
+  stopButton.textContent = "STOP APP";
+  stopButton.disabled = !appRunning;
+  if (displayState.powered && !displayState.splash) setInputMode("SHELL INPUT", shell.prompt());
+  updateStudioControls();
 }
 
 const shell = new DollShell(machine, {
@@ -797,7 +790,24 @@ document.addEventListener("pointerdown", () => { void audio.unlock(); }, { captu
 document.addEventListener("keydown", () => { void audio.unlock(); }, { capture: true });
 
 async function submitShellCommand(value) {
-  if (!displayState.powered || shellBusy || appRunning || gameBoy.active) return;
+  if (!displayState.powered || shellBusy) return;
+  if (asukaActive) {
+    shellBusy = true;
+    commandInput.disabled = true;
+    updateStudioControls();
+    const shouldExit = await handleAsukaLine(value);
+    shellBusy = false;
+    // asukaActive can already be false here if EXIT ASUKA was clicked mid-request
+    // (exitAsuka() already reset the input mode in that case -- don't redo it)
+    if (asukaActive) {
+      if (shouldExit) exitAsuka();
+      else setInputMode("ASUKA CHAT", "asuka> ");
+    }
+    formatStorage();
+    updateStudioControls();
+    return;
+  }
+  if (appRunning || gameBoy.active) return;
   shellBusy = true;
   commandInput.disabled = true;
   updateStudioControls();
@@ -901,7 +911,11 @@ $("#screen-button").addEventListener("click", () => {
   void audio.unlock();
   commandInput.focus();
 });
-stopButton.addEventListener("click", () => gameBoy.active ? gameBoy.exit() : runtime.stop());
+stopButton.addEventListener("click", () => {
+  if (gameBoy.active) return gameBoy.exit();
+  if (asukaActive) return exitAsuka();
+  return runtime.stop();
+});
 
 $("#power-button").addEventListener("click", () => {
   if (displayState.powered) {
@@ -965,7 +979,7 @@ $("#network-toggle").addEventListener("change", event => {
 });
 
 document.querySelectorAll("[data-command]").forEach(button => button.addEventListener("click", () => {
-  if (!displayState.powered || appRunning || gameBoy.active) return;
+  if (!displayState.powered || appRunning || gameBoy.active || asukaActive) return;
   void audio.unlock();
   submitShellCommand(button.dataset.command);
 }));
@@ -981,21 +995,6 @@ $("#save-file").addEventListener("click", event => {
 });
 
 $("#refresh-files").addEventListener("click", formatStorage);
-
-$("#asuka-form").addEventListener("submit", event => {
-  if (event.submitter?.value === "cancel") return; // let method="dialog" close it
-  event.preventDefault(); // sending a message must not close the dialog
-  const input = $("#asuka-input");
-  const text = input.value.trim();
-  input.value = "";
-  if (text) void handleAsukaInput(text);
-});
-
-$("#asuka-dialog").addEventListener("close", () => {
-  asukaAbort?.abort();
-  asukaAbort = null;
-  asukaSetBusy(false);
-});
 
 $("#export-button").addEventListener("click", () => {
   const blob = new Blob([fileSystem.snapshot()], { type: "application/json" });
