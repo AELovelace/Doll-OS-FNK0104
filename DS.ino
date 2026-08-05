@@ -7,6 +7,7 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <FS.h>
+#include "BoardPins.h"
 #include "config.h"
 #include "global.h"
 
@@ -70,8 +71,8 @@ void setup() {
     Serial.flush();
     initKeyboardSerial();
 
-    //Bit-banged outbound command channel to DS-Slave. BoardPins.h selects a pin
-    //that is clear of the active variant's SD, display, and audio buses.
+    //Hardware-UART outbound command channel to DS-Slave. KeyboardSerial UART1 is
+    //full-duplex, with its TX routed to the clear variant-specific pin.
     slaveLinkBegin();
 
     telnetServer.begin();

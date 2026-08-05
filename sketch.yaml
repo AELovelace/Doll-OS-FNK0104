@@ -13,7 +13,7 @@ profiles:
       # reference the shared sketchbook install directly instead
       - dir: ../libraries/ESP32Ping
       - dir: ../libraries/esp32ARP
-      - dir: ../libraries/ESP32-audioI2S
+      - dir: ../libraries/ESP32-audioI2S-master
       # FNK0104B onboard RGB uses the ESP32 core RMT API with Freenove's tested
       # timing in Led.ino; the full Freenove object reserves 24KB for 256 pixels.
       - PubSubClient (2.8)

@@ -17,10 +17,11 @@
 //   are occupied by audio WS and SD D2. Both ends run 115200 8N1.
 
 //UART peripheral 1 -- UART0 backs the USB serial console (Serial), so the keyboard link
-//gets its own peripheral. The ESP32-S3 GPIO matrix routes it to the selected board pin.
+//gets its own peripheral. UART1 is full-duplex: RX carries keystrokes from DS-Slave and
+//TX carries commands back to it. Using the hardware transmitter is important at 115200;
+//software bit timing was vulnerable to cache/interrupt stalls and produced corrupt commands.
 HardwareSerial KeyboardSerial(1);
 
-static const int KEYBOARD_SERIAL_TX_PIN = -1;   //RX-only; outbound uses SlaveLink.ino
 static const uint32_t KEYBOARD_SERIAL_BAUD = 115200;
 
 //own line-edit parse state (see LineEditState in global.h) so a mid-escape keystroke
@@ -28,9 +29,10 @@ static const uint32_t KEYBOARD_SERIAL_BAUD = 115200;
 static LineEditState keyboardLineState;
 
 void initKeyboardSerial() {
-    KeyboardSerial.begin(KEYBOARD_SERIAL_BAUD, SERIAL_8N1, KEYBOARD_SERIAL_RX_PIN, KEYBOARD_SERIAL_TX_PIN);
+    KeyboardSerial.begin(KEYBOARD_SERIAL_BAUD, SERIAL_8N1,
+                         KEYBOARD_SERIAL_RX_PIN, SLAVE_LINK_TX_PIN);
     ledSetKeyboardActive(true);
-    Serial.printf("[boot] keyboard UART RX=%d TX=bitbang(GPIO%d) baud=%lu\n",
+    Serial.printf("[boot] keyboard UART RX=%d TX=%d baud=%lu\n",
                   KEYBOARD_SERIAL_RX_PIN, SLAVE_LINK_TX_PIN,
                   (unsigned long)KEYBOARD_SERIAL_BAUD);
 }
