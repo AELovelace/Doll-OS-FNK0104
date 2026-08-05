@@ -176,6 +176,12 @@
                                                    "FMKDIR",
                                                    "FMOVE"
                                                ]
+                               },
+                     "1.8.0":  {
+                                   "extends":  "1.7.0",
+                                   "syntax_features":  [
+                                                           "wave-sawtooth"
+                                                       ]
                                }
                  },
     "boards":  {
@@ -196,7 +202,7 @@
                                                   }
                                    },
                    "fnk0104":  {
-                                       "runtime":  "1.7.0",
+                                       "runtime":  "1.8.0",
                                    "limits":  {
                                                   "lines":  4000,
                                                   "labels":  256,
