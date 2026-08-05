@@ -165,6 +165,18 @@ dialog::backdrop { background: rgba(4, 2, 4, .82); }
 .editor-actions button { padding: 8px 13px; border: 1px solid var(--pink); color: white; background: transparent; }
 .editor-actions #save-file { color: var(--ink); background: var(--pink); }
 
+.asuka-window { display: grid; min-height: min(680px, 84vh); grid-template-rows: auto 1fr auto; }
+.asuka-log { overflow-y: auto; padding: 14px; color: #e9dde4; background: #070607; font: 12px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.asuka-message { margin-bottom: 12px; }
+.asuka-message .who { display: block; margin-bottom: 2px; font-weight: 700; }
+.asuka-message.user .who { color: var(--cyan); }
+.asuka-message.asuka .who { color: var(--pink); }
+.asuka-message.system { color: #93818c; font-size: 11px; }
+.asuka-input-row { display: flex; gap: 8px; padding: 12px; color: #cdbdc6; background: #251722; }
+.asuka-input-row input { flex: 1; min-width: 0; padding: 10px; border: 1px solid #71415b; color: white; background: #0b090c; font: 12px var(--mono); }
+.asuka-input-row button { padding: 8px 16px; border: 1px solid var(--pink); color: var(--ink); background: var(--pink); }
+.asuka-input-row input:disabled, .asuka-input-row button:disabled { opacity: .5; }
+
 .gameboy-console { margin-top: 14px; border: 2px solid var(--pink-soft); background: #080708; }
 .gameboy-console[hidden] { display: none; }
 .gameboy-console-head { display: flex; justify-content: space-between; gap: 12px; padding: 9px 11px; color: var(--ink); background: var(--pink-soft); font-size: 9px; }

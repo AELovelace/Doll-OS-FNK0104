@@ -60,10 +60,21 @@ node tools/build-web-app-bundle.mjs
 node tools/build-web-app-bundle.mjs --check
 ```
 
-The emulator classifies commands that require raw sockets, a local LLM, MQTT,
-or physical hardware as unavailable instead of pretending that ASUKA, Motoko,
-SSH, telnet, FTP, ICMP, UART, or USB can run inside an ordinary browser sandbox.
-No gateway or server-side component is included.
+The emulator classifies commands that require raw sockets, MQTT, or physical
+hardware as unavailable instead of pretending that Motoko, SSH, telnet, FTP,
+ICMP, UART, or USB can run inside an ordinary browser sandbox. No gateway or
+server-side component is included in this directory.
+
+`asuka` is adapted rather than unavailable: it opens a chat dialog that speaks
+the same request shape as `Asuka.ino` (streamed OpenAI-style chat completions)
+directly from the browser via `fetch()`, but without its tool-calling layer
+(fetch_url/openweather/brave_search). A visitor supplies the endpoint URL
+(`/endpoint <url>`) and, if needed, a bearer token (`/token <value>`, kept in
+memory only, never persisted) — the target server must send CORS headers,
+since nothing in `dapp-web/` proxies the request. `asuka-proxy/` (repo root)
+is a small standalone relay for bridging a private-network LLM server that
+doesn't have CORS or public reachability of its own; it is not part of this
+static site and is deployed separately.
 
 ## Static-hosting safety
 
@@ -102,10 +113,12 @@ reboot
 radio play
 ```
 
-FTP, Motoko/MQTT, ASUKA, and remote-session settings are hardware-only. The web
+FTP, Motoko/MQTT, and remote-session settings are hardware-only. The web
 runner may preserve those keys as plain text for disk compatibility, but it
-never activates the corresponding service. Do not put real API keys or
-passwords into the browser disk.
+never activates the corresponding service. `asuka.endpoint` is the one ASUKA
+key the web runner does act on (set via `/endpoint` in the chat dialog, or
+`settings set asuka.endpoint <url>`); the bearer token is intentionally never
+written to disk. Do not put real API keys or passwords into the browser disk.
 
 Dapper 1.7 maintains an ownership registry under `/.dapper`, refuses unmanaged
 overwrites unless `--force` is explicit, verifies HTTPS artifacts before any

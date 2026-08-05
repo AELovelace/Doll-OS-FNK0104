@@ -16,8 +16,8 @@ const SETTINGS_VALUE_MAX = 160;
 
 export const COMMAND_COMPATIBILITY = Object.freeze({
   faithful: Object.freeze(["alias", "apps", "calc", "cat", "cd", "clear", "cp", "del", "dice", "help", "ls", "mkdir", "mv", "pwd", "rm", "run", "settings", "unalias"]),
-  adapted: Object.freeze(["battery", "dapper", "edit", "free", "gb", "ip", "radio", "reboot", "status", "uptime", "wifi"]),
-  unavailable: Object.freeze(["asuka", "ftp", "motoko", "ping", "slave", "ssh", "telnet", "usb"])
+  adapted: Object.freeze(["asuka", "battery", "dapper", "edit", "free", "gb", "ip", "radio", "reboot", "status", "uptime", "wifi"]),
+  unavailable: Object.freeze(["ftp", "motoko", "ping", "slave", "ssh", "telnet", "usb"])
 });
 
 export function normalizePath(base = "/", target = "") {
@@ -88,13 +88,27 @@ export function settingsGet(fileSystem, key, fallback = "") {
   return loadSettings(fileSystem).find(entry => entry.key === key)?.value ?? String(fallback);
 }
 
-function saveSettings(fileSystem, entries) {
+export function saveSettings(fileSystem, entries) {
   const lines = [
     "# DOLL-OS runtime settings -- overrides config.h defaults",
     "# Format: key=value",
     ...entries.map(entry => `${entry.key}=${entry.value}`)
   ];
   return fileSystem.write(SETTINGS_FILE_PATH, `${lines.join("\n")}\n`);
+}
+
+//find-or-insert one key, same rule `settings set` enforces (see command_settings
+//below) -- shared so a hook (e.g. the ASUKA dialog persisting its endpoint) can
+//write into settings.dsys without re-deriving that logic
+export function settingsSet(fileSystem, key, value) {
+  if (!settingsKeyValid(key)) return false;
+  const entries = loadSettings(fileSystem);
+  const trimmedValue = String(value).trim().slice(0, SETTINGS_VALUE_MAX);
+  const index = entries.findIndex(entry => entry.key === key);
+  if (index < 0 && entries.length >= SETTINGS_MAX_ENTRIES) return false;
+  if (index < 0) entries.push({ key, value: trimmedValue });
+  else entries[index] = { key, value: trimmedValue };
+  return saveSettings(fileSystem, entries);
 }
 
 function parentPath(path) {
@@ -846,7 +860,10 @@ export class DollShell {
   }
 
   unsupported(name, detail) { this.write(`${name}: ${detail}`, "yellow"); }
-  command_asuka() { this.unsupported("asuka", "excluded from the static emulator; the local LLM remains hardware-only"); }
+  command_asuka() {
+    if (!this.hooks.asuka) return this.unsupported("asuka", "chat dialog is unavailable");
+    this.hooks.asuka();
+  }
   command_ftp() { this.unsupported("ftp", "browsers cannot expose an FTP server"); }
   command_gb(parts) {
     if (!this.hooks.gameBoy) return this.unsupported("gb", "Game Boy WASM module is unavailable");

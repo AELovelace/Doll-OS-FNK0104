@@ -152,6 +152,7 @@ END</textarea>
           <button type="button" data-command="free details">memory</button>
           <button type="button" data-command="gb">game boy</button>
           <button type="button" data-command="radio status">radio</button>
+          <button type="button" data-command="asuka">asuka chat</button>
           <button type="button" data-command="settings">settings</button>
         </div>
 
@@ -173,6 +174,18 @@ END</textarea>
         <span>Saved to the virtual device</span>
         <button value="cancel">CANCEL</button>
         <button id="save-file" value="default">SAVE</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="asuka-dialog" aria-labelledby="asuka-title">
+    <form method="dialog" class="asuka-window" id="asuka-form">
+      <div class="editor-title"><strong id="asuka-title">ASUKA://LOCAL CHAT</strong><button value="cancel" aria-label="Close ASUKA">×</button></div>
+      <div class="asuka-log" id="asuka-log" aria-live="polite" aria-label="ASUKA conversation"></div>
+      <div class="asuka-input-row">
+        <input id="asuka-input" type="text" autocomplete="off" spellcheck="false"
+               placeholder="Type a message, or /help for commands" aria-label="Message to ASUKA">
+        <button type="submit" id="asuka-send">SEND</button>
       </div>
     </form>
   </dialog>

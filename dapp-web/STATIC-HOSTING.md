@@ -31,10 +31,15 @@ the host serves `binjgb.wasm` as `application/wasm`.
 
 The policy deliberately allows connections only to the hosting origin and
 HTTPS destinations. HTTPS media is allowed for the explicit `radio play <url>`
-command. The emulator adds another layer: app networking is off by
+command, and the same restriction applies to `asuka`'s chat endpoint — a bare
+`http://` LAN address will be blocked by CSP once this policy is active, so
+`asuka`'s intended use is against an HTTPS-fronted endpoint (see `asuka-proxy/`
+at the repository root for bridging a private LAN AI server behind nginx/TLS).
+The emulator adds another layer: app networking is off by
 default and each destination origin requires an in-page approval that lasts
 only until reload. Requests always use `credentials: "omit"` and a no-referrer
-policy, including requests back to the hosting origin.
+policy, including requests back to the hosting origin. `asuka` follows the
+same approval gate and request options as `.dapp` HTTPPOST/HTTPGET.
 
 ## App distribution model
 
@@ -57,14 +62,15 @@ storage limits.
 
 The Game Boy core is pinned and vendored under `vendor/binjgb`; it runs locally
 as WebAssembly. Visitors supply their own `.gb` or `.gbc` files, and ROM bytes,
-battery RAM, and save states are never sent to the host. The site has no ASUKA,
+battery RAM, and save states are never sent to the host. The site has no
 MQTT/Motoko, SSH, telnet, or remote-session gateway and needs no server-side
-code.
+code of its own. `asuka` is the one exception: it's a direct browser `fetch()`
+to a visitor-supplied endpoint (see above), not a gateway hosted by this site.
 
 Runtime overrides are stored as plain text in the visitor's virtual
-`/system/conf/settings.dsys`. Only `radio.url` and `radio.volume` affect the web
-runner. Hardware-only FTP, MQTT, ASUKA, and remote-session keys remain inert;
-visitors should not enter real secrets because disk export and `settings get`
+`/system/conf/settings.dsys`. `radio.url`, `radio.volume`, and `asuka.endpoint`
+affect the web runner. Hardware-only FTP, MQTT, and remote-session keys remain
+inert; visitors should not enter real secrets because disk export and `settings get`
 can reveal them.
 
 ## Remaining trust rule
