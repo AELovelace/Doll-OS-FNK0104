@@ -599,10 +599,80 @@ function asukaBuildRequestBody(prompt) {
   return JSON.stringify({ model: "model", stream: true, temperature: 0.7, max_tokens: 2048, messages });
 }
 
+// strips <think>...</think> reasoning-model scratchpad out of a live token
+// stream. Tags can land split across separate SSE chunks, so this can't be a
+// one-shot string replace -- it holds back a short tail (shorter than either
+// tag) whenever a partial match might be sitting at the buffer's end, and only
+// emits/discards once a full tag confirms which side of it that text is on.
+function createThinkFilter() {
+  const OPEN = "<think>";
+  const CLOSE = "</think>";
+  let buffer = "";
+  let insideThink = false;
+  // true right after a </think>, until the first non-whitespace character is
+  // seen -- models typically put blank space before the real answer starts,
+  // and that whitespace can easily land in a different SSE chunk than the
+  // closing tag itself, so this has to survive across feed() calls rather
+  // than being a one-shot trim at the close-tag transition
+  let trimLeadingWhitespace = false;
+
+  function feed(chunk) {
+    buffer += chunk;
+    let visible = "";
+    let progress = true;
+    while (progress) {
+      progress = false;
+      if (!insideThink) {
+        const openIdx = buffer.indexOf(OPEN);
+        if (openIdx >= 0) {
+          visible += buffer.slice(0, openIdx);
+          buffer = buffer.slice(openIdx + OPEN.length);
+          insideThink = true;
+          progress = true;
+        }
+      } else {
+        const closeIdx = buffer.indexOf(CLOSE);
+        if (closeIdx >= 0) {
+          buffer = buffer.slice(closeIdx + CLOSE.length);
+          insideThink = false;
+          trimLeadingWhitespace = true;
+          progress = true;
+        }
+      }
+    }
+    const holdBack = (insideThink ? CLOSE.length : OPEN.length) - 1;
+    const safeLen = Math.max(0, buffer.length - holdBack);
+    if (!insideThink) {
+      let settled = buffer.slice(0, safeLen);
+      if (trimLeadingWhitespace) {
+        const stripped = settled.replace(/^\s+/, "");
+        if (stripped.length > 0) trimLeadingWhitespace = false; // hit real content, done trimming
+        settled = stripped;
+      }
+      visible += settled;
+    }
+    buffer = buffer.slice(safeLen);
+    return visible;
+  }
+
+  // called once the stream ends: an unresolved tail is either a lone "<" (safe
+  // to drop) or we're still stuck inside an unclosed <think> (also nothing
+  // safe to show), so either way there's nothing left worth emitting
+  function flush() {
+    let leftover = insideThink ? "" : buffer;
+    if (trimLeadingWhitespace) leftover = leftover.replace(/^\s+/, "");
+    buffer = "";
+    return leftover;
+  }
+
+  return { feed, flush };
+}
+
 // low-level: one request to asukaEndpoint with the given user-turn text, always
 // SSE-parsed per the same data: {"content":"..."} dialect Asuka.ino expects.
-// onChunk (if given) is called per token as it streams in, for live terminal
-// display; the full accumulated text is always returned regardless.
+// onChunk (if given) is called per visible token as it streams in, for live
+// terminal display; the full accumulated (think-stripped) text is always
+// returned regardless.
 async function asukaCompletion(prompt, { onChunk } = {}) {
   const body = asukaBuildRequestBody(prompt);
   const headers = { "Content-Type": "application/json", Accept: "text/event-stream" };
@@ -628,6 +698,7 @@ async function asukaCompletion(prompt, { onChunk } = {}) {
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
+  const thinkFilter = createThinkFilter();
   let buffer = "";
   let full = "";
   let streamDone = false;
@@ -651,8 +722,11 @@ async function asukaCompletion(prompt, { onChunk } = {}) {
         : typeof parsed.choices?.[0]?.message?.content === "string" ? parsed.choices[0].message.content
         : "";
       if (token) {
-        full += token;
-        onChunk?.(token);
+        const visible = thinkFilter.feed(token);
+        if (visible) {
+          full += visible;
+          onChunk?.(visible);
+        }
       }
     } catch {
       // a malformed SSE chunk is dropped, same tolerance asukaJsonFieldString gives it
@@ -670,6 +744,11 @@ async function asukaCompletion(prompt, { onChunk } = {}) {
     }
   }
   if (!streamDone && buffer.trim()) consumeLine(buffer); // server didn't send a trailing newline
+  const tail = thinkFilter.flush();
+  if (tail) {
+    full += tail;
+    onChunk?.(tail);
+  }
   return full;
 }
 
