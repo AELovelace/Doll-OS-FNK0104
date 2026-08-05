@@ -65,16 +65,22 @@ hardware as unavailable instead of pretending that Motoko, SSH, telnet, FTP,
 ICMP, UART, or USB can run inside an ordinary browser sandbox. No gateway or
 server-side component is included in this directory.
 
-`asuka` is adapted rather than unavailable: it opens a chat dialog that speaks
-the same request shape as `Asuka.ino` (streamed OpenAI-style chat completions)
-directly from the browser via `fetch()`, but without its tool-calling layer
-(fetch_url/openweather/brave_search). A visitor supplies the endpoint URL
-(`/endpoint <url>`) and, if needed, a bearer token (`/token <value>`, kept in
-memory only, never persisted) — the target server must send CORS headers,
-since nothing in `dapp-web/` proxies the request. `asuka-proxy/` (repo root)
-is a small standalone relay for bridging a private-network LLM server that
-doesn't have CORS or public reachability of its own; it is not part of this
-static site and is deployed separately.
+`asuka` is adapted rather than unavailable: like `gb`, it takes over the
+emulated device's own screen and command bar (not a separate window) and
+speaks the same request shape as `Asuka.ino` (streamed OpenAI-style chat
+completions) directly from the browser via `fetch()`, including its
+classifier-routed tool-calling layer (`fetch_url`, `openweather_current`,
+`brave_search`, `current_datetime`), matching `AsukaTools.ino`'s result
+shapes. A visitor supplies the endpoint URL (`/endpoint <url>`, defaulting to
+this deployment's `asuka-proxy`) and, if needed, a bearer token
+(`/token <value>`) plus per-tool API keys (`/bravekey`, `/owmkey`) — all kept
+in memory only, never persisted, unlike firmware's settings.dsys storage,
+since this is a shared multi-visitor page rather than a personally-owned
+device. The target server (and, for the tools, the target APIs) must send
+CORS headers, since nothing in `dapp-web/` proxies the request.
+`asuka-proxy/` (repo root) is a small standalone relay for bridging a
+private-network LLM server that doesn't have CORS or public reachability of
+its own; it is not part of this static site and is deployed separately.
 
 ## Static-hosting safety
 

@@ -66,6 +66,12 @@ battery RAM, and save states are never sent to the host. The site has no
 MQTT/Motoko, SSH, telnet, or remote-session gateway and needs no server-side
 code of its own. `asuka` is the one exception: it's a direct browser `fetch()`
 to a visitor-supplied endpoint (see above), not a gateway hosted by this site.
+Its tool-calling layer (`fetch_url`, `openweather_current`, `brave_search`,
+`current_datetime`) is the same story — each is a direct browser request to
+the tool's own API, gated by the same network-approval prompt, not a call
+through this site. `brave_search` and `openweather_current` need their own
+visitor-supplied API key (`/bravekey`, `/owmkey` in the chat), kept in memory
+only.
 
 Runtime overrides are stored as plain text in the visitor's virtual
 `/system/conf/settings.dsys`. `radio.url`, `radio.volume`, and `asuka.endpoint`

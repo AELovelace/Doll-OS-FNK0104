@@ -72,21 +72,37 @@ let shellBusy = false;
 let editorTarget = "";
 const approvedNetworkOrigins = new Set();
 
-// ASUKA local chat -- core streamed chat is faithful to Asuka.ino's request shape
-// (see asukaBuildRequestBody there); tool calling (fetch_url/openweather/brave
-// search) is deliberately not reimplemented here, since it exists mainly to work
-// around the ESP32's heap constraints and adds a classifier round-trip on every
-// turn that isn't worth the complexity for a browser demo. See asuka-proxy/ for
-// bridging a private-network LLM server to this.
+// ASUKA local chat -- request shape, classifier routing, and tool result
+// schemas are kept faithful to Asuka.ino/AsukaTools.ino. Bearer token and both
+// tool API keys are session-only and never persisted, unlike firmware (which
+// stores them in settings.dsys): this build is a shared multi-visitor page,
+// not a personally-owned device, so secrets shouldn't land in the visitor's
+// exported/inspectable virtual disk. See asuka-proxy/ for bridging a
+// private-network LLM server to this.
 const ASUKA_DEFAULT_SYSTEM_PROMPT = "You are ASUKA, a concise local assistant running through DOLL-OS.";
+const ASUKA_DEFAULT_ENDPOINT = "https://sadgirlsclub.wtf/asuka/v1/chat/completions";
 const ASUKA_SYSTEM_PROMPT_FILE = "/system/conf/asuka-system.dsys";
 const ASUKA_HISTORY_MAX = 6;
+const ASUKA_CLASSIFIER_PROMPT = "You are ASUKA's tool-selection pass running on DOLL-OS. If the user's " +
+  "request needs live information, weather, a page, URL inspection, or the current date/time, respond " +
+  "with only one JSON object and no markdown. For current web search, use exactly " +
+  '{"tool":"brave_search","arguments":{"query":"...","count":5}}. For current weather at the configured ' +
+  'location, use exactly {"tool":"openweather_current","arguments":{"units":"metric"}} or ' +
+  '{"tool":"openweather_current","arguments":{"units":"imperial"}}. For reading a specific URL, use ' +
+  'exactly {"tool":"fetch_url","arguments":{"url":"https://...","max_chars":4000}}. For current local ' +
+  'date/time, use exactly {"tool":"current_datetime","arguments":{}}. If no live tool is needed, answer normally.';
 let asukaEndpoint = "";
 let asukaToken = ""; // session-only, never persisted -- same rule llm-chat.dapp follows
 let asukaSystemPrompt = ASUKA_DEFAULT_SYSTEM_PROMPT;
 let asukaHistory = [];
 let asukaActive = false;
 let asukaAbort = null;
+let asukaBraveSearchEnabled = true;
+let asukaBraveKey = ""; // session-only
+let asukaOwmKey = "";   // session-only
+let asukaWeatherLat = 0;
+let asukaWeatherLon = 0;
+let asukaWeatherLabel = "(not set)";
 
 function appendOutput(text, color = "white") {
   displayState.history.push({ text: String(text), color });
@@ -577,40 +593,33 @@ function asukaBuildRequestBody(prompt) {
   return JSON.stringify({ model: "model", stream: true, temperature: 0.7, max_tokens: 2048, messages });
 }
 
-async function asukaSendMessage(userText) {
-  asukaAddHistory("User", userText);
-  const body = asukaBuildRequestBody(asukaBuildTranscript());
+// low-level: one request to asukaEndpoint with the given user-turn text, always
+// SSE-parsed per the same data: {"content":"..."} dialect Asuka.ino expects.
+// onChunk (if given) is called per token as it streams in, for live terminal
+// display; the full accumulated text is always returned regardless.
+async function asukaCompletion(prompt, { onChunk } = {}) {
+  const body = asukaBuildRequestBody(prompt);
   const headers = { "Content-Type": "application/json", Accept: "text/event-stream" };
   if (asukaToken) headers.Authorization = `Bearer ${asukaToken}`;
 
   if (io.authorizeHttp && !(await io.authorizeHttp({ url: asukaEndpoint, method: "POST" }))) {
-    appendOutput("asuka: request blocked. Enable APP NETWORK ACCESS to allow it.", "yellow");
-    return;
+    throw new Error("request blocked. Enable APP NETWORK ACCESS to allow it.");
   }
 
   asukaAbort = new AbortController();
-  let response;
-  try {
-    response = await fetch(asukaEndpoint, {
-      method: "POST",
-      headers,
-      body,
-      credentials: "omit",
-      referrerPolicy: "no-referrer",
-      cache: "no-store",
-      signal: asukaAbort.signal
-    });
-  } catch (err) {
-    appendOutput(err.name === "AbortError" ? "asuka: request cancelled." : `asuka: connection failed: ${err.message}`, "red");
-    return;
-  }
-
+  const response = await fetch(asukaEndpoint, {
+    method: "POST",
+    headers,
+    body,
+    credentials: "omit",
+    referrerPolicy: "no-referrer",
+    cache: "no-store",
+    signal: asukaAbort.signal
+  });
   if (!response.ok || !response.body) {
-    appendOutput(`asuka: LLM HTTP error: ${response.status} ${response.statusText || ""}`.trim(), "red");
-    return;
+    throw new Error(`LLM HTTP error: ${response.status} ${response.statusText || ""}`.trim());
   }
 
-  asukaStreamStart();
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -629,32 +638,298 @@ async function asukaSendMessage(userText) {
       const parsed = JSON.parse(payload);
       if (typeof parsed.content === "string" && parsed.content) {
         full += parsed.content;
-        asukaStreamAppend(parsed.content);
+        onChunk?.(parsed.content);
       }
     } catch {
       // a malformed SSE chunk is dropped, same tolerance asukaJsonFieldString gives it
     }
   };
 
-  try {
-    while (!streamDone) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      let newlineIndex;
-      while (!streamDone && (newlineIndex = buffer.indexOf("\n")) >= 0) {
-        consumeLine(buffer.slice(0, newlineIndex));
-        buffer = buffer.slice(newlineIndex + 1);
-      }
+  while (!streamDone) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let newlineIndex;
+    while (!streamDone && (newlineIndex = buffer.indexOf("\n")) >= 0) {
+      consumeLine(buffer.slice(0, newlineIndex));
+      buffer = buffer.slice(newlineIndex + 1);
     }
-    if (!streamDone && buffer.trim()) consumeLine(buffer); // server didn't send a trailing newline
-  } catch (err) {
-    if (err.name !== "AbortError") appendOutput(`asuka: stream error: ${err.message}`, "red");
+  }
+  if (!streamDone && buffer.trim()) consumeLine(buffer); // server didn't send a trailing newline
+  return full;
+}
+
+// classifier prompt: same wrapper text as asukaBuildToolDecisionPrompt() in
+// Asuka.ino, so a backend tuned against the firmware's exact wording behaves
+// the same way here
+function asukaBuildToolDecisionPrompt(prompt) {
+  let text = ASUKA_CLASSIFIER_PROMPT.trim();
+  if (!text.endsWith(" ")) text += " ";
+  text += "Runtime tool availability: ";
+  text += asukaBraveSearchEnabled ? "brave_search enabled; " : "brave_search disabled; ";
+  text += asukaWeatherConfigured() ? "openweather_current enabled; " : "openweather_current unavailable because the OpenWeather API key is missing; ";
+  text += "fetch_url enabled; current_datetime enabled. User request: ";
+  return text + prompt;
+}
+
+function asukaBuildToolFollowupPrompt(originalMessage, toolResultJson) {
+  return "Answer the user's request using the tool result below. Do not call any more tools. " +
+    "Be concise and mention useful URLs when relevant. User request: " + originalMessage +
+    "\nTool result JSON: " + toolResultJson;
+}
+
+function asukaLooksLikeToolCall(response) {
+  const trimmed = response.trim();
+  return trimmed.startsWith("{") && trimmed.includes('"tool"');
+}
+
+function asukaExtractFirstUrl(message) {
+  const match = message.match(/https?:\/\/[^\s"'<>]+/);
+  if (!match) return "";
+  return match[0].replace(/[),.\]]+$/, "");
+}
+
+function asukaMessageNeedsCurrentWeather(message) {
+  const lower = message.toLowerCase();
+  return ["weather", "temperature", "forecast", "rain", "snow", "wind", "humidity"].some(word => lower.includes(word));
+}
+
+function asukaPreferredWeatherUnits(message) {
+  const lower = message.toLowerCase();
+  return lower.includes("imperial") || lower.includes("fahrenheit") || lower.includes(" mph") ? "imperial" : "metric";
+}
+
+function asukaWeatherConfigured() {
+  return asukaOwmKey.length > 0;
+}
+
+// each tool returns { ok, json } -- json is always a JSON string, either the
+// result (ok) or an {"error":...} blob (!ok), matching AsukaTools.ino's
+// toolResult shape either way so the followup prompt looks the same to the LLM
+
+async function asukaToolFetchUrl(rawUrl, requestedMaxChars) {
+  const url = (rawUrl || "").trim();
+  if (!url) return { ok: false, json: JSON.stringify({ error: "URL cannot be empty." }) };
+  if (!url.startsWith("http://") && !url.startsWith("https://")) {
+    return { ok: false, json: JSON.stringify({ error: "Only http:// and https:// URLs are supported." }) };
+  }
+  const maxChars = Math.min(6000, Math.max(500, requestedMaxChars > 0 ? requestedMaxChars : 4000));
+
+  if (io.authorizeHttp && !(await io.authorizeHttp({ url, method: "GET" }))) {
+    return { ok: false, json: JSON.stringify({ error: "network access blocked -- enable APP NETWORK ACCESS" }) };
   }
 
-  if (full) asukaAddHistory("ASUKA", full);
-  else if (asukaStreamEntry && !asukaStreamEntry.text) asukaStreamEntry.text = "(no response)";
+  let response;
+  try {
+    response = await fetch(url, { credentials: "omit", referrerPolicy: "no-referrer", cache: "no-store" });
+  } catch (err) {
+    return { ok: false, json: JSON.stringify({ error: `URL fetch request failed: ${err.message}` }) };
+  }
+  if (!response.ok) {
+    return { ok: false, json: JSON.stringify({ error: `URL fetch returned HTTP ${response.status}` }) };
+  }
+
+  const contentType = response.headers.get("content-type") || "";
+  if (!/^text\/|json|xml|javascript|x-www-form-urlencoded/i.test(contentType)) {
+    return { ok: false, json: JSON.stringify({ error: "URL fetch returned a non-text content type.", content_type: contentType }) };
+  }
+
+  const rawText = await response.text();
+  if (!rawText) return { ok: false, json: JSON.stringify({ error: "URL fetch returned an empty response body." }) };
+
+  const isHtml = contentType.toLowerCase().includes("html");
+  let extracted;
+  if (isHtml) {
+    const doc = new DOMParser().parseFromString(rawText, "text/html");
+    doc.querySelectorAll("script, style").forEach(node => node.remove());
+    extracted = (doc.body?.textContent || "").replace(/\s+/g, " ").trim();
+  } else {
+    extracted = rawText.replace(/\s+/g, " ").trim();
+  }
+  const textTruncated = extracted.length > maxChars;
+  extracted = extracted.slice(0, maxChars);
+
+  return {
+    ok: true,
+    json: JSON.stringify({
+      url, content_type: contentType, http_status: response.status,
+      requested_max_chars: maxChars, text_truncated: textTruncated, content: extracted
+    })
+  };
+}
+
+async function asukaToolBraveSearch(query, requestedCount) {
+  if (!asukaBraveSearchEnabled) return { ok: false, json: JSON.stringify({ error: "brave_search is currently disabled." }) };
+  if (!asukaBraveKey) return { ok: false, json: JSON.stringify({ error: "Brave Search API key is not configured." }) };
+  if (!query) return { ok: false, json: JSON.stringify({ error: "brave_search requires a query." }) };
+  const count = Math.min(10, Math.max(1, requestedCount || 5));
+  const url = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=${count}`;
+
+  if (io.authorizeHttp && !(await io.authorizeHttp({ url, method: "GET" }))) {
+    return { ok: false, json: JSON.stringify({ error: "network access blocked -- enable APP NETWORK ACCESS" }) };
+  }
+
+  let response;
+  try {
+    response = await fetch(url, {
+      headers: { Accept: "application/json", "X-Subscription-Token": asukaBraveKey },
+      credentials: "omit", referrerPolicy: "no-referrer", cache: "no-store"
+    });
+  } catch (err) {
+    return { ok: false, json: JSON.stringify({ error: `Brave Search request failed: ${err.message}` }) };
+  }
+  const bodyText = await response.text();
+  if (!response.ok) {
+    return { ok: false, json: JSON.stringify({ error: `Brave Search returned HTTP ${response.status}`, details: bodyText.slice(0, 500) }) };
+  }
+  let body;
+  try { body = JSON.parse(bodyText); } catch { return { ok: false, json: JSON.stringify({ error: "Brave Search JSON parsing failed." }) }; }
+
+  const results = (body?.web?.results || []).slice(0, count).map(row => ({
+    title: row.title || "", url: row.url || "", description: row.description || ""
+  }));
+  return { ok: true, json: JSON.stringify({ query, results }) };
+}
+
+async function asukaToolWeather(requestedUnits) {
+  if (!asukaOwmKey) return { ok: false, json: JSON.stringify({ error: "OpenWeather API key is not configured." }) };
+  const units = (requestedUnits || "metric").toLowerCase();
+  if (units !== "metric" && units !== "imperial") {
+    return { ok: false, json: JSON.stringify({ error: "Weather units must be metric or imperial." }) };
+  }
+  const url = `https://api.openweathermap.org/data/2.5/weather?lat=${asukaWeatherLat}&lon=${asukaWeatherLon}` +
+    `&appid=${encodeURIComponent(asukaOwmKey)}&units=${units}`;
+
+  if (io.authorizeHttp && !(await io.authorizeHttp({ url, method: "GET" }))) {
+    return { ok: false, json: JSON.stringify({ error: "network access blocked -- enable APP NETWORK ACCESS" }) };
+  }
+
+  let response;
+  try {
+    response = await fetch(url, { credentials: "omit", referrerPolicy: "no-referrer", cache: "no-store" });
+  } catch (err) {
+    return { ok: false, json: JSON.stringify({ error: `OpenWeather request failed: ${err.message}` }) };
+  }
+  const bodyText = await response.text();
+  if (!response.ok) {
+    return { ok: false, json: JSON.stringify({ error: `OpenWeather returned HTTP ${response.status}`, details: bodyText.slice(0, 500) }) };
+  }
+  let body;
+  try { body = JSON.parse(bodyText); } catch { return { ok: false, json: JSON.stringify({ error: "OpenWeather JSON parsing failed." }) }; }
+
+  const temperatureUnit = units === "metric" ? "C" : "F";
+  const speedUnit = units === "metric" ? "m/s" : "mph";
+  return {
+    ok: true,
+    json: JSON.stringify({
+      requested_location: asukaWeatherLabel,
+      units,
+      provider_location: body.name || "",
+      location: { label: asukaWeatherLabel, lat: asukaWeatherLat, lon: asukaWeatherLon },
+      weather: { summary: body.weather?.[0]?.main || "", description: body.weather?.[0]?.description || "" },
+      temperature: { current: body.main?.temp ?? 0, feels_like: body.main?.feels_like ?? 0, unit: temperatureUnit },
+      humidity_percent: body.main?.humidity ?? 0,
+      wind: { speed: body.wind?.speed ?? 0, unit: speedUnit, degrees: body.wind?.deg ?? 0 },
+      clouds_percent: body.clouds?.all ?? 0,
+      visibility_meters: body.visibility ?? 0,
+      source: "openweathermap"
+    })
+  };
+}
+
+function asukaToolCurrentDatetime() {
+  const now = new Date();
+  const pad = n => String(n).padStart(2, "0");
+  return {
+    ok: true,
+    json: JSON.stringify({
+      unix_epoch: Math.floor(now.getTime() / 1000),
+      local_iso8601: `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`,
+      utc_iso8601: now.toISOString(),
+      local_date: `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`,
+      local_time: `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`,
+      weekday: now.toLocaleDateString(undefined, { weekday: "long" }),
+      month: now.toLocaleDateString(undefined, { month: "long" }),
+      year: now.getFullYear(),
+      day_of_month: now.getDate(),
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      source: "browser"
+    })
+  };
+}
+
+async function asukaRunTool(callObjectOrText) {
+  let call = callObjectOrText;
+  if (typeof call === "string") {
+    try { call = JSON.parse(call); }
+    catch { return { ok: false, json: JSON.stringify({ error: "Invalid tool-call JSON." }) }; }
+  }
+  const name = call?.tool || "";
+  const args = call?.arguments || {};
+  if (name === "brave_search") return asukaToolBraveSearch((args.query || "").trim(), args.count);
+  if (name === "fetch_url") return asukaToolFetchUrl(args.url, args.max_chars);
+  if (name === "openweather_current") return asukaToolWeather(args.units);
+  if (name === "current_datetime") return asukaToolCurrentDatetime();
+  return { ok: false, json: JSON.stringify({ error: "Unknown tool." }) };
+}
+
+// runs a tool then streams the LLM's followup answer into the terminal;
+// returns the full reply text (or "" if the tool itself failed)
+async function asukaRunToolAndFollowup(prompt, call) {
+  const tool = await asukaRunTool(call);
+  if (!tool.ok) {
+    appendOutput(`asuka: ${tool.json}`, "red");
+    return "";
+  }
+  asukaStreamStart();
+  const full = await asukaCompletion(asukaBuildToolFollowupPrompt(prompt, tool.json), {
+    onChunk: chunk => asukaStreamAppend(chunk)
+  });
+  if (asukaStreamEntry && !asukaStreamEntry.text) asukaStreamEntry.text = "(no response)";
   asukaStreamEntry = null;
+  return full;
+}
+
+// mirrors asukaAskWithTools() in Asuka.ino: a URL in the message or an
+// obviously weather-shaped question skips straight to that tool; otherwise a
+// silent (non-streamed) classifier pass decides whether any tool is needed at
+// all before the visible, streamed answer.
+async function asukaAskWithTools(originalMessage, prompt) {
+  const firstUrl = asukaExtractFirstUrl(originalMessage);
+  if (firstUrl) {
+    appendOutput("asuka: fetching page...", "yellow");
+    return asukaRunToolAndFollowup(prompt, { tool: "fetch_url", arguments: { url: firstUrl, max_chars: 4000 } });
+  }
+
+  if (asukaWeatherConfigured() && asukaMessageNeedsCurrentWeather(originalMessage)) {
+    appendOutput("asuka: checking weather...", "yellow");
+    const units = asukaPreferredWeatherUnits(originalMessage);
+    return asukaRunToolAndFollowup(prompt, { tool: "openweather_current", arguments: { units } });
+  }
+
+  const firstResponse = await asukaCompletion(asukaBuildToolDecisionPrompt(prompt));
+
+  if (!asukaLooksLikeToolCall(firstResponse)) {
+    appendOutput("ASUKA:", "pink");
+    appendOutput(firstResponse);
+    return firstResponse;
+  }
+
+  appendOutput("asuka: running live tool...", "yellow");
+  return asukaRunToolAndFollowup(prompt, firstResponse);
+}
+
+async function asukaSendMessage(userText) {
+  asukaAddHistory("User", userText);
+  const prompt = asukaBuildTranscript();
+  let full = "";
+  try {
+    full = await asukaAskWithTools(userText, prompt);
+  } catch (err) {
+    appendOutput(err.name === "AbortError" ? "asuka: request cancelled." : `asuka: ${err.message}`, "red");
+    return;
+  }
+  if (full) asukaAddHistory("ASUKA", full);
 }
 
 // returns true if the line ended the session (/quit)
@@ -665,12 +940,17 @@ function asukaHandleSlashCommand(text) {
   if (cmd === "help") {
     appendOutput("ASUKA commands:", "cyan");
     ["/help", "/status", "/endpoint <url>", "/token <bearer, blank clears it>",
-      "/system", "/system <prompt>", "/system reset", "/clear", "/quit"].forEach(line => appendOutput(line));
+      "/system", "/system <prompt>", "/system reset", "/search on|off",
+      "/bravekey <key, blank clears it>", "/owmkey <key, blank clears it>",
+      "/weather", "/weather <lat> <lon> <label>", "/clear", "/quit"].forEach(line => appendOutput(line));
     return false;
   }
   if (cmd === "status") {
     appendOutput(`Endpoint: ${asukaEndpoint || "(not set -- use /endpoint <url>)"}`, "cyan");
     appendOutput(`Token: ${asukaToken ? "set (session only)" : "(none)"}`);
+    appendOutput(`Search: ${asukaBraveSearchEnabled ? "enabled" : "disabled"}${asukaBraveKey ? "" : " (no Brave API key set)"}`);
+    appendOutput(`Weather: ${asukaWeatherConfigured() ? "enabled" : "missing OpenWeather API key"}`);
+    appendOutput(`Weather location: ${asukaWeatherLabel} (${asukaWeatherLat}, ${asukaWeatherLon})`);
     appendOutput(`History: ${asukaHistory.length} line(s) of ${ASUKA_HISTORY_MAX}`);
     return false;
   }
@@ -697,6 +977,49 @@ function asukaHandleSlashCommand(text) {
     asukaSystemPrompt = arg;
     fileSystem.write(ASUKA_SYSTEM_PROMPT_FILE, asukaSystemPrompt);
     appendOutput("asuka: system prompt updated.", "green");
+    return false;
+  }
+  if (cmd === "search") {
+    if (arg === "on" || arg === "enable") {
+      asukaBraveSearchEnabled = true;
+      appendOutput("asuka: Brave search enabled.", "green");
+    } else if (arg === "off" || arg === "disable") {
+      asukaBraveSearchEnabled = false;
+      appendOutput("asuka: Brave search disabled.", "green");
+    } else {
+      appendOutput("Usage: /search on|off", "red");
+    }
+    return false;
+  }
+  if (cmd === "bravekey") {
+    asukaBraveKey = arg;
+    appendOutput(arg ? "asuka: Brave Search API key set (kept in memory only, not saved)." : "asuka: Brave Search API key cleared.", "green");
+    return false;
+  }
+  if (cmd === "owmkey") {
+    asukaOwmKey = arg;
+    appendOutput(arg ? "asuka: OpenWeather API key set (kept in memory only, not saved)." : "asuka: OpenWeather API key cleared.", "green");
+    return false;
+  }
+  if (cmd === "weather") {
+    if (!arg) {
+      appendOutput(`Weather: ${asukaWeatherConfigured() ? "enabled" : "missing OpenWeather API key"}`, "cyan");
+      appendOutput(`Location: ${asukaWeatherLabel}`);
+      appendOutput(`Lat/Lon: ${asukaWeatherLat}, ${asukaWeatherLon}`);
+      return false;
+    }
+    const match = /^(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(.+)$/.exec(arg);
+    if (!match) { appendOutput("Usage: /weather <lat> <lon> <label>", "red"); return false; }
+    const lat = Number(match[1]);
+    const lon = Number(match[2]);
+    if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+      appendOutput("asuka: invalid weather coordinates", "red");
+      return false;
+    }
+    asukaWeatherLat = lat;
+    asukaWeatherLon = lon;
+    asukaWeatherLabel = match[3].trim();
+    appendOutput(`asuka: weather location set to ${asukaWeatherLabel}`, "green");
     return false;
   }
   if (cmd === "clear") {
@@ -727,19 +1050,18 @@ async function handleAsukaLine(rawText) {
 }
 
 function openAsuka() {
-  asukaEndpoint = settingsGet(fileSystem, "asuka.endpoint", "");
+  asukaEndpoint = settingsGet(fileSystem, "asuka.endpoint", ASUKA_DEFAULT_ENDPOINT);
   const storedPrompt = (fileSystem.read(ASUKA_SYSTEM_PROMPT_FILE) || "").trim();
   asukaSystemPrompt = storedPrompt || ASUKA_DEFAULT_SYSTEM_PROMPT;
   if (!storedPrompt) fileSystem.write(ASUKA_SYSTEM_PROMPT_FILE, asukaSystemPrompt);
   asukaToken = "";
+  asukaBraveKey = "";
+  asukaOwmKey = "";
   asukaHistory = [];
   asukaActive = true;
-  appendOutput("ASUKA local chat -- browser build, no tool calling (see /help).", "pink");
-  appendOutput(asukaEndpoint
-    ? `Endpoint: ${asukaEndpoint}`
-    : "No endpoint set -- use /endpoint <url> to point this at an OpenAI-compatible " +
-      "chat-completions server (e.g. an asuka-proxy deployment). The target must send " +
-      "CORS headers, since this is a direct browser request.");
+  appendOutput("ASUKA local chat -- fetch_url/openweather_current/brave_search/current_datetime tools included.", "pink");
+  appendOutput(`Endpoint: ${asukaEndpoint}`);
+  appendOutput("Search and weather tools need their own API key: /bravekey, /owmkey, /weather. See /help.");
   appendOutput("/quit to exit, /help for commands");
   stopButton.textContent = "EXIT ASUKA";
   stopButton.disabled = false;
@@ -813,7 +1135,11 @@ async function submitShellCommand(value) {
   updateStudioControls();
   await shell.execute(value);
   shellBusy = false;
-  if (!appRunning && !gameBoy.active && displayState.powered && !displayState.splash) setInputMode("SHELL INPUT", shell.prompt());
+  // shell.execute() may itself have just started asuka mode (command_asuka -> openAsuka(),
+  // which already set its own input mode) -- don't stomp that back to the shell prompt
+  if (!appRunning && !gameBoy.active && !asukaActive && displayState.powered && !displayState.splash) {
+    setInputMode("SHELL INPUT", shell.prompt());
+  }
   formatStorage();
   updateStudioControls();
 }
