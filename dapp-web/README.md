@@ -5,7 +5,7 @@ This directory contains two static, browser-only experiences:
 - `emulator.html` — an integrated DAPP workbench and behavioral DOLL-OS
   emulator. Source written in the left editor is syntax-highlighted, saved into
   the device's `/apps` volume, and launched through its emulated shell and
-  AppRunner 1.7.0 runtime.
+  AppRunner runtime (version tracked in `runtime-config.js`).
 - `index.html` — the original IDE, now backed by the same AppRunner, virtual
   disk, Dapper client, and browser-audio adapter as the integrated emulator.
 

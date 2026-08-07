@@ -91,7 +91,7 @@ test("Dapper keeps the full catalog count while exposing only compatible package
     ...fixture.record,
     id: "future-app",
     name: "Future App",
-    runtime_min: "1.8.0",
+    runtime_min: "9.9.0",   //deliberately past any real release, so this stays "future"
     url: "packages/future-app/1.2.0/fnk0104.dapp"
   };
   fixture.catalog = `${[fixture.record, cardputer, future].map(record => JSON.stringify(record)).join("\n")}\n`;
@@ -100,7 +100,7 @@ test("Dapper keeps the full catalog count while exposing only compatible package
   assert.equal((await client.refresh()).length, 3);
   assert.deepEqual((await client.available()).map(record => record.id), ["download"]);
   await assert.rejects(() => client.select("cardputer-only"), /not published for fnk0104/);
-  await assert.rejects(() => client.select("future-app"), /requires AppRunner >=1\.8\.0 <2\.0\.0/);
+  await assert.rejects(() => client.select("future-app"), /requires AppRunner >=9\.9\.0 <2\.0\.0/);
 });
 
 test("Dapper owns, diagnoses, and removes only registry-managed packages", async () => {
