@@ -143,8 +143,13 @@ void initDisplay() {
 
 void drawDisplayBootSplash() {
     frameSprite.fillSprite(TFT_CYAN);
+    const int splashWidth = min(DISPLAY_WIDTH - (DISPLAY_PADDING * 4), 180);
+    const int splashHeight = 64;
+    const int splashX = (DISPLAY_WIDTH - splashWidth) / 2;
+    const int splashY = (DISPLAY_HEIGHT - splashHeight) / 2;
+    frameSprite.fillRect(splashX, splashY, splashWidth, splashHeight, TFT_BLACK);
     frameSprite.setTextDatum(MC_DATUM);
-    frameSprite.setTextColor(TFT_PINK, TFT_CYAN);
+    frameSprite.setTextColor(TFT_PINK, TFT_BLACK);
     frameSprite.setTextSize(2);
     frameSprite.drawString("DOLL-OS", DISPLAY_WIDTH / 2, DISPLAY_HEIGHT / 2 - 10);
     frameSprite.setTextSize(1);
