@@ -1,15 +1,17 @@
 # @dapp-format 1
 # @id tracker-music
 # @name Tracker Music
-# @version 1.4.0
+# @version 1.5.0
 # @boards fnk0104
 # @runtime >=1.8.0 <2.0.0
 # @echo off
 # @summary An eight-pattern song sequencer for the three-channel synth
 # /apps/tracker-music.dapp
-# Arrows move, space toggles a step, 1-6 set the selected note tone, [] changes
-# pattern, comma/dot moves the song cursor, A assigns pattern to song, P plays
-# song, +/- changes tempo, Enter plays one loop, W cycles the current channel's
+# Arrows move, space toggles a step, z s x d c v g b h n j m play C..B on the
+# selected channel, l and ; play C#/D# one octave up, 1-9 set the octave those
+# keys play in, [] changes pattern, comma/dot moves the song cursor, A assigns
+# pattern to song, P plays song,
+# +/- changes tempo, Enter plays one loop, W cycles the current channel's
 # waveform (sine/triangle/square/sawtooth/noise), H/? helps, S opens save
 # browser, L opens load browser, C clears the current pattern, X trims song
 # length, Escape exits.
@@ -21,28 +23,110 @@ DIM p3 128
 DIM t1 128
 DIM t2 128
 DIM t3 128
-DIM f1 6
-DIM f2 6
-DIM f3 6
 DIM song 16
-SET f1[0] 110
-SET f1[1] 131
-SET f1[2] 147
-SET f1[3] 165
-SET f1[4] 196
-SET f1[5] 220
-SET f2[0] 220
-SET f2[1] 262
-SET f2[2] 294
-SET f2[3] 330
-SET f2[4] 392
-SET f2[5] 440
-SET f3[0] 880
-SET f3[1] 1200
-SET f3[2] 1800
-SET f3[3] 2600
-SET f3[4] 4000
-SET f3[5] 6500
+#keymap[keycode-59] = semitone (0=C..11=B) for the 12 piano-row letter keys
+#(b c d g h j m n s v x z), plus two keys that extend a semitone into the
+#octave above the selected one (l=C#, ;=D#, encoded as semitone+12 so the
+#lookup and the octave-carry math below stay branch-free). -1 for every other
+#key in that keycode range -- including command letters like A/C/H/L/S/W/X and
+#?, which are intercepted earlier in :loop and never reach this array, but are
+#listed explicitly rather than left to a default so nothing reads as a stray
+#note if that ever changes. A lookup table instead of a per-key label chain
+#because AppRunner caps scripts at 256 labels and this file is already dense
+#with per-version save/load branches.
+DIM keymap 64
+SET keymap[0] 15
+SET keymap[1] -1
+SET keymap[2] -1
+SET keymap[3] -1
+SET keymap[4] -1
+SET keymap[5] -1
+SET keymap[6] -1
+SET keymap[7] -1
+SET keymap[8] -1
+SET keymap[9] -1
+SET keymap[10] -1
+SET keymap[11] -1
+SET keymap[12] -1
+SET keymap[13] -1
+SET keymap[14] -1
+SET keymap[15] -1
+SET keymap[16] -1
+SET keymap[17] -1
+SET keymap[18] -1
+SET keymap[19] -1
+SET keymap[20] -1
+SET keymap[21] -1
+SET keymap[22] -1
+SET keymap[23] -1
+SET keymap[24] -1
+SET keymap[25] -1
+SET keymap[26] -1
+SET keymap[27] -1
+SET keymap[28] -1
+SET keymap[29] -1
+SET keymap[30] -1
+SET keymap[31] -1
+SET keymap[32] -1
+SET keymap[33] -1
+SET keymap[34] -1
+SET keymap[35] -1
+SET keymap[36] -1
+SET keymap[37] -1
+SET keymap[38] -1
+SET keymap[39] 7
+SET keymap[40] 4
+SET keymap[41] 3
+SET keymap[42] -1
+SET keymap[43] -1
+SET keymap[44] 6
+SET keymap[45] 8
+SET keymap[46] -1
+SET keymap[47] 10
+SET keymap[48] -1
+SET keymap[49] 13
+SET keymap[50] 11
+SET keymap[51] 9
+SET keymap[52] -1
+SET keymap[53] -1
+SET keymap[54] -1
+SET keymap[55] -1
+SET keymap[56] 1
+SET keymap[57] -1
+SET keymap[58] -1
+SET keymap[59] 5
+SET keymap[60] -1
+SET keymap[61] 2
+SET keymap[62] -1
+SET keymap[63] 0
+#letterCode/isSharp[semitone] build the 2-char grid/status note label without
+#an 11-branch chain (same label-budget reasoning as keymap above)
+DIM letterCode 12
+DIM isSharp 12
+SET letterCode[0] 67
+SET letterCode[1] 67
+SET letterCode[2] 68
+SET letterCode[3] 68
+SET letterCode[4] 69
+SET letterCode[5] 70
+SET letterCode[6] 70
+SET letterCode[7] 71
+SET letterCode[8] 71
+SET letterCode[9] 65
+SET letterCode[10] 65
+SET letterCode[11] 66
+SET isSharp[0] 0
+SET isSharp[1] 1
+SET isSharp[2] 0
+SET isSharp[3] 1
+SET isSharp[4] 0
+SET isSharp[5] 0
+SET isSharp[6] 1
+SET isSharp[7] 0
+SET isSharp[8] 1
+SET isSharp[9] 0
+SET isSharp[10] 1
+SET isSharp[11] 0
 SET channel 1
 SET step 0
 SET pattern 0
@@ -51,9 +135,11 @@ SET totalsteps 128
 SET songpos 0
 SET songLen 1
 SET bpm 120
-SET tone1 0
-SET tone2 2
-SET tone3 3
+SET wideTones 0
+SET octave 4
+SET tone1 36
+SET tone2 36
+SET tone3 36
 SET wave1 2
 SET wave2 1
 SET wave3 4
@@ -86,22 +172,27 @@ IF $k = 91 GOTO prevpattern
 IF $k = 93 GOTO nextpattern
 IF $k = 97 GOTO assignsong
 IF $k = 65 GOTO assignsong
-IF $k = 120 GOTO trimsong
 IF $k = 88 GOTO trimsong
-IF $k = 115 GOTO savekey
 IF $k = 83 GOTO savekey
-IF $k = 108 GOTO loadkey
 IF $k = 76 GOTO loadkey
-IF $k = 99 GOTO clearkey
 IF $k = 67 GOTO clearkey
 IF $k = 119 GOTO cyclewave
 IF $k = 87 GOTO cyclewave
-IF $k = 104 GOTO helpkey
 IF $k = 72 GOTO helpkey
 IF $k = 63 GOTO helpkey
-IF $k < 49 GOTO wait
-IF $k > 54 GOTO wait
-EXPR tone $k - 49
+IF $k < 49 GOTO checknote
+IF $k > 57 GOTO checknote
+EXPR octave $k - 48
+GOTO redraw
+:checknote
+IF $k < 59 GOTO wait
+IF $k > 122 GOTO wait
+EXPR koff $k - 59
+SET rawsemi $keymap[$koff]
+IF $rawsemi < 0 GOTO wait
+EXPR octoff floor($rawsemi / 12)
+EXPR semi $rawsemi % 12
+EXPR tone ($octave - 1 + $octoff) * 12 + $semi
 EXPR idx $pattern * 16 + $step
 IF $channel = 1 GOTO setnote1
 IF $channel = 2 GOTO setnote2
@@ -249,22 +340,25 @@ SET playstep 0
 EXPR playidx $playpat * 16 + $playstep
 WAVESTOP
 IF $p1[$playidx] = 0 GOTO pl2
-SET playtone $t1[$playidx]
+SET tone $t1[$playidx]
+GOSUB notefreq
 SET widx $wave1
 GOSUB wavename
-WAVE 1 $wname $f1[$playtone] 22
+WAVE 1 $wname $freq 22
 :pl2
 IF $p2[$playidx] = 0 GOTO pl3
-SET playtone $t2[$playidx]
+SET tone $t2[$playidx]
+GOSUB notefreq
 SET widx $wave2
 GOSUB wavename
-WAVE 2 $wname $f2[$playtone] 18
+WAVE 2 $wname $freq 18
 :pl3
 IF $p3[$playidx] = 0 GOTO plwait
-SET playtone $t3[$playidx]
+SET tone $t3[$playidx]
+GOSUB notefreq
 SET widx $wave3
 GOSUB wavename
-WAVE 3 $wname $f3[$playtone] 12
+WAVE 3 $wname $freq 12
 :plwait
 SET step $playstep
 GOSUB draw
@@ -328,27 +422,33 @@ GOTO curdone
 SET curtone $t2[$idx]
 SET curwave $wave2
 :curdone
-EXPR curmark $curtone + 1
 EXPR patdisp $pattern + 1
 EXPR songdisp $songpos + 1
 SET widx $curwave
 GOSUB wavename
+EXPR cursemi $curtone % 12
+EXPR curoct floor($curtone / 12) + 1
+SET semi $cursemi
+GOSUB notename
+SETSTR tonelabel $nlabel
+APPEND tonelabel "$curoct"
 COLOR pink
 PUT 0 0 "TRACKER MUSIC"
 COLOR white
-PUT 0 1 "PAT $patdisp/8  SONG $songdisp/$songLen  BPM $bpm"
-PUT 0 2 "CH $channel  TONE $curmark  WAVE $wlabel"
+PUT 0 1 "PAT $patdisp/8  SONG $songdisp/$songLen  BPM $bpm  OCT $octave"
+PUT 0 2 "CH $channel  TONE $tonelabel  WAVE $wlabel"
 COLOR cyan
-PUT 0 4 "    1 2 3 4 5 6 7 8 9 A B C D E F G"
+PUT 0 4 "    1  2  3  4  5  6  7  8  9  A  B  C  D  E  F  G"
 SET i 0
 :drawloop
 IF $i >= 16 GOTO drawcursor
 EXPR idx $pattern * 16 + $i
-EXPR x 4 + $i * 2
+EXPR x 4 + $i * 3
 IF $p1[$idx] = 0 GOTO d1off
 COLOR pink
-EXPR mark $t1[$idx] + 1
-PUT $x 7 "$mark"
+EXPR semi $t1[$idx] % 12
+GOSUB notename
+PUT $x 7 "$nlabel"
 GOTO d2
 :d1off
 COLOR white
@@ -356,8 +456,9 @@ PUT $x 7 "."
 :d2
 IF $p2[$idx] = 0 GOTO d2off
 COLOR cyan
-EXPR mark $t2[$idx] + 1
-PUT $x 10 "$mark"
+EXPR semi $t2[$idx] % 12
+GOSUB notename
+PUT $x 10 "$nlabel"
 GOTO d3
 :d2off
 COLOR white
@@ -365,8 +466,9 @@ PUT $x 10 "."
 :d3
 IF $p3[$idx] = 0 GOTO d3off
 COLOR yellow
-EXPR mark $t3[$idx] + 1
-PUT $x 13 "$mark"
+EXPR semi $t3[$idx] % 12
+GOSUB notename
+PUT $x 13 "$nlabel"
 GOTO dn
 :d3off
 COLOR white
@@ -385,7 +487,7 @@ PUT 0 10 "$wlabel"
 SET widx $wave3
 GOSUB wavename
 PUT 0 13 "$wlabel"
-EXPR x 4 + $step * 2
+EXPR x 4 + $step * 3
 EXPR y 4 + $channel * 3
 COLOR green
 PUT $x $y "@"
@@ -408,6 +510,7 @@ ADD i 1
 GOTO drawsong
 :drawsong_done
 COLOR yellow
+PUT 0 17 "keys z-m play notes, l ; = C#/D# +1oct, 1-9 octave"
 PUT 0 18 "arrows move space toggle [] pattern ,/. song A assign"
 PUT 0 19 "enter pat P song +/- tempo H/? help S save L load esc"
 FLIP
@@ -420,9 +523,11 @@ COLOR pink
 PUT 0 0 "TRACKER MUSIC CONTROLS"
 COLOR white
 PUT 0 2 "arrows  move channels and steps"
-PUT 0 4 "space   toggle note    1-6 set tone"
-PUT 0 6 "enter   play pattern   P play song"
-PUT 0 8 "[ / ]   switch pattern"
+PUT 0 3 "z s x d c v g b h n j m play C..B (piano row)"
+PUT 0 4 "l ; play C#/D# one octave above that"
+PUT 0 5 "1-9     set the octave those keys play in"
+PUT 0 6 "space   toggle note    enter play pattern"
+PUT 0 7 "P       play song      [ / ] switch pattern"
 PUT 0 9 "W       cycle channel's waveform"
 PUT 0 10 ", / .   move song cursor, . extends"
 PUT 0 12 "A       assign pattern to song slot"
@@ -463,6 +568,34 @@ RETURN
 :wn_saw
 SETSTR wname "sawtooth"
 SETSTR wlabel "SAW"
+RETURN
+
+#looks up $semi (0=C 1=C# 2=D ... 11=B) into $nlabel, a 2-char row label, via
+#the letterCode/isSharp tables (naturals pad with a trailing space so sharps
+#and naturals line up in the grid)
+:notename
+SET nc $letterCode[$semi]
+CHR nlabel $nc
+IF $isSharp[$semi] = 0 GOTO nn_natural
+APPEND nlabel "#"
+GOTO nn_done
+:nn_natural
+APPEND nlabel " "
+:nn_done
+RETURN
+
+#converts $tone (absolute pitch index, (octave-1)*12+semitone, octave 1-9) into
+#$freq via equal temperament (A4=440Hz=index 45, since MIDI note = tone+24).
+#Clamped to WAVE's 1..12000Hz range -- the very top of octave 9 would otherwise
+#exceed it and make WAVE reject the call outright.
+:notefreq
+EXPR freq 440 * pow(2, ($tone - 45) / 12)
+IF $freq <= 12000 GOTO nf_hi_ok
+SET freq 12000
+:nf_hi_ok
+IF $freq >= 1 GOTO nf_lo_ok
+SET freq 1
+:nf_lo_ok
 RETURN
 
 :inittones
@@ -776,10 +909,11 @@ RETURN
 :save
 FOPEN $savePath write
 IF $fok = 0 GOTO svdone
-FWRITE "TM4"
+FWRITE "TM5"
 FWRITE "$bpm"
 FWRITE "$tone1 $tone2 $tone3"
 FWRITE "$wave1 $wave2 $wave3"
+FWRITE "$octave"
 FWRITE "$pattern"
 FWRITE "$patternCount"
 FWRITE "$songpos"
@@ -848,9 +982,10 @@ GOTO svtadd
 :svt2
 SET val $t2[$idx]
 :svtadd
-ADD val 48
-CHR one $val
-APPEND line $one
+IF $i = 0 GOTO svtfirst
+APPEND line " "
+:svtfirst
+APPEND line "$val"
 ADD i 1
 GOTO svtbits
 :svtwrite
@@ -865,11 +1000,13 @@ FCLOSE
 RETURN
 
 :load
+SET wideTones 0
 FEXISTS have $savePath
 IF $have = 0 GOTO lddone
 FOPEN $savePath read
 IF $fok = 0 GOTO lddone
 FREAD text
+IFEQ $text "TM5" GOTO ldv5
 IFEQ $text "TM4" GOTO ldv4
 IFEQ $text "TM3" GOTO ldv3
 IFEQ $text "TM2" GOTO ldv2
@@ -889,6 +1026,47 @@ SET pat 0
 SET ldabort 0
 GOSUB loadpat
 GOTO lddone
+
+:ldv5
+FREAD text
+GOSUB str2num
+IF $got = 1 GOTO ldv5_bpm
+GOTO ldv5_tones
+:ldv5_bpm
+SET bpm $num
+:ldv5_tones
+FREAD line
+SET pos 0
+GOSUB readnum
+SET tone1 $num
+GOSUB readnum
+SET tone2 $num
+GOSUB readnum
+SET tone3 $num
+GOSUB inittones
+FREAD line
+SET pos 0
+GOSUB readnum
+SET wave1 $num
+GOSUB readnum
+SET wave2 $num
+GOSUB readnum
+SET wave3 $num
+GOSUB clampwaves
+FREAD text
+GOSUB str2num
+IF $got = 1 GOTO ldv5_octave
+GOTO ldv5_octave_done
+:ldv5_octave
+SET octave $num
+IF $octave >= 1 GOTO ldv5_oct_hi
+SET octave 1
+:ldv5_oct_hi
+IF $octave <= 9 GOTO ldv5_octave_done
+SET octave 9
+:ldv5_octave_done
+SET wideTones 1
+GOTO sharedpat_entry
 
 :ldv4
 FREAD text
@@ -916,6 +1094,12 @@ SET wave2 $num
 GOSUB readnum
 SET wave3 $num
 GOSUB clampwaves
+#ldv5 (TM5) jumps in here after its own bpm/tones/waves/octave header, since
+#pattern/count/songpos/songlen/song-bits parsing is identical across versions
+#-- kept in one place instead of a full duplicate to stay under AppRunner's
+#256-label cap. $wideTones (reset in :load, set to 1 only by ldv5) is what
+#tells the shared :loadpat call at the end of this how to parse tone rows.
+:sharedpat_entry
 FREAD text
 GOSUB str2num
 IF $got = 1 GOTO ldv4_pattern
@@ -1168,6 +1352,11 @@ GOTO ldbits
 ADD row 1
 GOTO ldrow
 :ldtones
+#TM5 tone rows are space-separated absolute pitch indices (0..107) instead of
+#the single packed digit older save versions use, since a real note range no
+#longer fits in one ASCII char. One flag-branching loader instead of a fully
+#separate one keeps this under AppRunner's 256-label cap.
+IF $wideTones = 1 GOTO ldtones_wide
 SET row 1
 :ldtrow
 IF $row > 3 GOTO ldpat_done
@@ -1196,6 +1385,40 @@ GOTO ldtbits
 :ldtnext
 ADD row 1
 GOTO ldtrow
+:ldtones_wide
+SET row 1
+:ldtrow_wide
+IF $row > 3 GOTO ldpat_done
+FREAD line
+IF $feof = 1 GOTO ldpat_abort
+SET pos 0
+SET i 0
+:ldtbits_wide
+IF $i >= 16 GOTO ldtnext_wide
+GOSUB readnum
+EXPR idx $pat * 16 + $i
+SET val $num
+IF $val >= 0 GOTO ldtclamp_lo_ok
+SET val 0
+:ldtclamp_lo_ok
+IF $val <= 107 GOTO ldtclamp_hi_ok
+SET val 107
+:ldtclamp_hi_ok
+IF $row = 1 GOTO ldt1_wide
+IF $row = 2 GOTO ldt2_wide
+SET t3[$idx] $val
+GOTO ldtn_wide
+:ldt1_wide
+SET t1[$idx] $val
+GOTO ldtn_wide
+:ldt2_wide
+SET t2[$idx] $val
+:ldtn_wide
+ADD i 1
+GOTO ldtbits_wide
+:ldtnext_wide
+ADD row 1
+GOTO ldtrow_wide
 :ldpat_abort
 SET ldabort 1
 :ldpat_done
