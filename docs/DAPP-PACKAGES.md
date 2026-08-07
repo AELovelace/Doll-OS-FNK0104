@@ -200,9 +200,10 @@ information from source so it cannot quietly drift.
 | `1.6.0` | `DAPPER` |
 | `1.7.0` | `FCOPY`, `FLIST`, `FMKDIR`, `FMOVE` |
 | `1.8.0` | *(no new opcodes; adds the `sawtooth` waveform to `WAVE`)* |
+| `1.9.0` | `TIME` (also raises resource limits -- see §4.3) |
 
 Aliases are included as opcodes because they are accepted directly by the
-interpreter. AppRunner 1.8.0 is a strict opcode superset of 1.7.0.
+interpreter. AppRunner 1.9.0 is a strict opcode superset of 1.7.0.
 
 AppRunner 1.1.0 also extends `IF`, `IFEQ`, and `IFNE` so their taken branch may
 use `GOSUB` as well as `GOTO`. A validator must check opcode syntax and not only
@@ -220,6 +221,7 @@ ignore the comment and keep echoing submitted `INPUT` lines.
 | `1.1.0` additions | `$feof`, `$fok`, `$kup`, `$kdown`, `$kleft`, `$kright`, `$kenter`, `$kesc`, `$kback`, `$ktab`, `$kspace` | `$feof`, `$fok` |
 | `1.3.0` additions | `$ledok` | `$ledok` |
 | `1.4.0` additions | `$audiook`, `$httpok`, `$httpcode`, `$httplen`, `$httptruncated`, `$jsonok` | `$audiook`, `$httpok`, `$httpcode`, `$httplen`, `$httptruncated`, `$jsonok` |
+| `1.9.0` additions | `$timeok`, `$timeepoch`, `$timeyear`, `$timemonth`, `$timeday`, `$timehour`, `$timeminute`, `$timesecond`, `$timeweekday` | `$timeok`, `$timeepoch`, `$timeyear`, `$timemonth`, `$timeday`, `$timehour`, `$timeminute`, `$timesecond`, `$timeweekday` |
 
 The named key values are numeric-only and deliberately expand to empty text when
 printed as strings.
@@ -229,12 +231,12 @@ printed as strings.
 | Limit | `m5cardputer` | `fnk0104` |
 | --- | ---: | ---: |
 | Lines | 160 | 4,000 |
-| Labels | 32 | 256 |
-| Numeric variables | 16 | 64 |
-| String variables | 8 | 32 |
+| Labels | 32 | 512 |
+| Numeric variables | 16 | 128 |
+| String variables | 8 | 64 |
 | String length | 128 | 4,096 |
-| Arrays | Not supported | 16 |
-| Shared array cells | Not supported | 8,192 |
+| Arrays | Not supported | 32 |
+| Shared array cells | Not supported | 16,384 |
 | Nested `GOSUB` calls | Not supported | 64 |
 | Canvas size | Not supported | 120 x 60 |
 | Non-yielding step guard | 4,000 | 1,000,000 |

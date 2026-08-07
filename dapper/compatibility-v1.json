@@ -182,6 +182,12 @@
                                    "syntax_features":  [
                                                            "wave-sawtooth"
                                                        ]
+                               },
+                     "1.9.0":  {
+                                   "extends":  "1.8.0",
+                                   "opcodes":  [
+                                                   "TIME"
+                                               ]
                                }
                  },
     "boards":  {
@@ -202,15 +208,15 @@
                                                   }
                                    },
                    "fnk0104":  {
-                                       "runtime":  "1.8.0",
+                                       "runtime":  "1.9.0",
                                    "limits":  {
                                                   "lines":  4000,
-                                                  "labels":  256,
-                                                  "numeric_variables":  64,
-                                                  "string_variables":  32,
+                                                  "labels":  512,
+                                                  "numeric_variables":  128,
+                                                  "string_variables":  64,
                                                   "string_length":  4096,
-                                                  "arrays":  16,
-                                                  "array_cells":  8192,
+                                                  "arrays":  32,
+                                                  "array_cells":  16384,
                                                   "call_depth":  64,
                                                   "canvas_columns":  120,
                                                   "canvas_rows":  60,

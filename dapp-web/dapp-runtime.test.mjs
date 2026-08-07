@@ -1019,9 +1019,14 @@ test("Tracker Music saves per-note tones and opens help", async () => {
         return;
       }
       step += 1;
-      if (step === 1) push("4");
-      else if (step === 2) push("s");
-      else if (step === 3) push("h");
+      //"d" plays D# at the default octave (4) on channel 1, which both places and
+      //toggles step 0 in one press (piano-row note keys, not the old 1-6 tone-select).
+      //Command letters that collide with a note letter now need Shift: "S" opens the
+      //save browser (lowercase "s" plays C# instead), "H" opens help (lowercase "h"
+      //plays G# instead).
+      if (step === 1) push("d");
+      else if (step === 2) push("S");
+      else if (step === 3) push("H");
       else if (step >= 4) push("Escape");
     }
   };
@@ -1031,19 +1036,24 @@ test("Tracker Music saves per-note tones and opens help", async () => {
 
   assert.equal(result.ok, true, result.error?.message);
   assert.ok(frames.some(frame => frame.includes("TRACKER MUSIC CONTROLS")));
-  assert.ok(frames.some(frame => frame.includes("PAT 1/8") && frame.includes("TONE 4")));
+  assert.ok(frames.some(frame => frame.includes("PAT 1/8") && frame.includes("TONE D#4")));
   const saved = files.read("/apps/tracker-music.dat").trimEnd().split("\n");
-  assert.equal(saved.length, 57);
+  assert.equal(saved.length, 58);
   //"2 1 4" is the default square/triangle/noise per channel, unchanged since this
-  //test never presses W
+  //test never presses W. Tone 39 is D#4 ((octave-1)*12+semitone = 3*12+3); octave
+  //(4) is its own line in TM5, absent from the older TM4 layout this test used to
+  //check.
   assert.deepEqual(saved.slice(0, 9),
-    ["TM4", "120", "3 2 3", "2 1 4", "0", "8", "0", "1", "0000000000000000"]);
-  assert.equal(saved[9], "1000000000000000");
-  assert.equal(saved[10], "0000000000000000");
+    ["TM5", "120", "39 36 36", "2 1 4", "4", "0", "8", "0", "1"]);
+  assert.equal(saved[9], "0000000000000000");
+  assert.equal(saved[10], "1000000000000000");
   assert.equal(saved[11], "0000000000000000");
-  assert.equal(saved[12], "3000000000000000");
-  assert.equal(saved[13], "2222222222222222");
-  assert.equal(saved[14], "3333333333333333");
+  assert.equal(saved[12], "0000000000000000");
+  //TM5 tone rows are space-separated (0..107 no longer fits one ASCII digit);
+  //step 0 carries the placed D#4 (39), the rest are still the default C4 (36)
+  assert.equal(saved[13], "39 36 36 36 36 36 36 36 36 36 36 36 36 36 36 36");
+  assert.equal(saved[14], "36 36 36 36 36 36 36 36 36 36 36 36 36 36 36 36");
+  assert.equal(saved[15], "36 36 36 36 36 36 36 36 36 36 36 36 36 36 36 36");
 });
 
 test("Tracker Music switches and saves multiple patterns independently", async () => {
@@ -1068,11 +1078,15 @@ test("Tracker Music switches and saves multiple patterns independently", async (
         return;
       }
       step += 1;
+      //"]" moves to pattern 2, "5" sets the octave those piano-row keys play in,
+      //"z" plays C5 (also toggles step 0 on), "a" assigns pattern 2 into song slot
+      //0, "S" (Shift -- lowercase is now a note) opens the save browser
       if (step === 1) push("]");
       else if (step === 2) push("5");
-      else if (step === 3) push("a");
-      else if (step === 4) push("s");
-      else if (step >= 5) push("Escape");
+      else if (step === 3) push("z");
+      else if (step === 4) push("a");
+      else if (step === 5) push("S");
+      else if (step >= 6) push("Escape");
     }
   };
   runtime = new DappRuntime(io, files);
@@ -1080,13 +1094,15 @@ test("Tracker Music switches and saves multiple patterns independently", async (
   const result = await runtime.run(source);
 
   assert.equal(result.ok, true, result.error?.message);
-  assert.ok(frames.some(frame => frame.includes("PAT 2/8") && frame.includes("TONE 5")));
+  assert.ok(frames.some(frame => frame.includes("PAT 2/8") && frame.includes("TONE C 5")));
   const saved = files.read("/apps/tracker-music.dat").trimEnd().split("\n");
+  //octave (5) is TM5's own header line; tone 48 is C5 ((octave-1)*12+semitone = 4*12+0)
   assert.deepEqual(saved.slice(0, 9),
-    ["TM4", "120", "4 2 3", "2 1 4", "1", "8", "0", "1", "1000000000000000"]);
-  assert.equal(saved[9], "0000000000000000");
-  assert.equal(saved[15], "1000000000000000");
-  assert.equal(saved[18], "4000000000000000");
+    ["TM5", "120", "48 36 36", "2 1 4", "5", "1", "8", "0", "1"]);
+  assert.equal(saved[9], "1000000000000000");   //song[0] = pattern 1 (0-indexed), from "a"
+  assert.equal(saved[10], "0000000000000000");  //pattern 0's own steps are untouched
+  assert.equal(saved[16], "1000000000000000");  //pattern 1's step 0, toggled on by "z"
+  assert.equal(saved[19], "48 36 36 36 36 36 36 36 36 36 36 36 36 36 36 36");
 });
 
 test("Tracker Music migrates old one-pattern saves", async () => {
@@ -1121,7 +1137,7 @@ test("Tracker Music migrates old one-pattern saves", async () => {
         return;
       }
       step += 1;
-      if (step === 1) push("s");
+      if (step === 1) push("S");   //Shift -- lowercase "s" is now a note key
       else if (step >= 2) push("Escape");
     }
   };
@@ -1131,10 +1147,16 @@ test("Tracker Music migrates old one-pattern saves", async () => {
 
   assert.equal(result.ok, true, result.error?.message);
   const saved = files.read("/apps/tracker-music.dat").trimEnd().split("\n");
+  //untagged saves predate the octave concept, so it comes back at its default (4);
+  //the old file's tone1/2/3 (0..5, scale degrees under the old pentatonic scheme)
+  //load through unreinterpreted -- now absolute low-octave pitch indices instead,
+  //an accepted side effect of the chromatic-note rework, not something this
+  //migration path tries to compensate for
   assert.deepEqual(saved.slice(0, 9),
-    ["TM4", "140", "3 2 3", "2 1 4", "0", "8", "0", "1", "0000000000000000"]);
-  assert.equal(saved[9], "1000000000000000");
-  assert.equal(saved[12], "3000000000000000");
+    ["TM5", "140", "3 2 3", "2 1 4", "4", "0", "8", "0", "1"]);
+  assert.equal(saved[9], "0000000000000000");
+  assert.equal(saved[10], "1000000000000000");
+  assert.equal(saved[13], "3 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0");
 });
 
 test("Tracker Music save browser creates a directory and saves a named file", async () => {
@@ -1158,7 +1180,7 @@ test("Tracker Music save browser creates a directory and saves a named file", as
         return;
       }
       step += 1;
-      if (step === 1) push("s");
+      if (step === 1) push("S");   //Shift -- lowercase "s" is now a note key
       else if (step >= 2) push("Escape");
     }
   };
@@ -1169,7 +1191,7 @@ test("Tracker Music save browser creates a directory and saves a named file", as
   assert.equal(result.ok, true, result.error?.message);
   assert.ok(files.exists("/apps/songs/jam.dat"));
   const saved = files.read("/apps/songs/jam.dat").trimEnd().split("\n");
-  assert.equal(saved[0], "TM4");
+  assert.equal(saved[0], "TM5");
 });
 
 test("Tracker Music's load browser opens on L, lists the last save location, and loads the picked file", async () => {
@@ -1181,14 +1203,16 @@ test("Tracker Music's load browser opens on L, lists the last save location, and
   let loadFrame = 0;
   const answers = ["songs", "jam.dat"];
   const push = key => runtime.pushKey({ key, ctrlKey: false });
-  //character right after the "SQR" (channel 1's default square-wave label) row
-  //label: the step-0 cell. The cursor "@" only overlays it while the cursor
-  //sits on step 0, which the ArrowRight below moves off of, so this reads the
-  //real digit/dot for the rest of the run.
+  //the step-0 cell on the "SQR" (channel 1's default square-wave label) row: a
+  //fixed 2-column slot starting right after the label + gap, "D#"/"C " for a
+  //placed note or "." for empty. The cursor "@" only overlays it while the
+  //cursor sits on step 0, which the ArrowRight below moves off of, so this
+  //reads the real content for the rest of the run. Sliced by fixed column
+  //rather than whitespace-stripped, since a natural note's trailing space
+  //would otherwise collapse and throw off alignment.
   const step0Cell = frame => {
     const line = frame.split("\n").find(l => l.startsWith("SQR"));
-    const stripped = line ? line.replace(/\s+/g, "") : "";
-    return stripped[3];
+    return line ? line.slice(4, 6).trim() : "";
   };
   const io = {
     output() {}, clear() {}, status() {}, endCanvas() {}, waveStop() {},
@@ -1213,15 +1237,16 @@ test("Tracker Music's load browser opens on L, lists the last save location, and
         return;
       }
       step += 1;
-      //set a distinctive tone (which also switches step 0 on), move the cursor off
+      //place a distinctive note (which also switches step 0 on), move the cursor off
       //step 0 so its cell is readable, save to a custom directory via the browser,
       //clear the pattern so the in-memory state no longer proves anything, then open
-      //the load browser (L) and pick the file back up
-      if (step === 1) push("4");
+      //the load browser (L) and pick the file back up. Save/Clear/Load are all Shift
+      //now -- "s"/"c"/"l" are piano-row note keys (C#, E, C#+1oct) in the main view.
+      if (step === 1) push("d");
       else if (step === 2) push("ArrowRight");
-      else if (step === 3) push("s");
-      else if (step === 4) push("c");
-      else if (step === 5) push("l");
+      else if (step === 3) push("S");
+      else if (step === 4) push("C");
+      else if (step === 5) push("L");
       else if (step >= 6) push("Escape");
     }
   };
@@ -1235,8 +1260,8 @@ test("Tracker Music's load browser opens on L, lists the last save location, and
   assert.ok(loadFrame >= 1, "L should have opened the load browser instead of loading silently");
   const clearedIndex = frames.findIndex(frame => step0Cell(frame) === ".");
   assert.ok(clearedIndex >= 0, "clearing the pattern should have switched step 0 off before the reload");
-  assert.ok(frames.slice(clearedIndex + 1).some(frame => step0Cell(frame) === "4"),
-    "loading the picked file through the browser should restore step 0's tone-4 note");
+  assert.ok(frames.slice(clearedIndex + 1).some(frame => step0Cell(frame) === "D#"),
+    "loading the picked file through the browser should restore step 0's D# note");
 });
 
 test("Tracker Music cycles a channel's waveform with W, actually plays the chosen kind, and persists it through save/load", async () => {
@@ -1291,7 +1316,7 @@ test("Tracker Music cycles a channel's waveform with W, actually plays the chose
       }
       if (phase === "opensave") {
         phase = "recycle";
-        push("s");                                     //open the save browser
+        push("S");                                     //open the save browser (Shift -- "s" is a note now)
         return;
       }
       if (phase === "recycle") {
@@ -1314,7 +1339,7 @@ test("Tracker Music cycles a channel's waveform with W, actually plays the chose
       }
       if (phase === "openload") {
         phase = "playReloaded";
-        push("l");                                     //open the load browser
+        push("L");                                     //open the load browser (Shift -- "l" is a note now)
         return;
       }
       if (phase === "playReloaded") {
@@ -1368,7 +1393,7 @@ test("Tracker Music save browser opens the SD app directory from root", async ()
         return;
       }
       step += 1;
-      if (step === 1) push("s");
+      if (step === 1) push("S");   //Shift -- lowercase "s" is now a note key
       else if (step >= 2) push("Escape");
     }
   };
@@ -1401,12 +1426,18 @@ test("Tracker Music sequences patterns and plays a song", async () => {
         const text = chatCanvasText(canvas);
         if (!text.trim()) return;
         step += 1;
-        if (step === 1) push("1");
-        else if (step === 2) push(".");
-        else if (step === 3) push("]");
-        else if (step === 4) push("5");
-        else if (step === 5) push("a");
-        else if (step === 6) push("p");
+        //octave 2 + "n" (A) is exactly 110Hz (two octaves below A4=440); octave 3 +
+        //"b" (G) rounds to 196Hz -- the same two pitches the old digit-tone-select
+        //keys ("1" and "5" against the since-removed hardcoded pentatonic table)
+        //used to reach, now via piano-row note keys plus an explicit octave
+        if (step === 1) push("2");
+        else if (step === 2) push("n");
+        else if (step === 3) push(".");
+        else if (step === 4) push("]");
+        else if (step === 5) push("3");
+        else if (step === 6) push("b");
+        else if (step === 7) push("a");
+        else if (step === 8) push("p");
         else if (waves.some(wave => wave.frequency === 110) && waves.some(wave => wave.frequency === 196)) {
           push("Escape");
         }

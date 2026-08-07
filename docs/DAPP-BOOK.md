@@ -2058,6 +2058,7 @@ LED <r> <g> <b>        set rear RGB LED channels (needs runtime >=1.3.0)
 WAVE <ch> <kind> <hz> <level>  three-channel PCM synth (runtime >=1.4.0)
 WAVESTOP               silence and release the synth
 DAPPER <action> [args] verified package-manager bridge (runtime >=1.6.0)
+TIME                   NTP-sync the clock (UTC); check $timeok (runtime >=1.9.0)
 HTTPGET <n> <url> [max] bounded text GET; inspect $httpok/$httpcode
 HTTPPOST <n> <url> <body> [max] bounded POST response
 HTTPHEADER <n> <value> set/replace one of eight request headers
@@ -2101,9 +2102,9 @@ EXIT                   end the app  (alias END)
 ## Appendix B — Limits and Built-ins
 
 ```text
-4000       lines per app          64      numeric variables
-256        labels                 32      string variables (4096 chars each)
-16         arrays / 8192 cells    64      GOSUB depth
+4000       lines per app          128     numeric variables
+512        labels                 64      string variables (4096 chars each)
+32         arrays / 16384 cells   64      GOSUB depth
 120 x 60   largest canvas         1       open file at a time
 1000000    steps between WAITs before the loop guard trips
 ```
@@ -2115,7 +2116,9 @@ Built-ins: `$battery` `$cwd` `$heap` `$ip` `$millis` `$seconds` `$wifi`
 `$ledok` `$audiook` `$httpok` `$httpcode` `$httplen` `$httptruncated`
 `$jsonok`, the
 file status pair `$fok` (last FOPEN/FDELETE/FSEEK worked) and `$feof`
-(last FREAD hit end of file), and the key codes below.
+(last FREAD hit end of file), the key codes below, and (after `TIME`, UTC)
+`$timeok` `$timeepoch` `$timeyear` `$timemonth` `$timeday` `$timehour`
+`$timeminute` `$timesecond` `$timeweekday`.
 
 ## Appendix C — Key Codes
 

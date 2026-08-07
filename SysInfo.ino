@@ -7,6 +7,37 @@
 //   confirmed from Freenove's own Battery_Voltage example for this board family),
 //   so unlike the M5-specific stubs this is a real reading, not a placeholder.
 #include <esp_heap_caps.h>
+#include <time.h>
+
+//   Network time (NTP)
+//   Shared by Dapper (HTTPS certificate date validation needs a plausible clock before
+//   trusting a TLS session) and the .dapp TIME opcode (AppRunner.ino) -- both just need
+//   "is the clock synced" and "block briefly trying to sync it," differing only in what
+//   they call to stay responsive while waiting, so that's a callback parameter rather
+//   than two copies of the same poll loop.
+
+//1700000000 ~= 2023-11-14; anything before that means the clock is still at its
+//post-boot default (Jan 1 1970) and has never been NTP-synced.
+bool ntpClockReady() {
+    return time(nullptr) >= 1700000000;
+}
+
+//blocks up to timeoutMs trying to NTP-sync the clock, calling yieldFn periodically so
+//the caller's own UI/watchdog stays serviced during the wait. Returns false (with
+//`error` set) if the clock still isn't plausible once the timeout expires.
+bool ntpEnsureClock(String& error, unsigned long timeoutMs, void (*yieldFn)()) {
+    if (ntpClockReady()) return true;
+    configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+    unsigned long started = millis();
+    while (!ntpClockReady() && millis() - started < timeoutMs) {
+        yieldFn();
+    }
+    if (!ntpClockReady()) {
+        error = "clock synchronization failed; NTP time is not available";
+        return false;
+    }
+    return true;
+}
 
 //   PSRAM allocation helpers
 //   This board's ESP32-S3 module carries external PSRAM. Internal SRAM is the scarce

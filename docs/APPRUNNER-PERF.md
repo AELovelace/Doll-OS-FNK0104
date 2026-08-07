@@ -381,6 +381,6 @@ Implemented in one pass and verified to compile clean for
 - **The `FNK0104N_3P5_320x480_ST77922` push path is `#ifdef`'d out of this build**, so the
   partial-push change to it was not compile-checked. It is the same call shape as before
   with a varying `sy`/`h`, but it needs a build on that variant before being trusted.
-- A `:label` line on an app that has already hit `DAPP_MAX_LABELS` (256) is now a silent
+- A `:label` line on an app that has already hit `DAPP_MAX_LABELS` (512) is now a silent
   no-op rather than an "unknown app command" error at runtime. Reaching that cap at all is
   the real problem in either case.

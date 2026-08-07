@@ -145,24 +145,6 @@ static bool dapperEnsureAppDirectoryForTarget(const String& target, String& erro
     return true;
 }
 
-static bool dapperClockReady() {
-    return time(nullptr) >= 1700000000;
-}
-
-static bool dapperEnsureClock(String& error) {
-    if (dapperClockReady()) return true;
-    configTime(0, 0, "pool.ntp.org", "time.nist.gov");
-    unsigned long started = millis();
-    while (!dapperClockReady() && millis() - started < DAPPER_CLOCK_TIMEOUT_MS) {
-        dapperServiceUi();
-    }
-    if (!dapperClockReady()) {
-        error = "clock synchronization failed; HTTPS certificate dates cannot be verified";
-        return false;
-    }
-    return true;
-}
-
 static bool dapperParseStableVersion(const String& value, int parts[3]) {
     int firstDot = value.indexOf('.');
     int secondDot = firstDot >= 0 ? value.indexOf('.', firstDot + 1) : -1;
@@ -242,7 +224,7 @@ static bool dapperFetchToFile(const String& url, const char* destination,
         error = "Wi-Fi is not connected";
         return false;
     }
-    if (!dapperEnsureClock(error)) return false;
+    if (!ntpEnsureClock(error, DAPPER_CLOCK_TIMEOUT_MS, dapperServiceUi)) return false;
 
     ledPulseNetwork();
     WiFiClientSecure* secureClient = new WiFiClientSecure();

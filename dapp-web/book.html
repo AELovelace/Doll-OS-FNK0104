@@ -1275,6 +1275,7 @@ LED &lt;r&gt; &lt;g&gt; &lt;b&gt;        set rear RGB LED channels (needs runtim
 WAVE &lt;ch&gt; &lt;kind&gt; &lt;hz&gt; &lt;level&gt;  three-channel PCM synth (runtime &gt;=1.4.0)
 WAVESTOP               silence and release the synth
 DAPPER &lt;action&gt; [args] verified package-manager bridge (runtime &gt;=1.6.0)
+TIME                   NTP-sync the clock (UTC); check $timeok (runtime &gt;=1.9.0)
 HTTPGET &lt;n&gt; &lt;url&gt; [max] bounded text GET; inspect $httpok/$httpcode
 HTTPPOST &lt;n&gt; &lt;url&gt; &lt;body&gt; [max] bounded POST response
 HTTPHEADER &lt;n&gt; &lt;value&gt; set/replace one of eight request headers
@@ -1314,13 +1315,13 @@ IFNE &lt;l&gt; &lt;r&gt; GOTO|GOSUB &lt;label&gt;        string inequality
 WAIT &lt;ms&gt;              pause; resets the loop guard  (alias SLEEP)
 EXIT                   end the app  (alias END)</code></pre>
 <h2 id="appendix-b-limits-and-built-ins">Appendix B — Limits and Built-ins</h2>
-<pre><code class="language-text">4000       lines per app          64      numeric variables
-256        labels                 32      string variables (4096 chars each)
-16         arrays / 8192 cells    64      GOSUB depth
+<pre><code class="language-text">4000       lines per app          128     numeric variables
+512        labels                 64      string variables (4096 chars each)
+32         arrays / 16384 cells   64      GOSUB depth
 120 x 60   largest canvas         1       open file at a time
 1000000    steps between WAITs before the loop guard trips</code></pre>
 <p>Every limit reports on the terminal when hit — including array indexes out of range, which stop the app with the line number.</p>
-<p>Built-ins: <code>$battery</code> <code>$cwd</code> <code>$heap</code> <code>$ip</code> <code>$millis</code> <code>$seconds</code> <code>$wifi</code> <code>$ledok</code> <code>$audiook</code> <code>$httpok</code> <code>$httpcode</code> <code>$httplen</code> <code>$httptruncated</code> <code>$jsonok</code>, the file status pair <code>$fok</code> (last FOPEN/FDELETE/FSEEK worked) and <code>$feof</code> (last FREAD hit end of file), and the key codes below.</p>
+<p>Built-ins: <code>$battery</code> <code>$cwd</code> <code>$heap</code> <code>$ip</code> <code>$millis</code> <code>$seconds</code> <code>$wifi</code> <code>$ledok</code> <code>$audiook</code> <code>$httpok</code> <code>$httpcode</code> <code>$httplen</code> <code>$httptruncated</code> <code>$jsonok</code>, the file status pair <code>$fok</code> (last FOPEN/FDELETE/FSEEK worked) and <code>$feof</code> (last FREAD hit end of file), the key codes below, and (after <code>TIME</code>, UTC) <code>$timeok</code> <code>$timeepoch</code> <code>$timeyear</code> <code>$timemonth</code> <code>$timeday</code> <code>$timehour</code> <code>$timeminute</code> <code>$timesecond</code> <code>$timeweekday</code>.</p>
 <h2 id="appendix-c-key-codes">Appendix C — Key Codes</h2>
 <pre><code class="language-text">0    nothing pressed            $kenter  5   enter
 $kup     1   arrow up           $kesc    6   escape (also Ctrl+C, Ctrl+T)

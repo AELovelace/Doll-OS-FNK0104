@@ -12,6 +12,7 @@
 #include <esp_system.h>
 #include <esp_task_wdt.h>
 #include <new>
+#include <time.h>
 //EXPR hands whole arithmetic expressions to the same evaluator the "calc" shell command
 //uses (Calc.ino). The script language deliberately has no expression grammar of its own --
 //there is no reason to grow a second, worse one when this is already linked in.
@@ -30,17 +31,34 @@
 //   stack. 4000 lines matches EDIT_MAX_LINES in Edit.ino -- the on-device editor could
 //   already write files longer than the runner would accept.
 const int DAPP_MAX_LINES = 4000;
-const int DAPP_MAX_LABELS = 256;
-const int DAPP_MAX_VARS = 64;
-const int DAPP_MAX_STRING_VARS = 32;
+//DappLabel is a String (16 bytes, SSO covers every label name in this codebase) plus an
+//int lineIndex -- 20 bytes/entry, so this table costs labelCount*20 bytes of PSRAM
+//regardless of how many labels a given script actually declares (fixed calloc in
+//DappProgram::alloc). 512 entries is 10KB of the board's 8MB PSRAM -- tracker-music.dapp,
+//the largest app so far, was already at 254/256 after some careful array-lookup rewrites
+//to avoid hitting this cap; doubling it buys real headroom for basically free.
+const int DAPP_MAX_LABELS = 512;
+//DappVar/DappStringVar are 24/36 bytes each (String header(s) + value + used flag) --
+//doubled from 32/16 since both tables together only cost ~5KB either way.
+const int DAPP_MAX_VARS = 128;
+const int DAPP_MAX_STRING_VARS = 64;
+//per-string-variable cap, enforced on every SETSTR/APPEND rather than a fixed table size
+//like the others here -- a script only pays for what it actually puts in a string, so this
+//is a safety ceiling on one runaway variable, not a standing allocation. Left as-is: no
+//app has come close to it, and it's the one knob here where "bigger" has a real per-script
+//cost instead of being free headroom.
 const int DAPP_MAX_STRING_LEN = 4096;
 
-//   DIM'd numeric arrays. Every array carves cells out of one shared pool rather than
-//   allocating its own block, so the memory cost is fixed at load time whatever the script
-//   DIMs -- 8192 longs is 32KB of PSRAM, and a 10x20 Tetris well plus its piece tables
-//   spends under 500 of them.
-const int DAPP_MAX_ARRAYS = 16;
-const int DAPP_ARRAY_POOL_CELLS = 8192;
+//   DIM'd numeric arrays. DappArray itself (28 bytes: name, a pointer into the pool below,
+//   size, used flag) is just bookkeeping -- the actual cell data for every DIM'd array in a
+//   script is carved out of the one shared pool below by a bump pointer, so DAPP_MAX_ARRAYS
+//   only caps how many *separate* arrays a script can DIM, not how big any one of them can
+//   be (that's DAPP_ARRAY_POOL_CELLS, shared across all of them). 32 arrays is still under
+//   1KB of table; the pool is the real cost -- 16384 longs is 64KB of the board's 8MB PSRAM,
+//   double the old 32KB, and a 10x20 Tetris well plus its piece tables spends under 500 of
+//   them, so this is pure headroom for scripts wanting bigger or more numerous arrays.
+const int DAPP_MAX_ARRAYS = 32;
+const int DAPP_ARRAY_POOL_CELLS = 16384;
 
 //GOSUB nesting. Deep enough for the routine-calls-routine shape real scripts have, shallow
 //enough that a runaway recursion reports a clean error instead of eating PSRAM.
@@ -681,6 +699,18 @@ static long dappHttpLength = 0;
 static long dappHttpTruncated = 0;
 static long dappHttpOk = 0;
 static long dappJsonOk = 0;
+//TIME's output -- an NTP sync (via ntpEnsureClock, SysInfo.ino) broken down with
+//gmtime_r into the fields scripts actually want, since tinyexpr has no calendar math
+//and making every app reimplement leap years to turn an epoch into a date is a bad time
+static long dappTimeOk = 0;
+static long dappTimeEpoch = 0;
+static long dappTimeYear = 0;
+static long dappTimeMonth = 0;
+static long dappTimeDay = 0;
+static long dappTimeHour = 0;
+static long dappTimeMinute = 0;
+static long dappTimeSecond = 0;
+static long dappTimeWeekday = 0;   //0=Sunday..6=Saturday, matching struct tm
 
 //   Buffer and renderer state. The blocks themselves live further down with their
 //   routines, but these are read as $buflen/$htmllines/... by the two lookups below, so
@@ -715,6 +745,15 @@ static long appBuiltinValue(String name) {
     if (name == "httptruncated") return dappHttpTruncated;
     if (name == "httpok") return dappHttpOk;
     if (name == "jsonok") return dappJsonOk;
+    if (name == "timeok") return dappTimeOk;
+    if (name == "timeepoch") return dappTimeEpoch;
+    if (name == "timeyear") return dappTimeYear;
+    if (name == "timemonth") return dappTimeMonth;
+    if (name == "timeday") return dappTimeDay;
+    if (name == "timehour") return dappTimeHour;
+    if (name == "timeminute") return dappTimeMinute;
+    if (name == "timesecond") return dappTimeSecond;
+    if (name == "timeweekday") return dappTimeWeekday;
     if (name == "audiook") return dappSynthLastOk() ? 1 : 0;
     if (name == "buflen") return (long)dappBufLen;
     if (name == "bufcap") return (long)dappBufCap;
@@ -834,6 +873,15 @@ static String appStringValueOfNormalized(const String& token, DappProgram& progr
     if (lowered == "httptruncated") return String(dappHttpTruncated);
     if (lowered == "httpok") return String(dappHttpOk);
     if (lowered == "jsonok") return String(dappJsonOk);
+    if (lowered == "timeok") return String(dappTimeOk);
+    if (lowered == "timeepoch") return String(dappTimeEpoch);
+    if (lowered == "timeyear") return String(dappTimeYear);
+    if (lowered == "timemonth") return String(dappTimeMonth);
+    if (lowered == "timeday") return String(dappTimeDay);
+    if (lowered == "timehour") return String(dappTimeHour);
+    if (lowered == "timeminute") return String(dappTimeMinute);
+    if (lowered == "timesecond") return String(dappTimeSecond);
+    if (lowered == "timeweekday") return String(dappTimeWeekday);
     if (lowered == "audiook") return dappSynthLastOk() ? "1" : "0";
     if (lowered == "buflen") return String((long)dappBufLen);
     if (lowered == "bufcap") return String((long)dappBufCap);
@@ -2656,6 +2704,7 @@ enum DappOpcode : uint8_t {
     DAPP_OP_HTMLTEXT,
     DAPP_OP_HTMLSTR,
     DAPP_OP_DAPPER,
+    DAPP_OP_TIME,
     DAPP_OP_RAND,
     DAPP_OP_GOTO,
     DAPP_OP_GOSUB,
@@ -2746,6 +2795,7 @@ static const char* const DAPP_OPCODE_NAMES[DAPP_OP_COUNT] = {
     "HTMLTEXT",
     "HTMLSTR",
     "DAPPER",
+    "TIME",
     "RAND",
     "GOTO",
     "GOSUB",
@@ -3780,6 +3830,30 @@ static bool appExecute(DappProgram& program) {
             int commandPartCount = splitCommand(commandLine, commandParts, 8);
             handleDapperCommand(commandParts, commandPartCount);
             steps = 0;  //downloads and catalog walks service the runtime internally
+        } else if (op == DAPP_OP_TIME) {
+            //NTP sync (ntpEnsureClock, SysInfo.ino -- shared with Dapper's own HTTPS
+            //certificate-date check) broken down with gmtime_r into $time* fields. UTC:
+            //this board has no timezone setting, so scripts wanting local time do their
+            //own offset with ADD/SUB. No WiFi precheck, same as HTTPGET/HTTPPOST -- it
+            //just times out into $timeok=0 if there's no network, rather than a second
+            //error path to keep in sync with the real one.
+            dappTimeOk = 0;
+            String timeError;
+            if (ntpEnsureClock(timeError, 8000, appRuntimeYield)) {
+                time_t now = time(nullptr);
+                struct tm timeInfo;
+                gmtime_r(&now, &timeInfo);
+                dappTimeOk = 1;
+                dappTimeEpoch = (long)now;
+                dappTimeYear = timeInfo.tm_year + 1900;
+                dappTimeMonth = timeInfo.tm_mon + 1;
+                dappTimeDay = timeInfo.tm_mday;
+                dappTimeHour = timeInfo.tm_hour;
+                dappTimeMinute = timeInfo.tm_min;
+                dappTimeSecond = timeInfo.tm_sec;
+                dappTimeWeekday = timeInfo.tm_wday;
+            }
+            steps = 0;  //the NTP wait is a real yield, not a runaway loop
         } else if (op == DAPP_OP_RAND) {
             String parts[3];
             int count = splitCommand(arg, parts, 3);

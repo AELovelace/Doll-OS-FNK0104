@@ -1,7 +1,7 @@
 # @dapp-format 1
 # @id tracker-music
 # @name Tracker Music
-# @version 1.5.0
+# @version 1.6.0
 # @boards fnk0104
 # @runtime >=1.8.0 <2.0.0
 # @echo off
@@ -14,7 +14,8 @@
 # +/- changes tempo, Enter plays one loop, W cycles the current channel's
 # waveform (sine/triangle/square/sawtooth/noise), H/? helps, S opens save
 # browser, L opens load browser, C clears the current pattern, X trims song
-# length, Escape exits.
+# length, Y copies the current pattern, V pastes it into the selected pattern,
+# Escape exits.
 
 CANVAS 60 20
 DIM p1 128
@@ -24,6 +25,13 @@ DIM t1 128
 DIM t2 128
 DIM t3 128
 DIM song 16
+#one-pattern clipboard for Y (copy) / V (paste)
+DIM cp1 16
+DIM cp2 16
+DIM cp3 16
+DIM ct1 16
+DIM ct2 16
+DIM ct3 16
 #keymap[keycode-59] = semitone (0=C..11=B) for the 12 piano-row letter keys
 #(b c d g h j m n s v x z), plus two keys that extend a semitone into the
 #octave above the selected one (l=C#, ;=D#, encoded as semitone+12 so the
@@ -32,7 +40,7 @@ DIM song 16
 #?, which are intercepted earlier in :loop and never reach this array, but are
 #listed explicitly rather than left to a default so nothing reads as a stray
 #note if that ever changes. A lookup table instead of a per-key label chain
-#because AppRunner caps scripts at 256 labels and this file is already dense
+#because AppRunner caps scripts at 512 labels and this file is already dense
 #with per-version save/load branches.
 DIM keymap 64
 SET keymap[0] 15
@@ -180,6 +188,8 @@ IF $k = 119 GOTO cyclewave
 IF $k = 87 GOTO cyclewave
 IF $k = 72 GOTO helpkey
 IF $k = 63 GOTO helpkey
+IF $k = 89 GOTO copykey
+IF $k = 86 GOTO pastekey
 IF $k < 49 GOTO checknote
 IF $k > 57 GOTO checknote
 EXPR octave $k - 48
@@ -281,6 +291,45 @@ GOTO redraw
 :trimsong
 EXPR songLen $songpos + 1
 GOTO redraw
+
+:copykey
+SET copyMode 1
+GOSUB copypaste
+GOTO redraw
+:pastekey
+SET copyMode 0
+GOSUB copypaste
+GOTO redraw
+
+#copies the current pattern to/from the cp1..ct3 clipboard, direction picked
+#by $copyMode (1=copy pattern->clipboard, 0=paste clipboard->pattern). One
+#branching loop instead of two separate copy/paste routines to stay under
+#AppRunner's 512-label cap.
+:copypaste
+SET i 0
+:cpx_loop
+IF $i >= 16 GOTO cpx_done
+EXPR pidx $pattern * 16 + $i
+IF $copyMode = 0 GOTO cpx_paste
+SET cp1[$i] $p1[$pidx]
+SET cp2[$i] $p2[$pidx]
+SET cp3[$i] $p3[$pidx]
+SET ct1[$i] $t1[$pidx]
+SET ct2[$i] $t2[$pidx]
+SET ct3[$i] $t3[$pidx]
+ADD i 1
+GOTO cpx_loop
+:cpx_paste
+SET p1[$pidx] $cp1[$i]
+SET p2[$pidx] $cp2[$i]
+SET p3[$pidx] $cp3[$i]
+SET t1[$pidx] $ct1[$i]
+SET t2[$pidx] $ct2[$i]
+SET t3[$pidx] $ct3[$i]
+ADD i 1
+GOTO cpx_loop
+:cpx_done
+RETURN
 
 :toggle
 EXPR idx $pattern * 16 + $step
@@ -528,6 +577,7 @@ PUT 0 4 "l ; play C#/D# one octave above that"
 PUT 0 5 "1-9     set the octave those keys play in"
 PUT 0 6 "space   toggle note    enter play pattern"
 PUT 0 7 "P       play song      [ / ] switch pattern"
+PUT 0 8 "Y       copy pattern   V paste pattern"
 PUT 0 9 "W       cycle channel's waveform"
 PUT 0 10 ", / .   move song cursor, . extends"
 PUT 0 12 "A       assign pattern to song slot"
@@ -1097,7 +1147,7 @@ GOSUB clampwaves
 #ldv5 (TM5) jumps in here after its own bpm/tones/waves/octave header, since
 #pattern/count/songpos/songlen/song-bits parsing is identical across versions
 #-- kept in one place instead of a full duplicate to stay under AppRunner's
-#256-label cap. $wideTones (reset in :load, set to 1 only by ldv5) is what
+#512-label cap. $wideTones (reset in :load, set to 1 only by ldv5) is what
 #tells the shared :loadpat call at the end of this how to parse tone rows.
 :sharedpat_entry
 FREAD text
@@ -1355,7 +1405,7 @@ GOTO ldrow
 #TM5 tone rows are space-separated absolute pitch indices (0..107) instead of
 #the single packed digit older save versions use, since a real note range no
 #longer fits in one ASCII char. One flag-branching loader instead of a fully
-#separate one keeps this under AppRunner's 256-label cap.
+#separate one keeps this under AppRunner's 512-label cap.
 IF $wideTones = 1 GOTO ldtones_wide
 SET row 1
 :ldtrow
@@ -1469,27 +1519,15 @@ SET got 0
 :sn_done
 RETURN
 
-#clamps a loaded wave1/wave2/wave3 into 0..4 (sine..noise), in case a hand-edited
-#or corrupted save has something out of range
+#wraps a loaded wave1/wave2/wave3 into 0..4 (sine..noise), in case a hand-edited
+#or corrupted save has something out of range. (($w % 5) + 5) % 5 is a branch-free
+#wrap that works for negatives too (tinyexpr's % is C fmod, sign-of-dividend) --
+#used instead of a clamp specifically to save labels under AppRunner's 512 cap;
+#which exact in-range value a corrupted wave number lands on doesn't matter.
 :clampwaves
-IF $wave1 >= 0 GOTO cw1_hi
-SET wave1 0
-:cw1_hi
-IF $wave1 <= 4 GOTO cw2_lo
-SET wave1 4
-:cw2_lo
-IF $wave2 >= 0 GOTO cw2_hi
-SET wave2 0
-:cw2_hi
-IF $wave2 <= 4 GOTO cw3_lo
-SET wave2 4
-:cw3_lo
-IF $wave3 >= 0 GOTO cw3_hi
-SET wave3 0
-:cw3_hi
-IF $wave3 <= 4 GOTO cwdone
-SET wave3 4
-:cwdone
+EXPR wave1 (($wave1 % 5) + 5) % 5
+EXPR wave2 (($wave2 % 5) + 5) % 5
+EXPR wave3 (($wave3 % 5) + 5) % 5
 RETURN
 
 :leave

@@ -2,12 +2,12 @@ const COLORS = new Set(["black", "red", "green", "yellow", "blue", "magenta", "c
 
 const LIMITS = {
   lines: 4000,
-  labels: 256,
-  numbers: 64,
-  strings: 32,
+  labels: 512,
+  numbers: 128,
+  strings: 64,
   stringLength: 4096,
-  arrays: 16,
-  arrayCells: 8192,
+  arrays: 32,
+  arrayCells: 16384,
   callDepth: 64,
   canvasCols: 120,
   canvasRows: 60,
@@ -755,6 +755,15 @@ export class DappRuntime {
     this.httptruncated = 0;
     this.httpok = 0;
     this.jsonok = 0;
+    this.timeok = 0;
+    this.timeepoch = 0;
+    this.timeyear = 0;
+    this.timemonth = 0;
+    this.timeday = 0;
+    this.timehour = 0;
+    this.timeminute = 0;
+    this.timesecond = 0;
+    this.timeweekday = 0;
     this.buf = null;
     this.bufLen = 0;
     this.bufOk = 0;
@@ -1454,6 +1463,21 @@ export class DappRuntime {
       this.steps = 0;
       return;
     }
+    if (op === "TIME") {
+      // the firmware NTP-syncs and reports UTC; a browser tab's clock is already
+      // accurate, so this is just reading it -- no network wait, always succeeds
+      const now = new Date();
+      this.timeok = 1;
+      this.timeepoch = Math.floor(now.getTime() / 1000);
+      this.timeyear = now.getUTCFullYear();
+      this.timemonth = now.getUTCMonth() + 1;
+      this.timeday = now.getUTCDate();
+      this.timehour = now.getUTCHours();
+      this.timeminute = now.getUTCMinutes();
+      this.timesecond = now.getUTCSeconds();
+      this.timeweekday = now.getUTCDay();
+      return;
+    }
     if (op === "RAND") {
       const parts = splitArgs(arg, 3);
       if (parts.length < 2) throw this.error("RAND needs <name> <max> or <name> <min> <max>");
@@ -1548,6 +1572,15 @@ export class DappRuntime {
       httptruncated: this.httptruncated,
       httpok: this.httpok,
       jsonok: this.jsonok,
+      timeok: this.timeok,
+      timeepoch: this.timeepoch,
+      timeyear: this.timeyear,
+      timemonth: this.timemonth,
+      timeday: this.timeday,
+      timehour: this.timehour,
+      timeminute: this.timeminute,
+      timesecond: this.timesecond,
+      timeweekday: this.timeweekday,
       buflen: this.bufLen,
       bufcap: this.buf ? this.buf.length : 0,
       bufok: this.bufOk,

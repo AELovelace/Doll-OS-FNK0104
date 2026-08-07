@@ -2748,16 +2748,28 @@ JSONESC safely quotes user text before it is placed inside JSON. JSONGET walks
 paths such as choices[0].message.content. $jsonok reports malformed JSON,
 missing paths, or an escaped/extracted value that exceeds the string limit.
 
+Time:
+
+TIME (AppRunner >=1.9.0) syncs the clock over NTP and reports the result as
+UTC -- there is no timezone setting, so a script wanting local time adds its
+own offset. $timeok is 1 on success, 0 if there is no network or NTP did not
+answer within about 8 seconds; check it before trusting the rest. $timeepoch
+is Unix seconds; $timeyear, $timemonth (1-12), $timeday, $timehour,
+$timeminute, $timesecond, and $timeweekday (0=Sunday..6=Saturday) are the same
+moment already split into fields, since there is no calendar math in EXPR to
+do it yourself. The device caches a synced clock, so a TIME call after the
+first one in a session usually returns immediately.
+
 Limits:
 
 A script is read into RAM in full before its first line runs. The storage comes
 from PSRAM, so the caps are roomy:
 
 4000       lines per app (same cap as the edit editor)
-256        labels
-64         numeric variables
-32         string variables
-16         arrays, sharing a pool of 8192 cells
+512        labels
+128        numeric variables
+64         string variables
+32         arrays, sharing a pool of 16384 cells
 64         nested GOSUB calls
 1          open file at a time
 120 x 60   largest canvas
