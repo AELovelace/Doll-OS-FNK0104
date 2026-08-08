@@ -191,7 +191,8 @@ void handleSettingsCommand(const String parts[], int partCount) {
         outLine("       settings set <key> <value...>");
         outLine("       settings unset <key>");
         outLine("Known keys: ftp.user, ftp.pass, motoko.broker, motoko.port,");
-        outLine("            radio.url, radio.volume, asuka.llm_host, asuka.llm_port,");
+        outLine("            radio.url, radio.volume, radio.directory_url,");
+        outLine("            asuka.llm_host, asuka.llm_port,");
         outLine("            asuka.llm_path, asuka.brave_key, asuka.owm_key,");
         outLine("            asuka.owm_location, asuka.owm_lat, asuka.owm_lon");
         outLine("Overrides persist in " + String(SETTINGS_FILE_PATH) + " and survive a firmware reflash.");

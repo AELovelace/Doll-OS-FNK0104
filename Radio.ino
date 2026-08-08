@@ -24,6 +24,8 @@
 
 #include "Audio.h"
 #include "ESP_I2S.h"
+#include <HTTPClient.h>
+#include <WiFiClientSecure.h>
 #include <Wire.h>
 #include <new>   //std::nothrow -- radioEnsureCodec heap-constructs the Audio engine
 #include "es8311.h"
@@ -33,6 +35,10 @@
 //above this file and can't see a constant defined here.
 const unsigned long RADIO_STREAM_RETRY_MS = 5000;
 const int RADIO_TASK_STACK_SIZE = 12288;     //MP3 decode runs on this stack (audio.loop())
+const int RADIO_DIRECTORY_MAX_STATIONS = 16;
+const int RADIO_DIRECTORY_NAME_MAX = 64;
+const int RADIO_DIRECTORY_URL_MAX = 256;
+const int RADIO_DIRECTORY_BASE_MAX = 224;
 
 //   one-slot command mailbox, shell -> task (kinds: RadioCommandKind, global.h).
 //   A second command before the task consumed the first simply overwrites it --
@@ -54,6 +60,13 @@ static int radioAnnounceColor = C_WHITE;
 static bool radioAnnouncePending = false;
 
 static bool radioDefaultsInitialized = false;
+
+static char radioDirectoryNames[RADIO_DIRECTORY_MAX_STATIONS][RADIO_DIRECTORY_NAME_MAX];
+static char radioDirectoryUrls[RADIO_DIRECTORY_MAX_STATIONS][RADIO_DIRECTORY_URL_MAX];
+static bool radioDirectoryRunning[RADIO_DIRECTORY_MAX_STATIONS];
+static int radioDirectoryClients[RADIO_DIRECTORY_MAX_STATIONS];
+static int radioDirectoryCount = 0;
+static char radioDirectoryBase[RADIO_DIRECTORY_BASE_MAX] = "";
 
 //Runs once, lazily, the first time "radio" is used post-boot. radioVolume's static
 //initializer above runs at global-construction time, before LittleFS is mounted, so
@@ -466,6 +479,248 @@ static void radioPrintStatus() {
     outLine("");
 }
 
+static void radioServiceUi() {
+    ftpService();
+    radioService();
+    maintainInternetConnection();
+    ledService();
+    drawDisplayFrame();
+    delay(1);
+}
+
+static String radioDirectoryBaseUrl(const String& url) {
+    int schemeEnd = url.indexOf("://");
+    int lastSlash = url.lastIndexOf('/');
+    if (schemeEnd >= 0 && lastSlash > schemeEnd + 2) {
+        return url.substring(0, lastSlash);
+    }
+    return url;
+}
+
+static String radioDirectoryPlayableUrl(const String& pathOrUrl) {
+    if (pathOrUrl.startsWith("http://") || pathOrUrl.startsWith("https://")) {
+        return pathOrUrl;
+    }
+    String path = pathOrUrl;
+    if (!path.startsWith("/")) {
+        path = "/" + path;
+    }
+    String base = radioDirectoryBase[0] != '\0' ? String(radioDirectoryBase) : radioDirectoryBaseUrl(RADIO_DIRECTORY_URL);
+    return base + path;
+}
+
+static bool radioDirectoryAddStation(JsonObjectConst station) {
+    if (radioDirectoryCount >= RADIO_DIRECTORY_MAX_STATIONS) {
+        return false;
+    }
+
+    String name = String((const char*)(station["name"] | ""));
+    String path = String((const char*)(station["path"] | ""));
+    if (path.length() == 0) path = String((const char*)(station["url"] | ""));
+    if (path.length() == 0) path = String((const char*)(station["stream"] | ""));
+    if (path.length() == 0) path = String((const char*)(station["stream_url"] | ""));
+    if (path.length() == 0) path = String((const char*)(station["inputUrl"] | ""));
+    if (path.length() == 0) {
+        return false;
+    }
+    if (name.length() == 0) {
+        name = path;
+    }
+
+    String playableUrl = radioDirectoryPlayableUrl(path);
+    strncpy(radioDirectoryNames[radioDirectoryCount], name.c_str(), RADIO_DIRECTORY_NAME_MAX - 1);
+    radioDirectoryNames[radioDirectoryCount][RADIO_DIRECTORY_NAME_MAX - 1] = '\0';
+    strncpy(radioDirectoryUrls[radioDirectoryCount], playableUrl.c_str(), RADIO_DIRECTORY_URL_MAX - 1);
+    radioDirectoryUrls[radioDirectoryCount][RADIO_DIRECTORY_URL_MAX - 1] = '\0';
+    radioDirectoryRunning[radioDirectoryCount] = station["running"] | false;
+    radioDirectoryClients[radioDirectoryCount] = station["clients"] | 0;
+    radioDirectoryCount++;
+    return true;
+}
+
+static bool radioDirectoryReadArray(JsonArrayConst stations) {
+    bool added = false;
+    for (JsonObjectConst station : stations) {
+        added = radioDirectoryAddStation(station) || added;
+    }
+    return added;
+}
+
+static bool radioFetchDirectory(String& error) {
+    radioDirectoryCount = 0;
+    radioDirectoryBase[0] = '\0';
+    if (WiFi.status() != WL_CONNECTED) {
+        error = "WiFi not connected. Run 'wifi connect' first.";
+        return false;
+    }
+
+    String directoryUrl = settingsGet("radio.directory_url", RADIO_DIRECTORY_URL);
+    String baseUrl = radioDirectoryBaseUrl(directoryUrl);
+    strncpy(radioDirectoryBase, baseUrl.c_str(), RADIO_DIRECTORY_BASE_MAX - 1);
+    radioDirectoryBase[RADIO_DIRECTORY_BASE_MAX - 1] = '\0';
+    bool secure = directoryUrl.startsWith("https://");
+    WiFiClient plainClient;
+    WiFiClientSecure secureClient;
+    HTTPClient http;
+    http.setTimeout(10000);
+    if (secure) {
+        secureClient.setInsecure();
+        if (!http.begin(secureClient, directoryUrl)) {
+            error = "could not open " + directoryUrl;
+            return false;
+        }
+    } else if (!http.begin(plainClient, directoryUrl)) {
+        error = "could not open " + directoryUrl;
+        return false;
+    }
+
+    http.addHeader("Accept", "application/json");
+    http.addHeader("Accept-Encoding", "identity");
+    http.addHeader("User-Agent", "DOLL-OS-radio/1.0");
+    ledPulseNetwork();
+    int httpCode = http.GET();
+    String body = http.getString();
+    http.end();
+
+    if (httpCode != HTTP_CODE_OK) {
+        error = "directory returned HTTP " + String(httpCode);
+        return false;
+    }
+
+    JsonDocument doc;
+    DeserializationError jsonError = deserializeJson(doc, body);
+    if (jsonError) {
+        error = "directory JSON parse failed: " + String(jsonError.c_str());
+        return false;
+    }
+
+    bool added = false;
+    if (doc["stations"].is<JsonArrayConst>()) {
+        added = radioDirectoryReadArray(doc["stations"].as<JsonArrayConst>()) || added;
+    }
+    if (!added && doc["routes"].is<JsonArrayConst>()) {
+        added = radioDirectoryReadArray(doc["routes"].as<JsonArrayConst>()) || added;
+    }
+    if (!added) {
+        error = "directory JSON did not include any playable stations";
+        return false;
+    }
+    return true;
+}
+
+static void radioPrintDirectory() {
+    outLine("");
+    outLine("Radio stations", C_CYAN);
+    outLine("--------------");
+    for (int i = 0; i < radioDirectoryCount; i++) {
+        String line = String(i + 1) + ". " + String(radioDirectoryNames[i]);
+        line += radioDirectoryRunning[i] ? " [on]" : " [idle]";
+        line += " " + String(radioDirectoryClients[i]) + " listener";
+        if (radioDirectoryClients[i] != 1) {
+            line += "s";
+        }
+        outLine(line);
+        outLine("   " + String(radioDirectoryUrls[i]));
+    }
+    outLine("");
+}
+
+static bool radioParseDirectoryChoice(const String& input, int& index) {
+    String choice = input;
+    choice.trim();
+    choice.toLowerCase();
+    if (choice.length() == 0 || choice == "q" || choice == "quit" || choice == "cancel") {
+        index = -1;
+        return true;
+    }
+
+    int number = choice.toInt();
+    if (number > 0 && number <= radioDirectoryCount && String(number) == choice) {
+        index = number - 1;
+        return true;
+    }
+
+    for (int i = 0; i < radioDirectoryCount; i++) {
+        String name = String(radioDirectoryNames[i]);
+        name.toLowerCase();
+        if (choice == name) {
+            index = i;
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool radioPromptDirectoryChoice(int& index) {
+    String answer = "";
+    commandCursorPos = 0;
+    const String prompt = "radio station> ";
+    if (telnetClient && telnetClient.connected()) {
+        telnetClient.print(prompt);
+    }
+    setActiveInput(prompt, answer, false);
+
+    while (true) {
+        LineInputResult r = readLineEditedInput(answer);
+        if (r == LINE_NO_INPUT) {
+            r = readKeyboardLineEditedInput(answer);
+        }
+        setActiveInput(prompt, answer, false);
+        radioServiceUi();
+
+        if (r != LINE_SUBMITTED) {
+            continue;
+        }
+
+        String submitted = answer;
+        answer = "";
+        commandCursorPos = 0;
+        outLine(prompt + submitted, C_CYAN);
+        if (radioParseDirectoryChoice(submitted, index)) {
+            setActiveInput(shellPrompt(), "", false);
+            return index >= 0;
+        }
+
+        outLine("radio: choose 1-" + String(radioDirectoryCount) + ", a station name, or q", C_RED);
+        if (telnetClient && telnetClient.connected()) {
+            telnetClient.print(prompt);
+        }
+        setActiveInput(prompt, answer, false);
+    }
+}
+
+static void radioPlayUrl(const String& url) {
+    if (!radioEnsureTask()) {
+        return;
+    }
+    radioPostCommand(RADIO_CMD_PLAY, url.c_str(), 0);
+    outLine("radio: connecting to " + url, C_PINK);
+}
+
+static void radioHandleListCommand(const String parts[], int partCount) {
+    outLine("radio: fetching station list...", C_CYAN);
+    String error;
+    if (!radioFetchDirectory(error)) {
+        outLine("radio: " + error, C_RED);
+        return;
+    }
+
+    radioPrintDirectory();
+
+    int index = -1;
+    if (partCount > 2) {
+        if (!radioParseDirectoryChoice(parts[2], index) || index < 0) {
+            outLine("radio: choose 1-" + String(radioDirectoryCount) + " or a station name", C_RED);
+            return;
+        }
+    } else if (!radioPromptDirectoryChoice(index)) {
+        outLine("radio: selection cancelled", C_YELLOW);
+        return;
+    }
+
+    radioPlayUrl(radioDirectoryUrls[index]);
+}
+
 //Hand the audio hardware to something else -- currently only the Game Boy emulator
 //(Gameboy.ino -> src/AudioOut.cpp), which needs one of the S3's two I2S controllers
 //and can't have one while the radio holds both (a bootstrap channel for MCLK plus
@@ -518,13 +773,18 @@ void radioAdjustVolume(int delta) {
     }
 }
 
-//Expected forms: radio | radio status | radio play [url] | radio pause | radio stop | radio vol <0-21>
+//Expected forms: radio | radio status | radio list [choice] | radio play [url] | radio pause | radio stop | radio vol <0-21>
 void handleRadioCommand(const String parts[], int partCount) {
     radioEnsureDefaults();
     String sub = (partCount > 1) ? parts[1] : "status";
 
     if (sub == "status") {
         radioPrintStatus();
+        return;
+    }
+
+    if (sub == "list") {
+        radioHandleListCommand(parts, partCount);
         return;
     }
 
@@ -544,11 +804,7 @@ void handleRadioCommand(const String parts[], int partCount) {
                 url = settingsGet("radio.url", RADIO_DEFAULT_URL);
             }
         }
-        if (!radioEnsureTask()) {
-            return;
-        }
-        radioPostCommand(RADIO_CMD_PLAY, url.c_str(), 0);
-        outLine("radio: connecting to " + url, C_PINK);
+        radioPlayUrl(url);
         return;
     }
 
@@ -590,5 +846,5 @@ void handleRadioCommand(const String parts[], int partCount) {
         return;
     }
 
-    outLine("Usage: radio [status|play [url]|pause|stop|vol <0-" + String(RADIO_VOLUME_MAX) + ">]");
+    outLine("Usage: radio [status|list [choice]|play [url]|pause|stop|vol <0-" + String(RADIO_VOLUME_MAX) + ">]");
 }

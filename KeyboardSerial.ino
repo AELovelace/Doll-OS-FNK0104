@@ -7,6 +7,8 @@
 //   received bytes are fed straight into the shared processLineEditByte() (TelnetServer.ino)
 //   -- the BLE keyboard becomes a second way to drive the shell, working with or without
 //   a telnet client attached.
+//   DS-Slave can also send private out-of-band controls: 0xF4 = volume up,
+//   0xF5 = volume down. Those are consumed here before line editing/raw forwarding.
 //
 //   Wiring (this board <-> DS-Slave):
 //     DOLL-OS RX = KEYBOARD_SERIAL_RX_PIN <- DS-Slave TX = GPIO17
@@ -23,10 +25,38 @@
 HardwareSerial KeyboardSerial(1);
 
 static const uint32_t KEYBOARD_SERIAL_BAUD = 115200;
+static const uint8_t KEYBOARD_LINK_VOLUME_UP = 0xF4;
+static const uint8_t KEYBOARD_LINK_VOLUME_DOWN = 0xF5;
 
 //own line-edit parse state (see LineEditState in global.h) so a mid-escape keystroke
 //can't tangle with the telnet client's in-progress parse
 static LineEditState keyboardLineState;
+
+static bool handleKeyboardLinkControl(uint8_t ch) {
+    if (ch == KEYBOARD_LINK_VOLUME_UP) {
+        radioAdjustVolume(1);
+        ledPulseInput();
+        return true;
+    }
+    if (ch == KEYBOARD_LINK_VOLUME_DOWN) {
+        radioAdjustVolume(-1);
+        ledPulseInput();
+        return true;
+    }
+    return false;
+}
+
+static int keyboardReadUserByte() {
+    while (KeyboardSerial.available() > 0) {
+        uint8_t ch = (uint8_t)KeyboardSerial.read();
+        if (handleKeyboardLinkControl(ch)) {
+            continue;
+        }
+        ledPulseInput();
+        return ch;
+    }
+    return -1;
+}
 
 void initKeyboardSerial() {
     KeyboardSerial.begin(KEYBOARD_SERIAL_BAUD, SERIAL_8N1,
@@ -42,9 +72,12 @@ void initKeyboardSerial() {
 //a single-user shell (global.h), so the keyboard and a telnet client are just two ways in
 //for the same user. Mirrors the submit/reprompt dance of readTelnetClient().
 void readKeyboardSerial() {
-    while (KeyboardSerial.available() > 0) {
-        uint8_t ch = (uint8_t)KeyboardSerial.read();
-        ledPulseInput();
+    while (true) {
+        int raw = keyboardReadUserByte();
+        if (raw < 0) {
+            break;
+        }
+        uint8_t ch = (uint8_t)raw;
         LineInputResult r = processLineEditByte(currentCommand, ch, keyboardLineState, false);
         if (r == LINE_NO_INPUT) {
             continue;
@@ -65,31 +98,30 @@ void readKeyboardSerial() {
 //reused for this: the modal input phases that need it (ssh's password prompt) block loop(),
 //so they poll one source at a time themselves rather than running the whole shell reader.
 LineInputResult readKeyboardLineEditedInput(String& text) {
-    if (KeyboardSerial.available() <= 0) {
+    int raw = keyboardReadUserByte();
+    if (raw < 0) {
         return LINE_NO_INPUT;
     }
-    uint8_t ch = (uint8_t)KeyboardSerial.read();
-    ledPulseInput();
-    return processLineEditByte(text, ch, keyboardLineState, false);
+    return processLineEditByte(text, (uint8_t)raw, keyboardLineState, false);
 }
 
 //reads one raw keyboard-bridge byte for the RemoteSession raw-passthrough phase, or -1 if
 //none is waiting. No line editing here -- the raw session classifies/forwards bytes itself
 //(see readRawUserBytes, RemoteSession.ino), exactly as it does for raw telnet bytes.
 int keyboardReadRawByte() {
-    if (KeyboardSerial.available() <= 0) {
-        return -1;
-    }
-    ledPulseInput();
-    return (uint8_t)KeyboardSerial.read();
+    return keyboardReadUserByte();
 }
 
 //looks at the next keyboard-bridge byte without consuming it, or -1 if none is waiting.
 //Used by the .dapp runtime's abort check (AppRunner.ino appPollAbortChord), which must
 //not steal bytes the app's own KEY/INPUT reads are about to consume.
 int keyboardPeekRawByte() {
-    if (KeyboardSerial.available() <= 0) {
-        return -1;
+    while (KeyboardSerial.available() > 0) {
+        uint8_t ch = (uint8_t)KeyboardSerial.peek();
+        if (!handleKeyboardLinkControl(ch)) {
+            return ch;
+        }
+        KeyboardSerial.read();
     }
-    return (uint8_t)KeyboardSerial.peek();
+    return -1;
 }

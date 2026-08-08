@@ -40,7 +40,8 @@ const int MOTOKO_DEFAULT_PORT = 1883;
 const char* MOTOKO_CLIENT_ID = "MOTOKO-DOLL-OS";
 
 //   Radio defaults (Radio.ino)
-const char* RADIO_DEFAULT_URL = "http://192.168.1.252:8000/stream.mp3";
+const char* RADIO_DEFAULT_URL = "https://sadgirlsclub.wtf/rr/sgc";
+const char* RADIO_DIRECTORY_URL = "https://sadgirlsclub.wtf/rr/healthz";
 const int RADIO_DEFAULT_VOLUME = 12;
 
 //   ASUKA local LLM chat command. This talks to Mochi over Tailscale by default,
