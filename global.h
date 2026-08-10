@@ -35,6 +35,9 @@
 #ifndef REAR_RGB_LED_BRIGHTNESS
     #define REAR_RGB_LED_BRIGHTNESS 255
 #endif
+#ifndef DOLL_DISPLAY_UPSIDE_DOWN
+    #define DOLL_DISPLAY_UPSIDE_DOWN 0
+#endif
 
 //   Shared rear-LED API for native modules (.ino/.cpp) and AppRunner opcodes.
 //   These are safe to call on builds without LED support: availability is queryable,

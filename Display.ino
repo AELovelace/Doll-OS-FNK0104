@@ -117,7 +117,7 @@ void initDisplay() {
     frameSprite.setSwapBytes(true);
 #else
     tft.init();
-    tft.setRotation(1);
+    tft.setRotation(DOLL_DISPLAY_UPSIDE_DOWN ? 3 : 1);
     frameSprite.setColorDepth(16);
     frameSprite.createSprite(DISPLAY_WIDTH, DISPLAY_HEIGHT);
 #endif
