@@ -175,7 +175,7 @@ void markDisplayDirty() {
 }
 
 //single entry point for the three activeInput* globals (TelnetServer.ino, Motoko.ino,
-//Ssh.ino, TelnetClient.ino, UsbMsc.ino all funnel through this) so the mirrored command
+//Ssh.ino and TelnetClient.ino all funnel through this) so the mirrored command
 //bar can never go stale on the TFT because a call site forgot to mark the frame dirty
 void setActiveInput(const String& prompt, const String& text, bool masked) {
     activeInputPrompt = prompt;
@@ -752,18 +752,6 @@ void drawDisplayCommandBar() {
     }
 }
 
-//covers the terminal area with a warning banner -- used while USB MSC mode is active
-void drawDisplayUsbWarning() {
-    const int top = displayTerminalY();
-    const int height = displayTerminalHeight();
-    frameSprite.fillRect(0, top, DISPLAY_WIDTH, height, TFT_RED);
-    frameSprite.setTextDatum(MC_DATUM);
-    frameSprite.setTextColor(TFT_WHITE, TFT_RED);
-    frameSprite.drawString("USB MODE ACTIVE", DISPLAY_WIDTH / 2, top + height / 2 - 8);
-    frameSprite.drawString("Ctrl+T (telnet) to exit", DISPLAY_WIDTH / 2, top + height / 2 + 8);
-    frameSprite.setTextDatum(TL_DATUM);
-}
-
 //   paints a running .dapp's CANVAS grid over the terminal area (AppRunner.ino's FLIP).
 //   The grid is scaled to fill the area rather than drawn at a fixed cell size: a script
 //   picks its playfield in cells and gets the biggest version of it the panel can show,
@@ -828,9 +816,7 @@ void drawDisplayFrame() {
     displayLastCursorPhase = cursorPhase;
 
     drawDisplayStatusBar();
-    if (usbModeDisplayActive) {
-        drawDisplayUsbWarning();
-    } else if (dappCanvasActive) {
+    if (dappCanvasActive) {
         drawDappCanvas();
     } else {
         drawDisplayHistory();

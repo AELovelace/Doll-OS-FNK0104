@@ -59,7 +59,7 @@ Declared once, used everywhere. The ones you'll actually touch:
 | `sdCardMounted` | `bool` | set by `initStorage()` |
 | `displayDirty` | `bool` | set via `markDisplayDirty()`; `drawDisplayFrame()` skips its redraw+SPI push unless this (or a blink/status timer) is due |
 | `displayScrollOffset` | `int` | how far back the panel is scrolled from the live tail; 0 = pinned |
-| `usbModeDisplayActive` / `dappCanvasActive` | `bool` | swap the panel's terminal area for the USB banner / a `.dapp` canvas grid |
+| `dappCanvasActive` | `bool` | swap the panel's terminal area for a `.dapp` canvas grid |
 | `C_RESET`, `C_WHITE`, `C_RED`, `C_GREEN`, `C_YELLOW`, `C_BLUE`, `C_MAGENTA`, `C_CYAN`, `C_PINK` | `const int` | ANSI SGR codes — the color vocabulary for `outLine()` |
 | `RADIO_VOLUME_MAX` | `const int` | 21; one notion of loudness for radio *and* the Game Boy APU |
 | `rearLedAvailable()`, `rearLedSetRgb()`, `rearLedSetRgbLong()`, `rearLedOff()` | functions | shared rear RGB LED control surface for native modules and AppRunner (`LED` opcode); no-op on builds where LED support is disabled |
@@ -725,9 +725,9 @@ the sketch-local `TFT_eSPI` fork and `PartitionScheme=custom` →
   larger terminal just shows the grid in its top-left corner.
 - **`Ssh.ino` does not verify host keys** (no known-hosts store) — trusted-LAN
   use only, not a general security boundary.
-- **`usb` (USB MSC) can't work on the AB board's USB-C port** (serial bridge, not
-  native USB) and reports itself unavailable at runtime if Tools > USB Mode isn't
-  TinyUSB. `ftp` is the practical way to move files on and off the card.
+- **Firmware USB MSC and DFU are disabled.** Hardware USB CDC on boot remains
+  enabled because this board requires it for its console/upload path; use `ftp`
+  to move files on and off the card.
 - **The QSPI ST77922 variant is the least-exercised path** — `gb` is stubbed out
   on it entirely.
 

@@ -69,7 +69,6 @@ void ledSetWifiConnected(bool connected);
 void ledSetFtpActive(bool active);
 void ledSetTelnetConnected(bool connected);
 void ledSetKeyboardActive(bool active);
-void ledSetUsbActive(bool active);
 void ledSetAppOverrideRgb(uint8_t red, uint8_t green, uint8_t blue);
 void ledSetAppOverrideRgbLong(long red, long green, long blue);
 void ledClearAppOverride();
@@ -408,7 +407,42 @@ const int RADIO_VOLUME_MAX = 21;
 //RADIO_CMD_RELEASE is the Game Boy emulator's: it stops the stream and tears the
 //radio's I2S controllers back down so src/AudioOut.cpp can claim one (the S3 has
 //exactly two, and a playing radio holds both). See radioReleaseAudio().
-enum RadioCommandKind { RADIO_CMD_NONE, RADIO_CMD_PLAY, RADIO_CMD_PAUSE, RADIO_CMD_STOP, RADIO_CMD_VOLUME, RADIO_CMD_RELEASE };
+enum RadioCommandKind {
+    RADIO_CMD_NONE,
+    RADIO_CMD_PLAY,
+    RADIO_CMD_PLAY_FILE,
+    RADIO_CMD_PAUSE,
+    RADIO_CMD_STOP,
+    RADIO_CMD_VOLUME,
+    RADIO_CMD_SEEK,
+    RADIO_CMD_RELEASE
+};
+
+//   Music library/player (Music.ino). The whole catalog is one PSRAM allocation:
+//   fixed fields avoid hundreds of small String allocations leaking back into the
+//   scarce internal heap while still leaving generous room for paths and ID3 text.
+const int MUSIC_LIBRARY_MAX_TRACKS = 512;
+const int MUSIC_PATH_MAX = 256;
+const int MUSIC_METADATA_MAX = 96;
+struct MusicTrack {
+    char path[MUSIC_PATH_MAX];       //DOLL-OS logical path, always /sd/music/...
+    char title[MUSIC_METADATA_MAX];
+    char artist[MUSIC_METADATA_MAX];
+    char album[MUSIC_METADATA_MAX];
+    uint32_t fileSize;
+    uint16_t trackNumber;
+};
+
+enum MusicKey {
+    MK_NONE, MK_CHAR, MK_ENTER, MK_ESCAPE, MK_BACKSPACE,
+    MK_UP, MK_DOWN, MK_LEFT, MK_RIGHT, MK_PAGE_UP, MK_PAGE_DOWN
+};
+struct MusicKeyState {
+    UserEscState esc = UESC_NONE;
+    String params = "";
+    unsigned long escAtMs = 0;
+    bool lastByteWasCR = false;
+};
 
 extern String sshInputBuffer;
 extern String motokoChannel;
@@ -440,12 +474,10 @@ extern WiFiClient remoteTelnetClient;   //outbound socket for the "telnet" clien
 const int DISPLAY_STATUS_BAR_HEIGHT = 16;
 const int DISPLAY_COMMAND_BAR_HEIGHT = 20;
 const int DISPLAY_PADDING = 4;
-bool usbModeDisplayActive = false;   //true while "usb" mode is active -- swaps the mirrored history area for a warning banner (UsbMsc.ino)
-
 //   .dapp canvas (AppRunner.ino) -- a fixed character grid a script can address by cell
-//   instead of appending scrolling lines, which is what a game needs. Same display
-//   arrangement as usbModeDisplayActive above: while dappCanvasActive is set,
-//   drawDisplayFrame() paints this grid over the terminal area instead of the history.
+//   instead of appending scrolling lines, which is what a game needs. While
+//   dappCanvasActive is set, drawDisplayFrame() paints this grid over the terminal
+//   area instead of the history.
 //
 //   These live here (rather than as AppRunner.ino file statics) for the same reason
 //   displayHistoryRows does: Display.ino has to read the buffer directly to render it,

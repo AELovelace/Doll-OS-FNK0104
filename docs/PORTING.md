@@ -75,8 +75,7 @@ pixel-wrapped sprite history) and a physical keyboard (`hardware.ino`'s
   straight to it, and `readRawUserBytes()` reads the user's keystrokes back off
   it. The local escape chord changed from the physical **Fn+Q** to **Ctrl+T**
   (0x14) -- chosen because it isn't commonly bound by remote shells or BBS-style
-  line editors the way Ctrl+C/D/Z are. `usb`'s exit chord (previously Fn+`` ` ``)
-  uses the same Ctrl+T convention for consistency.
+  line editors the way Ctrl+C/D/Z are.
 
 - **Telnet gets true ANSI passthrough**: for the telnet side only, `ssh` and
   outbound `telnet` forward remote bytes through untouched (after stripping only
@@ -114,10 +113,6 @@ one -- the API shapes are close enough that the port is mostly a rename:
   same bytes.
 - No local scroll-back chord exists (no physical keyboard to send one from), so
   the panel always shows the tail of history -- it just follows along live.
-- `usb` mode swaps the mirrored history area for a red warning banner
-  (`drawDisplayUsbWarning()`, gated by `usbModeDisplayActive`), the same way
-  DOLL-OS's `drawUsbWarning()` covered the terminal area.
-
 **TFT_eSPI fork**: this board needs Freenove's customized TFT_eSPI (adds the
 `ST77922` driver + real per-panel pin configs), installed sketch-locally
 (`DS/libraries/TFT_eSPI` + `DS/libraries/TFT_eSPI_Setups`) via `sketch.yaml` --
@@ -141,12 +136,9 @@ the row-diff partial-update optimization remains available on every variant.
   `readBatteryPercent()` read it directly and estimate percent via a linear
   LiPo curve, exposed as a new top-level `battery` command (DOLL-OS only ever
   exposed this inline in its status bar and Motoko's `/battery`).
-- **USB MSC** (`UsbMsc.ino`): board-independent of the telnet-vs-keyboard swap
-  -- it's about a physical USB cable to a host PC, not the network. DOLL-OS
-  hard-failed the build (`#error`) if Tools > USB Mode wasn't set to
-  "USB-OTG (TinyUSB)", safe on a fixed hardware target. Here that Tools setting
-  is the user's choice, so `usb` stays registered either way and reports
-  itself unavailable at runtime instead of blocking compilation.
+- **USB firmware**: USB MSC and DFU are deliberately absent, while hardware USB
+  CDC on boot remains enabled because this board requires it for console/upload.
+  FTP provides SD-card file transfer.
 - **Networking model**: DOLL-OS only needed Wi-Fi STA mode -- losing it just
   meant losing internet access, not the UI (the screen/keyboard don't depend on
   the network). This fork at first kept an always-on SoftAP alongside STA so telnet
