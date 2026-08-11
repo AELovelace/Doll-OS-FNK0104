@@ -29,8 +29,8 @@ const char* STA_DEFAULT_PASSWORD = "YOUR_WIFI_PASSWORD";
 //   Telnet
 const uint16_t TELNET_PORT = 23;
 
-//   FTP (FtpServer.ino) -- exposes the SD card over the network as an alternative
-//   to USB MSC. Plaintext, LAN-only -- same posture as telnet above.
+//   FTP (FtpServer.ino) -- exposes the SD card over the network.
+//   Plaintext, LAN-only -- same posture as telnet above.
 const char* FTP_USER = "doll-os";
 const char* FTP_PASS = "CHANGE_ME";
 

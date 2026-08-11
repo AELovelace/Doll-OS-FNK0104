@@ -100,7 +100,6 @@ static bool ledWifiConnected = false;
 static bool ledFtpActive = false;
 static bool ledTelnetConnected = false;
 static bool ledKeyboardActive = false;
-static bool ledUsbActive = false;
 static bool ledAppOverride = false;
 static LedRgb ledAppColor = { 0, 0, 0 };
 static LedRgb ledPulseColor = { 0, 0, 0 };
@@ -152,15 +151,11 @@ static void ledPulse(LedRgb color, unsigned long durationMs) {
 
 static LedRgb ledPersistentColor(unsigned long now, bool sdMounted, bool wifiConnected,
                                  bool ftpActive, bool telnetConnected, bool keyboardActive,
-                                 bool usbActive, bool appOverride, LedRgb appColor,
+                                 bool appOverride, LedRgb appColor,
                                  RadioState radioState) {
     if (appOverride) {
         return appColor;
     }
-    if (usbActive) {
-        return ledBlink({ 180, 180, 255 }, now, 180);
-    }
-
     switch (radioState) {
         case RADIO_CONNECTING:
             return ledBlink({ 0, 80, 180 }, now, 220);
@@ -224,7 +219,6 @@ void ledService() {
     bool ftpActive;
     bool telnetConnected;
     bool keyboardActive;
-    bool usbActive;
     bool appOverride;
     LedRgb appColor;
     LedRgb pulseColor;
@@ -237,7 +231,6 @@ void ledService() {
     ftpActive = ledFtpActive;
     telnetConnected = ledTelnetConnected;
     keyboardActive = ledKeyboardActive;
-    usbActive = ledUsbActive;
     appOverride = ledAppOverride;
     appColor = ledAppColor;
     pulseColor = ledPulseColor;
@@ -251,7 +244,7 @@ void ledService() {
     }
 
     ledWriteIfChanged(ledPersistentColor(now, sdMounted, wifiConnected, ftpActive,
-                                         telnetConnected, keyboardActive, usbActive,
+                                         telnetConnected, keyboardActive,
                                          appOverride, appColor, radioState));
 }
 
@@ -302,12 +295,6 @@ void ledSetTelnetConnected(bool connected) {
 void ledSetKeyboardActive(bool active) {
     portENTER_CRITICAL(&ledMux);
     ledKeyboardActive = active;
-    portEXIT_CRITICAL(&ledMux);
-}
-
-void ledSetUsbActive(bool active) {
-    portENTER_CRITICAL(&ledMux);
-    ledUsbActive = active;
     portEXIT_CRITICAL(&ledMux);
 }
 

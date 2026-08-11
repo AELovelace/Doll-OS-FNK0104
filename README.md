@@ -32,6 +32,8 @@ usable with no network.
 - **Networking** — telnet server + client, SSH client, FTP server, ping/ARP
   sweep, IP tools, MQTT (`motoko`)
 - **Radio** — MP3 stream playback over I²S (ES8311 codec)
+- **Music library** — full-screen local MP3 player with recursive `/sd/music`
+  scanning, ID3 metadata, search, and PSRAM-backed catalog storage
 - **Game Boy emulator** — `gb`, gnuboy port, gamepad via DS-Slave
 - **ASUKA** — local LLM chat with tool calling (search / weather / URL fetch / time)
 - **BLE input bridge** — DS-Slave connects keyboard + gamepad at once and merges
@@ -93,8 +95,14 @@ rear LED, and DS-Slave wiring together.
 
 Open the sketch in the Arduino IDE and select the **`esp32s3 Dev Module` profile** from the
 toolbar dropdown before Verify/Upload. That covers board, flash size, custom
-partition scheme, PSRAM, and USB mode in one selection, and keeps this fork's
+partition scheme, PSRAM, and hardware USB CDC/JTAG console in one selection,
+with USB MSC/DFU-on-boot firmware disabled. It also keeps this fork's
 sketch-local `TFT_eSPI` from colliding with a global install.
+
+If the IDE shows individual **Tools** settings instead of applying the profile,
+set **USB Mode** to `Hardware CDC and JTAG`, set **USB CDC On Boot** to
+`Enabled`, set **USB MSC On Boot** and **USB DFU On Boot** to `Disabled`, and set
+**Upload Mode** to `UART0 / Hardware CDC` and **Upload Speed** to `115200`.
 
 For a new FNK0104N, flash `examples/FNK0104NBringup` first. Its serial report
 checks SD, battery, codec I2C, and DS-Slave pins; the panel should show three
@@ -166,6 +174,7 @@ Run `help` on the device for the live list.
 | `help` | command list |
 | `ip` `ping` | network tools |
 | `motoko` | MQTT client |
+| `music` | scan `/sd/music`, browse/search ID3 metadata, and play local MP3 files |
 | `radio` | stream MP3 audio |
 | `reboot` | restart |
 | `run` | run a `.dapp` app |
@@ -175,7 +184,6 @@ Run `help` on the device for the live list.
 | `status` | Wi-Fi status |
 | `telnet` | telnet client |
 | `uptime` | uptime |
-| `usb` | USB mass storage mode |
 | `wifi` | scan / connect / save credentials |
 
 > TODO: expand the interesting ones with usage examples — `radio`, `gb`, `asuka`,
@@ -217,6 +225,7 @@ Storage.ino          LittleFS + SD unified namespace
 AppRunner.ino        .dapp interpreter
 Edit.ino             text editor
 Gameboy.ino          gnuboy port
+Music.ino            PSRAM-backed local MP3 library/player
 Radio.ino            audio streaming
 Asuka.ino            LLM chat        AsukaTools.ino  its tool calls
 SlaveLink.ino        outbound channel to DS-Slave

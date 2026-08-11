@@ -1,16 +1,15 @@
 //   FtpServer.ino
 //   exposes the mounted SD card to the network as an FTP server -- the practical
-//   replacement for USB MSC (UsbMsc.ino) on this board, whose single USB-C port is
-//   a serial bridge, not native USB, so a mass-storage drive can never enumerate on
-//   a host. FTP reaches the same goal (move files on/off the card from a PC) over
+//   file-transfer path for this board. Firmware USB mass storage is deliberately
+//   disabled, so FTP moves files on/off the card from a PC over
 //   the WiFi that's already up, and every desktop OS can browse it: in Windows
 //   Explorer's address bar type  ftp://<station-ip>/  (or use FileZilla/WinSCP).
 //
-//   Unlike "usb", this does NOT block: the server is serviced one non-blocking tick
+//   It does not block: the server is serviced one non-blocking tick
 //   at a time from loop() (ftpService below, next to readTelnetClient()), so the
 //   shell, panel, radio and telnet all keep working while a transfer is in flight --
 //   large files just get chunked across many loop() iterations. Toggle it with the
-//   "ftp" command; it stays off until asked for, like usb.
+//   "ftp" command; it stays off until asked for.
 //
 //   Storage backend + credentials: the library is a separately-compiled translation
 //   unit, so the SD_MMC selection lives in its config header (libraries/

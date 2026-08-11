@@ -24,6 +24,7 @@
 
 #include "Audio.h"
 #include "ESP_I2S.h"
+#include <SD_MMC.h>
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
 #include <Wire.h>
@@ -46,20 +47,31 @@ const int RADIO_DIRECTORY_BASE_MAX = 224;
 static portMUX_TYPE radioMux = portMUX_INITIALIZER_UNLOCKED;
 static RadioCommandKind radioCmdKind = RADIO_CMD_NONE;
 static char radioCmdUrl[256] = "";
-static int radioCmdVolume = 0;
+static int radioCmdValue = 0;                 //volume or relative seek seconds, by command kind
 
 //   status published by the task, snapshotted by the shell/service under radioMux.
 //   Fixed char buffers, not Strings: a String copy allocates, and allocating inside
 //   a spinlock critical section is asking for trouble.
 static RadioState radioState = RADIO_OFF;
 static char radioTitle[128] = "";            //ICY StreamTitle (or station name until one arrives)
+static char radioArtist[MUSIC_METADATA_MAX] = "";
+static char radioAlbum[MUSIC_METADATA_MAX] = "";
 static char radioUrl[256] = "";              //last URL played, reused by a bare "radio play"
+static char radioFilePath[MUSIC_PATH_MAX] = ""; //active SD_MMC path (without the /sd namespace prefix)
 static int radioVolume = RADIO_DEFAULT_VOLUME;
 static char radioAnnounceText[160] = "";     //one pending line for radioService() to print
 static int radioAnnounceColor = C_WHITE;
 static bool radioAnnouncePending = false;
 
 static bool radioDefaultsInitialized = false;
+
+static const uint8_t RADIO_SOURCE_NONE = 0;
+static const uint8_t RADIO_SOURCE_STREAM = 1;
+static const uint8_t RADIO_SOURCE_FILE = 2;
+static uint8_t radioSourceKind = RADIO_SOURCE_NONE;
+static uint32_t radioCurrentSeconds = 0;
+static uint32_t radioDurationSeconds = 0;
+static bool radioLocalEofPending = false;
 
 static char radioDirectoryNames[RADIO_DIRECTORY_MAX_STATIONS][RADIO_DIRECTORY_NAME_MAX];
 static char radioDirectoryUrls[RADIO_DIRECTORY_MAX_STATIONS][RADIO_DIRECTORY_URL_MAX];
@@ -244,10 +256,43 @@ static bool radioEnsureCodec() {
 }
 
 static void radioConnect(const char* url) {
+    portENTER_CRITICAL(&radioMux);
+    radioSourceKind = RADIO_SOURCE_STREAM;
+    radioTitle[0] = '\0';
+    radioArtist[0] = '\0';
+    radioAlbum[0] = '\0';
+    radioFilePath[0] = '\0';
+    radioCurrentSeconds = 0;
+    radioDurationSeconds = 0;
+    radioLocalEofPending = false;
+    portEXIT_CRITICAL(&radioMux);
     radioSetState(RADIO_CONNECTING);
     radioLastAttemptMs = millis();
     Serial.printf("[radio] connecting: %s\n", url);
     radioAudio->connecttohost(url);
+}
+
+static void radioConnectFile(const char* path) {
+    portENTER_CRITICAL(&radioMux);
+    radioSourceKind = RADIO_SOURCE_FILE;
+    radioTitle[0] = '\0';
+    radioArtist[0] = '\0';
+    radioAlbum[0] = '\0';
+    strncpy(radioFilePath, path, sizeof(radioFilePath) - 1);
+    radioFilePath[sizeof(radioFilePath) - 1] = '\0';
+    radioCurrentSeconds = 0;
+    radioDurationSeconds = 0;
+    radioLocalEofPending = false;
+    portEXIT_CRITICAL(&radioMux);
+
+    radioSetState(RADIO_CONNECTING);
+    Serial.printf("[music] opening: %s\n", path);
+    if (!radioAudio->connecttoFS(SD_MMC, path)) {
+        radioSetState(RADIO_ERROR);
+        radioAnnounce("music: could not open track", C_RED);
+        return;
+    }
+    radioSetState(RADIO_PLAYING);
 }
 
 static void radioTaskHandleCommand() {
@@ -256,7 +301,7 @@ static void radioTaskHandleCommand() {
     RadioCommandKind kind = radioCmdKind;
     char url[sizeof(radioCmdUrl)];
     strcpy(url, radioCmdUrl);
-    int volume = radioCmdVolume;
+    int value = radioCmdValue;
     radioCmdKind = RADIO_CMD_NONE;
     portEXIT_CRITICAL(&radioMux);
 
@@ -272,8 +317,17 @@ static void radioTaskHandleCommand() {
             radioPaused = false;
             radioConnect(url);
             break;
+        case RADIO_CMD_PLAY_FILE:
+            if (!radioEnsureCodec()) {
+                radioSetState(RADIO_ERROR);
+                break;
+            }
+            radioWantPlaying = false;   //stream-only reconnect intent
+            radioPaused = false;
+            radioConnectFile(url);
+            break;
         case RADIO_CMD_PAUSE:
-            if (!radioWantPlaying || radioAudio == nullptr) {
+            if (radioSourceKind == RADIO_SOURCE_NONE || radioAudio == nullptr) {
                 break;
             }
             radioAudio->pauseResume();
@@ -284,6 +338,12 @@ static void radioTaskHandleCommand() {
         case RADIO_CMD_STOP:
             radioWantPlaying = false;
             radioPaused = false;
+            portENTER_CRITICAL(&radioMux);
+            radioSourceKind = RADIO_SOURCE_NONE;
+            radioCurrentSeconds = 0;
+            radioDurationSeconds = 0;
+            radioLocalEofPending = false;
+            portEXIT_CRITICAL(&radioMux);
             if (radioAudio != nullptr) {
                 radioAudio->stopSong();
             }
@@ -292,7 +352,12 @@ static void radioTaskHandleCommand() {
             break;
         case RADIO_CMD_VOLUME:
             if (radioAudio != nullptr) {
-                radioAudio->setVolume(volume);
+                radioAudio->setVolume(value);
+            }
+            break;
+        case RADIO_CMD_SEEK:
+            if (radioAudio != nullptr && radioSourceKind == RADIO_SOURCE_FILE) {
+                radioAudio->setTimeOffset(value);
             }
             break;
         case RADIO_CMD_RELEASE:
@@ -302,6 +367,12 @@ static void radioTaskHandleCommand() {
             //race the decoder mid-frame.
             radioWantPlaying = false;
             radioPaused = false;
+            portENTER_CRITICAL(&radioMux);
+            radioSourceKind = RADIO_SOURCE_NONE;
+            radioCurrentSeconds = 0;
+            radioDurationSeconds = 0;
+            radioLocalEofPending = false;
+            portEXIT_CRITICAL(&radioMux);
             if (radioAudio != nullptr) {
                 radioAudio->stopSong();
                 delete radioAudio;
@@ -325,10 +396,36 @@ static void radioTaskHandleCommand() {
 //sgcrelay's loop(), which this task replaces
 static void radioTaskEntry(void* pvParameters) {
     (void)pvParameters;
+    unsigned long lastProgressMs = 0;
     while (true) {
         radioTaskHandleCommand();
         if (radioAudio != nullptr) {
             radioAudio->loop();
+        }
+
+        bool localEnded = false;
+        portENTER_CRITICAL(&radioMux);
+        if (radioLocalEofPending) {
+            localEnded = true;
+            radioLocalEofPending = false;
+        }
+        portEXIT_CRITICAL(&radioMux);
+        if (localEnded) {
+            char nextPath[MUSIC_PATH_MAX];
+            if (musicNextFileForAudioTask(nextPath, sizeof(nextPath))) {
+                radioConnectFile(nextPath);
+            }
+        }
+
+        if (radioAudio != nullptr && radioSourceKind == RADIO_SOURCE_FILE
+            && millis() - lastProgressMs >= 250) {
+            uint32_t current = radioAudio->getAudioCurrentTime();
+            uint32_t duration = radioAudio->getAudioFileDuration();
+            portENTER_CRITICAL(&radioMux);
+            radioCurrentSeconds = current;
+            radioDurationSeconds = duration;
+            portEXIT_CRITICAL(&radioMux);
+            lastProgressMs = millis();
         }
 
         if (radioWantPlaying && !radioPaused) {
@@ -358,10 +455,43 @@ static void radioTaskEntry(void* pvParameters) {
 //same rule as before holds: radioAnnounce()/shared-buffer writes and Serial only --
 //never outLine(). m.msg points at a library scratch buffer valid only for this call,
 //so anything kept is copied out synchronously here.
+static bool radioCopyMetadataValue(const char* text, const char* prefix,
+                                   char* destination, size_t destinationSize) {
+    size_t prefixLength = strlen(prefix);
+    if (strncmp(text, prefix, prefixLength) != 0) {
+        return false;
+    }
+    const char* value = text + prefixLength;
+    while (*value == ' ') value++;
+    portENTER_CRITICAL(&radioMux);
+    strncpy(destination, value, destinationSize - 1);
+    destination[destinationSize - 1] = '\0';
+    portEXIT_CRITICAL(&radioMux);
+    return true;
+}
+
 void radioAudioInfo(Audio::msg_t m) {
     const char* text = (m.msg != nullptr) ? m.msg : "";
+    uint8_t sourceKind;
+    portENTER_CRITICAL(&radioMux);
+    sourceKind = radioSourceKind;
+    portEXIT_CRITICAL(&radioMux);
     switch (m.e) {
+        case Audio::evt_id3data:
+            if (sourceKind == RADIO_SOURCE_FILE) {
+                if (!radioCopyMetadataValue(text, "Title:", radioTitle, sizeof(radioTitle))
+                    && !radioCopyMetadataValue(text, "Title/Songname/Content description:", radioTitle, sizeof(radioTitle))
+                    && !radioCopyMetadataValue(text, "Artist:", radioArtist, sizeof(radioArtist))
+                    && !radioCopyMetadataValue(text, "Lead artist(s)/Lead performer(s)/Soloist(s)/Performing group:", radioArtist, sizeof(radioArtist))) {
+                    if (!radioCopyMetadataValue(text, "Album:", radioAlbum, sizeof(radioAlbum))) {
+                        radioCopyMetadataValue(text, "Album/Movie/Show title:", radioAlbum, sizeof(radioAlbum));
+                    }
+                }
+            }
+            Serial.printf("[music] metadata: %s\n", text);
+            break;
         case Audio::evt_streamtitle: {
+            if (sourceKind != RADIO_SOURCE_STREAM) break;
             portENTER_CRITICAL(&radioMux);
             strncpy(radioTitle, text, sizeof(radioTitle) - 1);
             radioTitle[sizeof(radioTitle) - 1] = '\0';
@@ -372,20 +502,31 @@ void radioAudioInfo(Audio::msg_t m) {
         }
         case Audio::evt_name: {
             //station name -- placeholder until the first ICY StreamTitle arrives
-            portENTER_CRITICAL(&radioMux);
-            if (radioTitle[0] == '\0') {
-                strncpy(radioTitle, text, sizeof(radioTitle) - 1);
-                radioTitle[sizeof(radioTitle) - 1] = '\0';
+            if (sourceKind == RADIO_SOURCE_STREAM) {
+                portENTER_CRITICAL(&radioMux);
+                if (radioTitle[0] == '\0') {
+                    strncpy(radioTitle, text, sizeof(radioTitle) - 1);
+                    radioTitle[sizeof(radioTitle) - 1] = '\0';
+                }
+                portEXIT_CRITICAL(&radioMux);
+                Serial.printf("[radio] station: %s\n", text);
             }
-            portEXIT_CRITICAL(&radioMux);
-            Serial.printf("[radio] station: %s\n", text);
             break;
         }
         case Audio::evt_eof:
-            Serial.printf("[radio] stream ended: %s\n", text);
-            radioSetState(RADIO_ERROR);
-            //no announce -- the task's reconnect logic retries on its own; only the
-            //user-visible state (radio status) reflects the hiccup
+            if (sourceKind == RADIO_SOURCE_FILE) {
+                Serial.printf("[music] track ended: %s\n", text);
+                portENTER_CRITICAL(&radioMux);
+                radioLocalEofPending = true;
+                radioCurrentSeconds = radioDurationSeconds;
+                portEXIT_CRITICAL(&radioMux);
+                radioSetState(RADIO_STOPPED);
+            } else if (sourceKind == RADIO_SOURCE_STREAM) {
+                Serial.printf("[radio] stream ended: %s\n", text);
+                radioSetState(RADIO_ERROR);
+                //no announce -- the task's reconnect logic retries on its own; only the
+                //user-visible state (radio status) reflects the hiccup
+            }
             break;
         default:
             //evt_info / evt_log / bitrate / icy-url etc. -- serial trace, as audio_info did
@@ -414,15 +555,15 @@ void radioService() {
     outLine(String(text), color);
 }
 
-static void radioPostCommand(RadioCommandKind kind, const char* url, int volume) {
+static void radioPostCommand(RadioCommandKind kind, const char* url, int value) {
     portENTER_CRITICAL(&radioMux);
     radioCmdKind = kind;
     if (url != NULL) {
         strncpy(radioCmdUrl, url, sizeof(radioCmdUrl) - 1);
         radioCmdUrl[sizeof(radioCmdUrl) - 1] = '\0';
-        strcpy(radioUrl, radioCmdUrl);
+        if (kind == RADIO_CMD_PLAY) strcpy(radioUrl, radioCmdUrl);
     }
-    radioCmdVolume = volume;
+    radioCmdValue = value;
     portEXIT_CRITICAL(&radioMux);
 }
 
@@ -441,6 +582,69 @@ static bool radioEnsureTask() {
         return false;
     }
     return true;
+}
+
+//Local-file surface used by Music.ino. Audio remains owned by radioTask: callers only
+//post commands and read fixed snapshots, so the decoder/File object is never touched
+//from the UI task while its internal decode task is running.
+bool radioPlayLocalFile(const char* realPath) {
+    if (!realPath || realPath[0] == '\0' || !radioEnsureTask()) {
+        return false;
+    }
+    radioPostCommand(RADIO_CMD_PLAY_FILE, realPath, 0);
+    return true;
+}
+
+void radioTogglePlaybackPause() {
+    if (radioTaskHandle != NULL) {
+        radioPostCommand(RADIO_CMD_PAUSE, NULL, 0);
+    }
+}
+
+void radioStopPlayback() {
+    if (radioTaskHandle != NULL) {
+        radioPostCommand(RADIO_CMD_STOP, NULL, 0);
+    }
+}
+
+void radioSeekPlayback(int seconds) {
+    if (radioTaskHandle != NULL && seconds != 0) {
+        radioPostCommand(RADIO_CMD_SEEK, NULL, seconds);
+    }
+}
+
+bool radioTakeLocalEof() {
+    bool pending;
+    portENTER_CRITICAL(&radioMux);
+    pending = radioLocalEofPending;
+    radioLocalEofPending = false;
+    portEXIT_CRITICAL(&radioMux);
+    return pending;
+}
+
+void radioGetPlaybackSnapshot(RadioState& state, bool& isLocal,
+                              char* title, size_t titleSize,
+                              char* artist, size_t artistSize,
+                              char* album, size_t albumSize,
+                              uint32_t& currentSeconds, uint32_t& durationSeconds) {
+    portENTER_CRITICAL(&radioMux);
+    state = radioState;
+    isLocal = radioSourceKind == RADIO_SOURCE_FILE;
+    if (title && titleSize > 0) {
+        strncpy(title, radioTitle, titleSize - 1);
+        title[titleSize - 1] = '\0';
+    }
+    if (artist && artistSize > 0) {
+        strncpy(artist, radioArtist, artistSize - 1);
+        artist[artistSize - 1] = '\0';
+    }
+    if (album && albumSize > 0) {
+        strncpy(album, radioAlbum, albumSize - 1);
+        album[albumSize - 1] = '\0';
+    }
+    currentSeconds = radioCurrentSeconds;
+    durationSeconds = radioDurationSeconds;
+    portEXIT_CRITICAL(&radioMux);
 }
 
 static const char* radioStateName(RadioState s) {
