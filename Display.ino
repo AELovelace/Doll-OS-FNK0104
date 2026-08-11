@@ -141,6 +141,38 @@ void initDisplay() {
     pushDisplayFrame();
 }
 
+void displaySetSleeping(bool sleeping) {
+    if (sleeping) {
+#ifdef FNK0104N_3P5_320x480_ST77922
+        tft_st77922.Write_Reg(0x28, nullptr, 0);  // Disable ST77922 pixel output before sleep-in.
+        delay(10);
+        tft_st77922.Write_Reg(0x10, nullptr, 0);  // Put the QSPI panel controller into sleep-in.
+#else
+        tft.writecommand(0x28);                   // Disable ILI9341/ST7796 pixel output first.
+        delay(10);
+        tft.writecommand(0x10);                   // Put the SPI panel controller into sleep-in.
+#endif
+        delay(10);
+        digitalWrite(DOLL_DISPLAY_BACKLIGHT_PIN, LOW);  // Remove the largest visible power load.
+        return;
+    }
+
+#ifdef FNK0104N_3P5_320x480_ST77922
+    tft_st77922.Write_Reg(0x11, nullptr, 0);      // Wake the ST77922 controller without reinitializing RAM.
+#else
+    tft.writecommand(0x11);                       // Wake the ILI9341/ST7796 controller in place.
+#endif
+    delay(120);                                   // Panel datasheets require settling after sleep-out.
+#ifdef FNK0104N_3P5_320x480_ST77922
+    tft_st77922.Write_Reg(0x29, nullptr, 0);      // Re-enable ST77922 display output.
+#else
+    tft.writecommand(0x29);                       // Re-enable ILI9341/ST7796 display output.
+#endif
+    digitalWrite(DOLL_DISPLAY_BACKLIGHT_PIN, HIGH);  // Light the preserved frame immediately.
+    displayInvalidateShadow();                    // Force the next render to resynchronize panel RAM.
+    markDisplayDirty();                           // Repaint status after network and wake state change.
+}
+
 void drawDisplayBootSplash() {
     frameSprite.fillSprite(TFT_CYAN);
     const int splashWidth = min(DISPLAY_WIDTH - (DISPLAY_PADDING * 4), 180);

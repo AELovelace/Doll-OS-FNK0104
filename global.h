@@ -73,6 +73,12 @@ void ledSetUsbActive(bool active);
 void ledSetAppOverrideRgb(uint8_t red, uint8_t green, uint8_t blue);
 void ledSetAppOverrideRgbLong(long red, long green, long blue);
 void ledClearAppOverride();
+void ledPrepareForSleep();
+
+//   Manual paired-board sleep path. DS-Slave sends the request over its private
+//   UART controls; Power.ino owns light sleep while Display.ino owns panel power.
+void enterSystemLightSleep();
+void displaySetSleeping(bool sleeping);
 
 //   Display panel geometry, keyed off the same FNK0104* board-variant macro
 //   config.h already defines for SD_MMC/battery pins. Native panel resolution is

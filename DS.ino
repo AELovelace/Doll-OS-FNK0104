@@ -7,6 +7,8 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <FS.h>
+#include <driver/gpio.h>
+#include <esp_sleep.h>
 #include "BoardPins.h"
 #include "config.h"
 #include "global.h"

@@ -8,7 +8,8 @@
 //   -- the BLE keyboard becomes a second way to drive the shell, working with or without
 //   a telnet client attached.
 //   DS-Slave can also send private out-of-band controls: 0xF4 = volume up,
-//   0xF5 = volume down. Those are consumed here before line editing/raw forwarding.
+//   0xF5 = volume down, 0xF6 = paired sleep, and 0xF7 = wake beacon. Those are
+//   consumed here before line editing/raw forwarding.
 //
 //   Wiring (this board <-> DS-Slave):
 //     DOLL-OS RX = KEYBOARD_SERIAL_RX_PIN <- DS-Slave TX = GPIO17
@@ -27,6 +28,8 @@ HardwareSerial KeyboardSerial(1);
 static const uint32_t KEYBOARD_SERIAL_BAUD = 115200;
 static const uint8_t KEYBOARD_LINK_VOLUME_UP = 0xF4;
 static const uint8_t KEYBOARD_LINK_VOLUME_DOWN = 0xF5;
+static const uint8_t KEYBOARD_LINK_SYSTEM_SLEEP = 0xF6;
+static const uint8_t KEYBOARD_LINK_SYSTEM_WAKE = 0xF7;
 
 //own line-edit parse state (see LineEditState in global.h) so a mid-escape keystroke
 //can't tangle with the telnet client's in-progress parse
@@ -42,6 +45,13 @@ static bool handleKeyboardLinkControl(uint8_t ch) {
         radioAdjustVolume(-1);
         ledPulseInput();
         return true;
+    }
+    if (ch == KEYBOARD_LINK_SYSTEM_SLEEP) {
+        enterSystemLightSleep();                   // Preserve DOLL-OS state until the slave restarts.
+        return true;
+    }
+    if (ch == KEYBOARD_LINK_SYSTEM_WAKE) {
+        return true;                               // Consume redundant wake bytes after GPIO wakeup.
     }
     return false;
 }

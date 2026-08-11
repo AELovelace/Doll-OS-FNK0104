@@ -54,6 +54,20 @@ DS-Slave always uses GPIO17 TX and GPIO18 RX on its end. On DOLL-OS, connect
 RX/TX to GPIO21/2 for FNK0104AB/S or GPIO46/45 for FNK0104N. The N move keeps
 the link clear of its audio WS (GPIO21) and SD D2 (GPIO2) lines.
 
+### Paired sleep mode
+
+The DS-Slave rotary **Settings > Sleep** item sends the private UART control
+byte `0xF6`. DOLL-OS then closes its Telnet socket, stops Wi-Fi, mutes the
+amplifier, darkens the rear LED, sends the TFT controller to sleep, switches off
+the backlight, and enters ESP32-S3 light sleep. RAM and the current screen/shell
+state remain intact.
+
+Pressing the slave rotary dial wakes and resets the deep-sleeping slave. Its
+early boot wake beacon drives DOLL-OS's keyboard UART RX low, which wakes the
+main CPU; DOLL-OS restores the preserved panel frame and amplifier state first,
+then restarts Wi-Fi and the Telnet listener asynchronously. Flash both boards
+when adding this feature because `0xF6`/`0xF7` are a paired protocol change.
+
 Recommended build:
 https://store.freenove.com/products/fnk0104
 https://lonelybinary.com/en-us/products/esp32-s3-ipex?variant=43699253706909

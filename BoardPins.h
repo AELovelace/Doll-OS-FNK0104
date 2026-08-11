@@ -30,6 +30,7 @@ static constexpr int AUDIO_I2C_SDA_PIN = 38;
 // VDD_SPI strap high during reset. GPIO46 is the safer receive side.
 static constexpr int KEYBOARD_SERIAL_RX_PIN = 46;
 static constexpr int SLAVE_LINK_TX_PIN = 45;
+static constexpr int DOLL_DISPLAY_BACKLIGHT_PIN = 41;
 
 #define DOLL_REAR_RGB_LED_PIN 40
 #else
@@ -59,6 +60,7 @@ static constexpr int AUDIO_I2C_SDA_PIN = 16;
 
 static constexpr int KEYBOARD_SERIAL_RX_PIN = 21;
 static constexpr int SLAVE_LINK_TX_PIN = 2;
+static constexpr int DOLL_DISPLAY_BACKLIGHT_PIN = 45;
 
 #define DOLL_REAR_RGB_LED_PIN 42
 #endif

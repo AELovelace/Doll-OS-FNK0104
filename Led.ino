@@ -108,6 +108,11 @@ static unsigned long ledPulseUntilMs = 0;
 static RadioState ledRadioState = RADIO_OFF;
 static LedRgb ledLastColor = { 255, 255, 255 };
 
+void ledPrepareForSleep() {
+    rearLedOff();                                  // Darken the physical status pixel for light sleep.
+    ledLastColor = { 255, 255, 255 };              // Make ledService restore logical status after wake.
+}
+
 static LedRgb ledScale(LedRgb color, uint8_t numerator, uint8_t denominator) {
     if (denominator == 0) {
         return color;
