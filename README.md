@@ -55,6 +55,13 @@ usable with no network.
 DS-Slave always uses GPIO17 TX and GPIO18 RX on its end. On DOLL-OS, connect
 RX/TX to GPIO21/2 for FNK0104AB/S or GPIO46/45 for FNK0104N. The N move keeps
 the link clear of its audio WS (GPIO21) and SD D2 (GPIO2) lines.
+The FNK UART header also powers the companion: connect its 5V OUT and GND to
+DS-Slave 5V/VIN and GND. Disconnect that 5V wire before powering DS-Slave from
+its own programming USB connector.
+
+For the complete Reddit-ready bill of materials, power rules, and wire-by-wire
+tables for the UART, OLED, encoder, and antenna, see the
+[hardware build guide](HARDWARE_BUILD_GUIDE.md).
 
 ### Paired sleep mode
 
@@ -146,11 +153,8 @@ FS at version 3.3.10
 WiFi at version 3.3.10
 Networking at version 3.3.10
 
-flash using these settings:
-- **USB Mode:** `USB-OTG (TinyUSB)`
-- **USB CDC On Boot:** `Disabled`
-- **USB MSC On Boot:** `Disabled`
-- **USB DFU On Boot:** `Disabled`
+Flash DS-Slave through the Lonely Binary board's UART/programming connector.
+Wired USB keyboard/host operation is not part of the currently supported build.
 
 ## Commands
 

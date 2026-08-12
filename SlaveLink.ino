@@ -15,9 +15,9 @@
 //
 //   The link is deliberately one-way. DS-Slave prints every command's reply to its
 //   own USB serial console (Serial.print, never back onto its UART1 TX), so DOLL-OS cannot
-//   read STATUS/HELP/etc. output back over this wire -- GPIO15 -> GPIO18 carries
+//   read STATUS/HELP/etc. output back over this wire -- SLAVE_LINK_TX_PIN -> GPIO18 carries
 //   commands out and nothing returns on it. The keystroke stream on the *other* wire
-//   (Slave GPIO17 -> DOLL-OS GPIO16) is unrelated and keeps flowing. handleSlaveCommand()
+//   (Slave GPIO17 -> KEYBOARD_SERIAL_RX_PIN) is unrelated and keeps flowing. handleSlaveCommand()
 //   says as much so a user isn't left waiting for a reply that only lands on the
 //   slave's console.
 
