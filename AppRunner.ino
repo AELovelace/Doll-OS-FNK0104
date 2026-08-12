@@ -1,4 +1,4 @@
-﻿//   AppRunner.ino
+//   AppRunner.ino
 //   tiny executable script runtime for DOLL-OS. Apps are plain text .dapp files stored
 //   in /apps on LittleFS or /sd/apps on the FTP-served SD card, then launched from
 //   the shell with "run". The format is intentionally small: a few display/shell
