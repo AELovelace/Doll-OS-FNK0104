@@ -182,7 +182,7 @@ Run `help` on the device for the live list.
 | `radio` | stream MP3 audio |
 | `reboot` | restart |
 | `run` | run a `.dapp` app |
-| `settings` | view/set/unset runtime overrides for config.h defaults (FTP, MQTT, radio, ASUKA), stored in `/system/conf/settings.dsys` |
+| `settings` | view/set/unset runtime overrides for config.h defaults (FTP, MQTT, radio, ASUKA); see the [complete key and rotary-control guide](SETTINGS_GUIDE.md) |
 | `slave` | talk to DS-Slave |
 | `ssh` | SSH client |
 | `status` | Wi-Fi status |

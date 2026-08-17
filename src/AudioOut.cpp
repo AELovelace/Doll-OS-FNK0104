@@ -46,12 +46,17 @@ uint32_t underrunCount = 0;
 
 }  // namespace
 
+// TEMPORARY launch tracing -- delete along with the GB_TRACE calls in Gameboy.ino.
+#define AO_TRACE(msg) do { Serial.println("[ao-trace] " msg); Serial.flush(); } while (0)
+
 bool AudioOut::begin() {
+  AO_TRACE("begin() entered");
   if (ready) return true;
 
   stage = static_cast<int16_t*>(heap_caps_malloc(
       kStageFrames * 2 * sizeof(int16_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
   if (!stage) return false;
+  AO_TRACE("stage buffer allocated, about to i2s_new_channel");
 
   i2s_chan_config_t chanCfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_AUTO, I2S_ROLE_MASTER);
   chanCfg.dma_desc_num = kDmaDescNum;
@@ -82,10 +87,12 @@ bool AudioOut::begin() {
   // registers stay correct even though they were computed for 16kHz.
   stdCfg.clk_cfg.mclk_multiple = I2S_MCLK_MULTIPLE_384;
 
+  AO_TRACE("i2s_new_channel ok, about to init_std_mode");
   if (i2s_channel_init_std_mode(txChan, &stdCfg) != ESP_OK) {
     end();
     return false;
   }
+  AO_TRACE("init_std_mode ok, about to i2s_channel_enable");
   // Clocks must already be running when the codec's registers are programmed --
   // same order Radio.ino uses (I2S up, then es8311_codec_init).
   if (i2s_channel_enable(txChan) != ESP_OK) {
@@ -93,10 +100,12 @@ bool AudioOut::begin() {
     return false;
   }
   enabled = true;
+  AO_TRACE("i2s_channel_enable ok, about to audioCodecEnsure (I2C)");
   if (!audioCodecEnsure()) {
     end();
     return false;
   }
+  AO_TRACE("audioCodecEnsure ok, begin() complete");
 
   discard = false;
   pushedFrames = droppedFrames = underrunCount = 0;

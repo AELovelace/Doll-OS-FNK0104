@@ -47,6 +47,11 @@
 
 static GameBoyHost gbHost;
 
+// TEMPORARY launch tracing -- delete this macro and every GB_TRACE() call once the
+// black-screen-on-launch hang is pinned down. Serial only, flushed after every line,
+// so the last line printed is the last step that completed.
+#define GB_TRACE(msg) do { Serial.println("[gb-trace] " msg); Serial.flush(); } while (0)
+
 // Output rectangle on the panel. "fit" scales 160x144 up to the tallest box
 // that fits DISPLAY_HEIGHT while keeping aspect (letterboxed left/right); "1x"
 // is native 160x144 centered (much smaller, but the cheapest to push -- use it
@@ -127,16 +132,19 @@ static bool gbSetupScale() {
         return true;
     }
 
+    GB_TRACE("  setupScale: about to malloc maps + scale buffer");
     gbColMap = (int16_t*)heap_caps_malloc(gbOutW * sizeof(int16_t), MALLOC_CAP_8BIT);
     gbRowMap = (int16_t*)heap_caps_malloc(gbOutH * sizeof(int16_t), MALLOC_CAP_8BIT);
     gbScaleBuf = (uint16_t*)heap_caps_malloc((size_t)gbOutW * gbOutH * sizeof(uint16_t),
                                              MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    GB_TRACE("  setupScale: mallocs returned");
     if (!gbColMap || !gbRowMap || !gbScaleBuf) {
         gbFreeScale();
         return false;
     }
     for (int x = 0; x < gbOutW; x++) gbColMap[x] = (x * GB_W) / gbOutW;
     for (int y = 0; y < gbOutH; y++) gbRowMap[y] = (y * GB_H) / gbOutH;
+    GB_TRACE("  setupScale: maps filled");
     return true;
 #endif
 }
@@ -227,6 +235,14 @@ static uint8_t gbPumpInput(uint8_t& buttons) {
     int b;
     while ((b = keyboardReadRawByte()) >= 0) {
         uint8_t by = (uint8_t)b;
+        // TEMPORARY: log the first 80 bytes the slave sends while a game runs, so a
+        // dead-input report can be told apart from a link that is sending nothing.
+        static int gbTraceBytes = 0;
+        if (gbTraceBytes < 80) {
+            gbTraceBytes++;
+            Serial.printf("[gb-input] 0x%02X\n", by);
+            Serial.flush();
+        }
         if (phase == 1) { buttons |= by; phase = 0; continue; }
         if (phase == 2) { buttons &= ~by; phase = 0; continue; }
         if (by == 0xF0) { phase = 1; }
@@ -799,11 +815,18 @@ void handleGbCommand(const String parts[], int partCount) {
         outLine("gb: " + gbHost.status(), C_RED);
         return;
     }
+    GB_TRACE("gbHost.begin() ok, about to load ROM");
     if (!gbHost.load(romVfs, gbSavePath(romVfs))) {
         outLine("gb: " + gbHost.status(), C_RED);
         outLine("gb: check the path -- " + romVfs, C_YELLOW);
         return;
     }
+    GB_TRACE("ROM loaded, about to gbSetupScale");
+    Serial.printf("[gb-trace] free: internal=%u psram=%u largest-psram=%u\n",
+                  (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+                  (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
+                  (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM));
+    Serial.flush();
 
     if (!gbSetupScale()) {
         // Couldn't get the fitted frame buffer -- native 1x needs none on SPI
@@ -820,21 +843,35 @@ void handleGbCommand(const String parts[], int partCount) {
     // Take the codec off the radio (which otherwise holds both I2S controllers)
     // and bring up our own TX channel. Both steps are advisory: a game with no
     // sound still beats no game.
+    GB_TRACE("gbSetupScale done, about to radioReleaseAudio");
     bool audioUp = false;
     if (radioReleaseAudio()) {
+        GB_TRACE("radioReleaseAudio ok, about to AudioOut::begin");
         audioUp = AudioOut::begin();
+        GB_TRACE("AudioOut::begin returned");
+    } else {
+        GB_TRACE("radioReleaseAudio returned false (radio kept the I2S)");
     }
     if (!audioUp) {
         outLine("gb: audio unavailable -- running silent", C_YELLOW);
     }
 
+    GB_TRACE("audio done, about to outLine launch");
     outLine("gb: launching " + romLogical + " -- Ctrl+T to quit", C_GREEN);
+    GB_TRACE("outLine done, about to drawDisplayFrame");
     drawDisplayFrame();   // flush that line to the panel before we take it over
+    GB_TRACE("drawDisplayFrame done, about to send GAME 1");
 
     // Hand the panel and the keyboard over to the game.
     slaveLinkSendLine("GAME 1");   // DS-Slave: emit raw button events, not ASCII
     delay(20);
+    GB_TRACE("GAME 1 sent, about to clear panel");
     gbClearPanel();
+    GB_TRACE("panel cleared, entering frame loop");
+    Serial.printf("[gb-trace] fit=%d out=%dx%d at %d,%d scaleBuf=%p audioUp=%d\n",
+                  (int)gbFitMode, gbOutW, gbOutH, gbOutX, gbOutY,
+                  (void*)gbScaleBuf, (int)audioUp);
+    Serial.flush();
 
     uint8_t buttons = 0;
     const uint32_t frameUs = 16743;   // ~59.7 Hz, true GB frame period
@@ -875,18 +912,31 @@ void handleGbCommand(const String parts[], int partCount) {
         const bool late = (int32_t)(micros() - nextFrame) > 0;
         const bool draw = !late || skipRun >= kMaxFrameSkip;
 
+        // TEMPORARY: first few frames in detail, then a heartbeat every 30 frames
+        // (~0.5s) so the log shows how far the loop actually gets.
+        const bool gbTraceFrame = framesRun < 3 || (framesRun % 30) == 0;
+        if (gbTraceFrame) {
+            Serial.printf("[gb-trace] frame %u: setButtons/runFrame(draw=%d)\n",
+                          (unsigned)framesRun, (int)draw);
+            Serial.flush();
+        }
+
         gbHost.setButtons(buttons);
         gbHost.runFrame(draw);
+        if (gbTraceFrame) { GB_TRACE("  runFrame returned"); }
         if (draw) {
             gbBlitFrame();
+            if (gbTraceFrame) { GB_TRACE("  gbBlitFrame returned"); }
             framesDrawn++;
             skipRun = 0;
         } else {
             skipRun++;
         }
         gbHost.tickSave();
+        if (gbTraceFrame) { GB_TRACE("  tickSave returned"); }
         ledService();
         framesRun++;
+        if (gbTraceFrame) { GB_TRACE("  frame complete"); }
 
         // Pace to ~59.7 fps when we're ahead; if we've fallen more than a few
         // frames behind, give up on that time rather than sprinting after it
