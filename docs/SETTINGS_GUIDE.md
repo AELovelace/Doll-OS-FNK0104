@@ -213,6 +213,7 @@ key; select **Exit** to close the menu without changing anything.
 | --- | --- |
 | **Pair Device** | Enables pairing and scans for one additional BLE HID device. Existing devices remain saved. It will not start if both peer slots are occupied. |
 | **Game Mode** | Toggles Game Mode. On sends held Game Boy button events; off restores ordinary keystroke behavior. |
+| **Terminate App** | Closes whatever app owns the DOLL-OS panel and returns it to the shell. Sends both abort chords — `^X` then Ctrl+T — because different apps honour different ones. |
 | **Reconnect** | Leaves pairing mode and scans for previously saved devices. |
 | **Sleep** | Requests paired sleep for DOLL-OS, turns off the slave OLED/status LED, and places DS-Slave in deep sleep. |
 | **Exit** | Closes Settings and returns the dial to volume control. |
@@ -220,6 +221,20 @@ key; select **Exit** to close the menu without changing anything.
 After choosing **Sleep**, release the dial and press it once to wake. The wake
 press restarts DS-Slave and wakes the main unit; it is not reused as another
 Settings-menu press.
+
+**Terminate App** is the escape hatch for a build with no keyboard attached: a
+game launched from the button bar, or a `.dapp` stuck in a loop, otherwise has no
+way out. It covers `gb`, the music player, a running `.dapp`, and an ssh or telnet
+session. Two exceptions: `edit` treats it as its own `^X`, so a modified buffer
+still asks whether to save, and with nothing running both bytes are discarded at
+the prompt, making a mistaken Terminate harmless. Game Mode is left as it is —
+the emulator sends its own `GAME 0` as it exits.
+
+In the music player it also **stops the track**, unlike `q` or Escape, which close
+the screen and deliberately leave playback running in the background. That is the
+difference between leaving an app and terminating it, and it means one press of the
+dial genuinely silences the device. It takes precedence over the player's search
+box, so a terminate is never swallowed by a half-typed filter.
 
 ## Troubleshooting
 

@@ -8,8 +8,15 @@
 //   -- the BLE keyboard becomes a second way to drive the shell, working with or without
 //   a telnet client attached.
 //   DS-Slave can also send private out-of-band controls: 0xF4 = volume up,
-//   0xF5 = volume down, 0xF6 = paired sleep, and 0xF7 = wake beacon. Those are
+//   0xF5 = volume down, 0xF6 = paired sleep, and 0xF7 = wake beacon, plus one byte
+//   per button-bar press -- 0xF8 Start, 0xF9 Select, 0xFA B, 0xFB A. Those are
 //   consumed here before line editing/raw forwarding.
+//
+//   The button-bar bytes only arrive while game mode is off. With "GAME 1" (SlaveLink.ino)
+//   the same buttons are part of the merged held-button bitmap the emulator reads instead
+//   (0xF0 down / 0xF1 up), so the two vocabularies can never collide. What a press *means*
+//   outside a game depends on what is using the audio and the screen, which is
+//   PadButtons.ino's job -- here they are only decoded and parked.
 //
 //   Wiring (this board <-> DS-Slave):
 //     DOLL-OS RX = KEYBOARD_SERIAL_RX_PIN <- DS-Slave TX = GPIO17
@@ -30,10 +37,26 @@ static const uint8_t KEYBOARD_LINK_VOLUME_UP = 0xF4;
 static const uint8_t KEYBOARD_LINK_VOLUME_DOWN = 0xF5;
 static const uint8_t KEYBOARD_LINK_SYSTEM_SLEEP = 0xF6;
 static const uint8_t KEYBOARD_LINK_SYSTEM_WAKE = 0xF7;
+//one byte per button-bar press edge -- no release event, because every action these
+//drive is a one-shot (skip a track, toggle pause, open an app), not a held state
+static const uint8_t KEYBOARD_LINK_PAD_START = 0xF8;
+static const uint8_t KEYBOARD_LINK_PAD_SELECT = 0xF9;
+static const uint8_t KEYBOARD_LINK_PAD_B = 0xFA;
+static const uint8_t KEYBOARD_LINK_PAD_A = 0xFB;
 
 //own line-edit parse state (see LineEditState in global.h) so a mid-escape keystroke
 //can't tangle with the telnet client's in-progress parse
 static LineEditState keyboardLineState;
+
+static PadButton keyboardLinkPadButton(uint8_t ch) {
+    switch (ch) {
+        case KEYBOARD_LINK_PAD_START:  return PAD_BTN_START;
+        case KEYBOARD_LINK_PAD_SELECT: return PAD_BTN_SELECT;
+        case KEYBOARD_LINK_PAD_B:      return PAD_BTN_B;
+        case KEYBOARD_LINK_PAD_A:      return PAD_BTN_A;
+        default:                       return PAD_BTN_NONE;
+    }
+}
 
 static bool handleKeyboardLinkControl(uint8_t ch) {
     if (ch == KEYBOARD_LINK_VOLUME_UP) {
@@ -52,6 +75,12 @@ static bool handleKeyboardLinkControl(uint8_t ch) {
     }
     if (ch == KEYBOARD_LINK_SYSTEM_WAKE) {
         return true;                               // Consume redundant wake bytes after GPIO wakeup.
+    }
+    PadButton pad = keyboardLinkPadButton(ch);
+    if (pad != PAD_BTN_NONE) {
+        padButtonPost(pad);                        // acted on by whoever owns the screen (PadButtons.ino)
+        ledPulseInput();
+        return true;
     }
     return false;
 }

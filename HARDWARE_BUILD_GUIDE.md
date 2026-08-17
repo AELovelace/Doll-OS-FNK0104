@@ -148,7 +148,7 @@ pressing it enters/selects the on-screen settings menu and also wakes the slave
 from deep sleep.
 
 For every menu item and control action, see the
-[DOLL-OS settings guide](SETTINGS_GUIDE.md#ds-slave-rotary-settings-controls).
+[DOLL-OS settings guide](docs/SETTINGS_GUIDE.md#ds-slave-rotary-settings-controls).
 
 ### Five-pin KY-040-style module
 

@@ -219,6 +219,45 @@ static void musicSetFallbackTitle(MusicTrack& track) {
     track.title[sizeof(track.title) - 1] = '\0';
 }
 
+static void musicCopyField(char* destination, const String& value) {
+    strncpy(destination, value.c_str(), MUSIC_METADATA_MAX - 1);
+    destination[MUSIC_METADATA_MAX - 1] = '\0';
+}
+
+//Tags win wherever they exist, but an untagged card leaves artist and album empty on
+//every track, so musicCompareTracks ties on its first three keys and the whole library
+//degenerates into one alphabetical list of every file with folders interleaved. Untagged
+//collections are near-always foldered, so read the missing fields back out of the
+//directory names: <root>/<artist>/<album>/track.mp3, or <root>/<album>/track.mp3 where
+//there's only one level (an album folder is the commoner single level than an artist
+//one, and guessing album still groups it correctly). Anything deeper takes the two
+//directories nearest the file and ignores the rest. Empty fields only -- this never
+//overwrites a real tag, and the two are filled independently, so a track carrying TALB
+//but no TPE1 still picks up its artist folder.
+static void musicApplyFolderMetadata(MusicTrack& track) {
+    if (track.artist[0] != '\0' && track.album[0] != '\0') return;
+
+    const String root = "/sd/music/";
+    String path = track.path;
+    if (!path.startsWith(root)) return;
+
+    String relative = path.substring(root.length());
+    int fileSlash = relative.lastIndexOf('/');
+    if (fileSlash < 0) return;                     //loose file sitting at the library root
+    String directories = relative.substring(0, fileSlash);
+
+    int parentSlash = directories.lastIndexOf('/');
+    String parent = directories.substring(parentSlash + 1);
+    String grandparent = "";
+    if (parentSlash > 0) {
+        String above = directories.substring(0, parentSlash);
+        grandparent = above.substring(above.lastIndexOf('/') + 1);
+    }
+
+    if (track.album[0] == '\0' && parent.length() > 0) musicCopyField(track.album, parent);
+    if (track.artist[0] == '\0' && grandparent.length() > 0) musicCopyField(track.artist, grandparent);
+}
+
 static bool musicIsMp3Name(String name) {
     name.toLowerCase();
     return name.endsWith(".mp3");
@@ -305,6 +344,7 @@ static void musicScanDirectory(fs::FS& fs, const String& realDirectory,
                     musicReadId3v2(entry, track);
                     musicReadId3v1(entry, track);
                     musicSetFallbackTitle(track);
+                    musicApplyFolderMetadata(track);
                     musicTrackCount++;
                 } else {
                     musicLibraryTruncated = true;
@@ -692,7 +732,8 @@ static bool musicFeedKeyByte(uint8_t b, MusicKeyState& state, MusicKey& key, cha
         state.escAtMs = millis();
         return false;
     }
-    if (b == 0x14 || b == 0x03) key = MK_ESCAPE;   //Ctrl+T / Ctrl+C
+    if (b == 0x14 || b == 0x18) key = MK_ABORT;    //Ctrl+T / ^X -- the terminate pair
+    else if (b == 0x03) key = MK_ESCAPE;           //Ctrl+C: cancel the screen, not the audio
     else if (b == '\r' || b == '\n') key = MK_ENTER;
     else if (b == 0x08 || b == 0x7f) key = MK_BACKSPACE;
     else if (b >= 0x20 && b <= 0x7e) { key = MK_CHAR; ch = (char)b; }
@@ -731,6 +772,62 @@ static void musicResetKeys() {
     musicKeyboardKeys.lastByteWasCR = false;
 }
 
+//   ---- button bar (PadButtons.ino) -------------------------------------------
+//
+//   Start = previous track, B = pause/resume, A = next track, applied to the library.
+//   `selectedFilteredRow` is the open player's highlighted row or -1 when the player is
+//   closed, and it buys one extra freedom: on-screen there is something to start, so B
+//   with nothing playing opens the highlighted track exactly as Space does. Returns
+//   false when the library is not what the press should act on, so the caller can hand
+//   it to the radio instead.
+//
+//   Never scans the card. A scan walks all of /sd/music reading ID3 tags, which would
+//   stall the shell mid-press, and musicAdvance() already refuses to move without a
+//   library -- if a track is playing, the library is loaded by definition.
+static bool musicPadTransport(PadButton button, int selectedFilteredRow) {
+    RadioState state;
+    bool local;
+    uint32_t current, duration;
+    radioGetPlaybackSnapshot(state, local, nullptr, 0, nullptr, 0, nullptr, 0, current, duration);
+    const bool playingFromLibrary = local && musicCurrentTrack >= 0;
+    const bool inPlayer = selectedFilteredRow >= 0;
+    if (!playingFromLibrary && !inPlayer) {
+        return false;
+    }
+
+    switch (button) {
+        case PAD_BTN_START:
+        case PAD_BTN_A:
+            return musicAdvance(button == PAD_BTN_A ? 1 : -1);
+        case PAD_BTN_B:
+            if (playingFromLibrary) {
+                radioTogglePlaybackPause();
+                return true;
+            }
+            if (selectedFilteredRow < musicFilteredCount) {
+                return musicPlayTrack(musicFiltered[selectedFilteredRow]);
+            }
+            return false;
+        default:
+            return false;   //Select: reserved
+    }
+}
+
+//   Background case: the player is closed but a library track is still what's playing,
+//   so the bar stays on the library rather than reaching past it to the radio. Prints
+//   the new track because there is no player screen up to show it (pause/resume already
+//   announces itself from the audio task).
+bool musicPadTransportBackground(PadButton button) {
+    const bool trackChange = button == PAD_BTN_START || button == PAD_BTN_A;
+    if (!musicPadTransport(button, -1)) {
+        return false;
+    }
+    if (trackChange && musicCurrentTrack >= 0) {
+        outLine("music: " + String(musicTracks[musicCurrentTrack].title), C_PINK);
+    }
+    return true;
+}
+
 static void musicRunPlayer() {
     if (!musicEnsureLibrary()) return;
     if (musicTrackCount == 0) {
@@ -743,6 +840,7 @@ static void musicRunPlayer() {
     if (selected < 0) selected = 0;
     bool searching = false;
     bool quit = false;
+    bool aborted = false;   //left by the terminate chord, which stops playback too
     bool redraw = true;
     String note = musicLibraryTruncated ? "Library full; showing first 512 tracks" : "";
     unsigned long lastProgressDraw = 0;
@@ -755,6 +853,18 @@ static void musicRunPlayer() {
         while (musicNextKey(key, ch)) {
             redraw = true;
             note = "";
+            if (key == MK_ABORT) {
+                //Leave *and* silence, which is the one thing q and Escape deliberately
+                //don't do. Checked ahead of the search box so a terminate never needs a
+                //second press to be heard -- the whole point of the chord is that it is
+                //the way out when something is stuck. Suppressing auto-advance first
+                //stops the audio task opening the next track behind us.
+                musicSuppressAutoAdvance = true;
+                radioStopPlayback();
+                aborted = true;
+                quit = true;
+                break;
+            }
             if (searching) {
                 if (key == MK_ESCAPE) {
                     searching = false;
@@ -820,6 +930,18 @@ static void musicRunPlayer() {
             }
         }
 
+        //The player owns the screen while it runs, so it takes button-bar presses itself
+        //instead of leaving them for padButtonService() (which never runs until we exit).
+        PadButton pad;
+        while (padButtonTake(pad)) {
+            const bool trackChange = pad == PAD_BTN_START || pad == PAD_BTN_A;
+            if (!musicPadTransport(pad, max(0, selected))) continue;
+            //follow the cursor to whatever started, as N/P do; a bare pause leaves it put
+            if (trackChange) selected = max(0, musicFilteredPositionForTrack(musicCurrentTrack));
+            note = "";
+            redraw = true;
+        }
+
         radioService();
         ftpService();
         maintainInternetConnection();
@@ -839,7 +961,8 @@ static void musicRunPlayer() {
     }
     setActiveInput(shellPrompt(), "", false);
     displayDirty = true;
-    outLine("music: player closed; playback continues in the background", C_GREEN);
+    outLine(aborted ? "music: player closed; playback stopped"
+                    : "music: player closed; playback continues in the background", C_GREEN);
     drawDisplayFrame();
     printPrompt();
 }
@@ -861,9 +984,15 @@ static void musicPrintStatus() {
             + " bytes PSRAM");
     outLine("State: " + String(musicPlaybackStateName(state, local)));
     if (local && musicCurrentTrack >= 0) {
-        outLine("Title: " + String(title[0] ? title : musicTracks[musicCurrentTrack].title));
-        if (artist[0]) outLine("Artist: " + String(artist));
-        if (album[0]) outLine("Album: " + String(album));
+        //Fall back to the catalog entry the way musicDrawTft does: the audio engine only
+        //reports what the file's own tags carried, so folder-derived artist/album would
+        //otherwise be visible in the player list but missing from status.
+        const MusicTrack& playing = musicTracks[musicCurrentTrack];
+        const char* statusArtist = artist[0] ? artist : playing.artist;
+        const char* statusAlbum = album[0] ? album : playing.album;
+        outLine("Title: " + String(title[0] ? title : playing.title));
+        if (statusArtist[0]) outLine("Artist: " + String(statusArtist));
+        if (statusAlbum[0]) outLine("Album: " + String(statusAlbum));
         char currentText[12], durationText[12];
         musicFormatTime(current, currentText, sizeof(currentText));
         musicFormatTime(duration, durationText, sizeof(durationText));

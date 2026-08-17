@@ -571,7 +571,7 @@ Both are real readings off the divided ADC pin (`BATTERY_ADC_PIN`, `config.h`) �
 unlike upstream's empty `batteryPercentCheck()` stubs, which don't exist here.
 The status bar and the `battery` command both read these.
 
-## 14. DS-Slave link (`KeyboardSerial.ino`, `SlaveLink.ino`)
+## 14. DS-Slave link (`KeyboardSerial.ino`, `SlaveLink.ino`, `PadButtons.ino`)
 
 DS-Slave is a companion ESP32-S3 (`../DS-Slave/`) that bridges a BLE HID
 keyboard (and optionally a controller) to a UART. Keystrokes arrive on the
@@ -579,6 +579,35 @@ keyboard (and optionally a controller) to a UART. Keystrokes arrive on the
 exactly the byte vocabulary the line editor already speaks: printable ASCII,
 CR for Enter, `0x08` for Backspace, ESC/CSI for the arrow/Home/End/Delete
 cluster, and real control codes for Ctrl+letter.
+
+Above that vocabulary sit private out-of-band bytes, consumed by
+`handleKeyboardLinkControl()` before line editing or raw forwarding ever sees them,
+so they can never land in an input buffer:
+
+| Byte | Meaning | Handled by |
+|---|---|---|
+| `0xF4` / `0xF5` | volume up / down | `radioAdjustVolume()` (§12) |
+| `0xF6` | paired sleep (rotary **Settings > Sleep**) | `enterSystemLightSleep()` |
+| `0xF7` | wake beacon after the slave reboots | consumed, no action |
+| `0xF8` `0xF9` `0xFA` `0xFB` | button bar: Start, Select, B, A — one byte per press edge | `padButtonPost()` |
+
+The button-bar bytes are only sent while game mode is off; with `GAME 1` those
+buttons are folded into the held-button bitmap below instead. What a press *means* is
+not decided on the wire — `PadButtons.ino` parks it in a one-slot mailbox and lets
+whoever owns the screen claim it:
+
+```cpp
+void padButtonPost(PadButton button);   // KeyboardSerial.ino, on the press edge
+bool padButtonTake(PadButton& button);  // a modal app that owns the screen, e.g. the music player
+void padButtonService();                // the shell's turn, called every loop() tick
+```
+A press goes stale after 500 ms, which is what makes an app with no button-bar
+vocabulary (`edit`, `ssh`, a `.dapp`) ignore the bar instead of firing the moment it
+exits — nothing has to opt out. Precedence in `padButtonService()` is
+`musicPadTransportBackground()` (a library track is playing) → `radioPadTransport()`
+(a stream is loaded) → launch `gb` / `radio play` / `music` through
+`commandProcessor()`. Add a context by claiming presses in your own input loop with
+`padButtonTake()`; add a *global* meaning by extending `padButtonService()`.
 
 Outbound commands use the paired board pin (GPIO2 on AB/S, GPIO45 on N),
 **bit-banged in software** while the spare hardware UART receives:
@@ -752,5 +781,6 @@ the sketch-local `TFT_eSPI` fork and `PartitionScheme=custom` →
 | Allocate a large buffer | `psramOrInternalCalloc(count, size, "tag")` (§13) |
 | Run something too heavy for the default stack | Dedicated FreeRTOS task, see `sshConnectAndRun`/`sshTaskEntry` (§8) |
 | Put the BLE keyboard into held-button mode | `slaveLinkSendLine("GAME 1")` … `"GAME 0"` (§14) |
+| Give the button bar a meaning inside my app | `padButtonTake()` in your input loop (§14) |
 | Take the speaker from the radio | `radioReleaseAudio()`, then `AudioOut::begin()` (§10) |
 | Add a script-level feature instead of a command | New opcode in `appExecute` + `DAPP.md` (§16) |

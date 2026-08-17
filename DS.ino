@@ -111,6 +111,7 @@ void loop() {
     acceptTelnetClient();
     readTelnetClient();
     readKeyboardSerial();   //keystrokes from the DS-Slave BLE-keyboard bridge (KeyboardSerial.ino)
+    padButtonService();     //acts on a DS-Slave button-bar press parked by the above (PadButtons.ino)
     ftpService();           //drives the FTP server one non-blocking step when active (FtpServer.ino)
     radioService();         //prints whatever the radio task/callbacks stashed (Radio.ino)
     maintainInternetConnection();

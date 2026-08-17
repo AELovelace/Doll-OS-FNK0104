@@ -38,6 +38,9 @@ usable with no network.
 - **ASUKA** — local LLM chat with tool calling (search / weather / URL fetch / time)
 - **BLE input bridge** — DS-Slave connects keyboard + gamepad at once and merges
   them into one UART stream
+- **Button bar** — three physical buttons that do the obvious thing for whatever
+  is playing: transport for the music player and the radio, app launchers on an
+  idle shell (see [Button bar](#button-bar))
 
 ---
 
@@ -62,6 +65,35 @@ its own programming USB connector.
 For the complete Reddit-ready bill of materials, power rules, and wire-by-wire
 tables for the UART, OLED, encoder, and antenna, see the
 [hardware build guide](HARDWARE_BUILD_GUIDE.md).
+
+### Button bar
+
+The three face buttons on the DS-Slave button bar are context-sensitive whenever
+game mode is **off**. DS-Slave sends one private UART byte per press —
+`0xF8` Start (left), `0xF9` Select, `0xFA` B (centre), `0xFB` A (right) — and
+DOLL-OS decides what the press means from whatever is using the audio and screen:
+
+| What's running | Start (left) | B (centre) | A (right) |
+|---|---|---|---|
+| Music player open, or a library track playing | previous track | pause / resume | next track |
+| A stream loaded (playing, paused, connecting) | previous station | stop | next station |
+| Nothing playing — plain shell | `gb` | `radio play` | `music` |
+
+Whatever is already running wins, so the launchers are only reachable from an idle
+shell; B mid-stream cannot restart the radio under itself. That is also why B **stops**
+the radio rather than pausing it — a paused stream still owns the bar, which would
+leave you unable to reach `gb` or `music` at all. Stopping releases it, so B toggles
+the radio on and off and the other two buttons go back to being launchers. The shell's
+`radio pause` is still there when a pause is what you want. Station stepping walks
+the same list `radio list` fetches, wrapping at both ends — the first press after
+boot pays for one directory fetch. Track stepping walks the `/sd/music` library.
+Any other app (`edit`, `ssh`, a `.dapp`) ignores the bar rather than misfiring, and
+`Select` is reserved with no action yet.
+
+With game mode **on** — the `gb` ROM picker and emulator turn it on themselves —
+the same buttons are part of the held-button gamepad bitmap instead (`0xF0`/`0xF1`),
+so nothing conflicts. Flash both boards when adding this feature: `0xF8`–`0xFB`
+are a paired protocol change, like `0xF6`/`0xF7` below.
 
 ### Paired sleep mode
 
@@ -182,7 +214,7 @@ Run `help` on the device for the live list.
 | `radio` | stream MP3 audio |
 | `reboot` | restart |
 | `run` | run a `.dapp` app |
-| `settings` | view/set/unset runtime overrides for config.h defaults (FTP, MQTT, radio, ASUKA); see the [complete key and rotary-control guide](SETTINGS_GUIDE.md) |
+| `settings` | view/set/unset runtime overrides for config.h defaults (FTP, MQTT, radio, ASUKA); see the [complete key and rotary-control guide](docs/SETTINGS_GUIDE.md) |
 | `slave` | talk to DS-Slave |
 | `ssh` | SSH client |
 | `status` | Wi-Fi status |
@@ -234,6 +266,7 @@ Radio.ino            audio streaming
 Asuka.ino            LLM chat        AsukaTools.ino  its tool calls
 SlaveLink.ino        outbound channel to DS-Slave
 KeyboardSerial.ino   inbound keystrokes from DS-Slave
+PadButtons.ino       what a button-bar press means per running app
 global.h  config.h   shared state / local secrets
 sketch.yaml          board profile + pinned libraries
 apps/                bundled .dapp sources

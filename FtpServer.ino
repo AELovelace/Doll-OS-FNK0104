@@ -32,6 +32,18 @@ static FtpServer* ftpSrv = nullptr;
 static bool ftpSrvUsesPlacementStorage = false;
 static bool ftpActive = false;
 
+//credentials::begin() does NOT copy the strings it is given -- FtpServer keeps the raw
+//const char* (FtpServer.cpp credentials(), where the strcpy is commented out). Locals
+//would be destructed the moment ftpStart() returned and every login would then be
+//checked against freed heap, so the backing Strings have to outlive the server: keep
+//them here at file scope and hand begin() their buffers.
+static String ftpUser;
+static String ftpPass;
+
+static bool ftpCredentialUsable(const String& value) {
+    return value.length() > 0 && value.length() < FTP_CRED_SIZE;
+}
+
 static bool ftpEnsureServer() {
     if (ftpSrv != nullptr) {
         return true;
@@ -86,15 +98,26 @@ static void ftpStart() {
         outLine("ftp: SD card not mounted", C_RED);
         return;
     }
+    //Creds can be overridden at runtime via "settings set ftp.user/ftp.pass" without
+    //recompiling -- see Settings.ino. Resolved before the server is allocated so a bad
+    //setting doesn't strand the PSRAM block: begin() only accepts a credential when
+    //0 < strlen < FTP_CRED_SIZE (16), and outside that range it silently skips the
+    //assignment -- the constructor never initializes user/pass, so the server would then
+    //strcmp() logins against an uninitialized pointer. Refuse to start instead; quietly
+    //falling back to the config.h defaults would hand out a login the settings replaced.
+    ftpUser = settingsGet("ftp.user", FTP_USER);
+    ftpPass = settingsGet("ftp.pass", FTP_PASS);
+    if (!ftpCredentialUsable(ftpUser) || !ftpCredentialUsable(ftpPass)) {
+        outLine("ftp: user/pass must be 1-" + String(FTP_CRED_SIZE - 1) + " chars", C_RED);
+        outLine("  fix with 'settings set ftp.user <name>' / 'settings set ftp.pass <word>'");
+        return;
+    }
     if (!ftpEnsureServer()) {
         outLine("ftp: not enough memory for server", C_RED);
         return;
     }
     //begin() only starts the listeners + allocates the transfer buffer; the SD card
-    //stays mounted exactly as Storage.ino left it. Creds can be overridden at runtime
-    //via "settings set ftp.user/ftp.pass" without recompiling -- see Settings.ino.
-    String ftpUser = settingsGet("ftp.user", FTP_USER);
-    String ftpPass = settingsGet("ftp.pass", FTP_PASS);
+    //stays mounted exactly as Storage.ino left it.
     ftpSrv->begin(ftpUser.c_str(), ftpPass.c_str());
     ftpActive = true;
     ledSetFtpActive(true);
@@ -130,7 +153,9 @@ static void ftpStatus() {
     if (wifiIsConnected() == 1) {
         outLine("  ftp://" + WiFi.localIP().toString() + "/");
     }
-    outLine("  user: " + settingsGet("ftp.user", FTP_USER) + "   pass: " + settingsGet("ftp.pass", FTP_PASS));
+    //the running server's creds, not settings -- editing ftp.user/ftp.pass mid-session
+    //doesn't take effect until the next "ftp on", so report what actually authenticates
+    outLine("  user: " + ftpUser + "   pass: " + ftpPass);
 }
 
 //handles the "ftp" command: "ftp on"/"start" begins, "ftp off"/"stop" ends, bare

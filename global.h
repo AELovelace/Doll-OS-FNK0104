@@ -439,8 +439,12 @@ struct MusicTrack {
     uint16_t trackNumber;
 };
 
+//MK_ABORT is the terminate chord (Ctrl+T / ^X, which is what DS-Slave's rotary
+//Settings > Terminate App sends). Kept distinct from MK_ESCAPE because the two mean
+//different things here: Escape and q close the screen and deliberately leave the
+//track playing, while terminate is asked for when someone wants the thing to stop.
 enum MusicKey {
-    MK_NONE, MK_CHAR, MK_ENTER, MK_ESCAPE, MK_BACKSPACE,
+    MK_NONE, MK_CHAR, MK_ENTER, MK_ESCAPE, MK_ABORT, MK_BACKSPACE,
     MK_UP, MK_DOWN, MK_LEFT, MK_RIGHT, MK_PAGE_UP, MK_PAGE_DOWN
 };
 struct MusicKeyState {
@@ -449,6 +453,14 @@ struct MusicKeyState {
     unsigned long escAtMs = 0;
     bool lastByteWasCR = false;
 };
+
+//   Button bar (PadButtons.ino) -- the DS-Slave button bar's face buttons as the OS
+//   sees them, after KeyboardSerial.ino has decoded the private link bytes the slave
+//   sends for them while game mode is off. The enum lives here rather than in
+//   PadButtons.ino for the usual hoisted-prototype reason: KeyboardSerial.ino and
+//   Music.ino both take one as a parameter and sort above PadButtons.ino in the
+//   concatenated sketch.
+enum PadButton { PAD_BTN_NONE, PAD_BTN_START, PAD_BTN_SELECT, PAD_BTN_B, PAD_BTN_A };
 
 extern String sshInputBuffer;
 extern String motokoChannel;

@@ -79,6 +79,11 @@ static bool radioDirectoryRunning[RADIO_DIRECTORY_MAX_STATIONS];
 static int radioDirectoryClients[RADIO_DIRECTORY_MAX_STATIONS];
 static int radioDirectoryCount = 0;
 static char radioDirectoryBase[RADIO_DIRECTORY_BASE_MAX] = "";
+//Which station in the list the user is on, for the button bar's next/previous
+//(radioStepStation). A hint, not the source of truth: any URL can be started by hand
+//with "radio play <url>", so the step re-derives the position from what is actually
+//playing and only falls back to this when the live URL isn't in the list at all.
+static int radioDirectoryPosition = -1;
 
 //Runs once, lazily, the first time "radio" is used post-boot. radioVolume's static
 //initializer above runs at global-construction time, before LittleFS is mounted, so
@@ -922,7 +927,104 @@ static void radioHandleListCommand(const String parts[], int partCount) {
         return;
     }
 
+    radioDirectoryPosition = index;   //where the button bar's next/previous steps from
     radioPlayUrl(radioDirectoryUrls[index]);
+}
+
+//   ---- button-bar transport (PadButtons.ino) --------------------------------
+//
+//index of the playing stream within radioDirectory*, or -1 if it isn't one of them
+static int radioDirectoryIndexOfCurrent() {
+    char url[sizeof(radioUrl)];
+    portENTER_CRITICAL(&radioMux);
+    strcpy(url, radioUrl);
+    portEXIT_CRITICAL(&radioMux);
+    if (url[0] == '\0') {
+        return -1;
+    }
+    for (int i = 0; i < radioDirectoryCount; i++) {
+        if (strcmp(radioDirectoryUrls[i], url) == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+//Walks the station list "radio list" fetches, wrapping at both ends. The list is only
+//in RAM after a fetch, so the first press pays for one -- announced first, because
+//radioFetchDirectory() blocks on HTTP for up to ten seconds and a button press that
+//printed nothing would look ignored.
+static bool radioStepStation(int delta) {
+    if (radioDirectoryCount == 0) {
+        outLine("radio: fetching station list...", C_CYAN);
+        drawDisplayFrame();
+        String error;
+        if (!radioFetchDirectory(error)) {
+            outLine("radio: " + error, C_RED);
+            return false;
+        }
+    }
+    if (radioDirectoryCount == 0) {
+        return false;
+    }
+
+    int position = radioDirectoryIndexOfCurrent();
+    if (position < 0) {
+        position = radioDirectoryPosition;
+    }
+    if (position < 0) {
+        //Nothing recognisable on air: step onto the first station going forward, the
+        //last one going back, so both buttons land somewhere sensible either way.
+        position = delta > 0 ? -1 : 0;
+    }
+    int next = (position + delta) % radioDirectoryCount;
+    if (next < 0) {
+        next += radioDirectoryCount;
+    }
+    radioDirectoryPosition = next;
+
+    outLine("radio: station " + String(next + 1) + "/" + String(radioDirectoryCount)
+            + " -- " + String(radioDirectoryNames[next]), C_PINK);
+    radioPlayUrl(radioDirectoryUrls[next]);
+    return true;
+}
+
+//   Applies one button-bar press to a loaded stream: Start = previous station,
+//   A = next station, B = stop. Returns false when no stream is loaded -- that's what
+//   lets the same three buttons be app launchers on an idle shell, and what keeps them
+//   on the library while a local track is the thing playing.
+bool radioPadTransport(PadButton button) {
+    if (radioTaskHandle == NULL) {
+        return false;
+    }
+    uint8_t kind;
+    portENTER_CRITICAL(&radioMux);
+    kind = radioSourceKind;
+    portEXIT_CRITICAL(&radioMux);
+    if (kind != RADIO_SOURCE_STREAM) {
+        return false;
+    }
+
+    switch (button) {
+        case PAD_BTN_B:
+            //Stop, not pause. A paused stream is still a loaded stream, so the bar
+            //would stay stuck on station transport and the Start/A launchers would be
+            //unreachable for as long as the radio held the slot -- no way to get to
+            //the emulator or the music library without a keyboard. Stopping clears the
+            //source kind, which hands the bar back to the launchers, so B toggles the
+            //radio: press to play, press to stop. Pausing a live stream only holds the
+            //buffer open anyway; the shell keeps "radio pause" for when that is wanted.
+            radioStopPlayback();
+            return true;
+        case PAD_BTN_A:
+            radioStepStation(1);
+            return true;
+        case PAD_BTN_START:
+            radioStepStation(-1);
+            return true;
+        default:
+            return false;   //Select: reserved
+    }
 }
 
 //Hand the audio hardware to something else -- currently only the Game Boy emulator
