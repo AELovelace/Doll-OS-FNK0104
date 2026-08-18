@@ -73,10 +73,43 @@ static uint32_t radioCurrentSeconds = 0;
 static uint32_t radioDurationSeconds = 0;
 static bool radioLocalEofPending = false;
 
-static char radioDirectoryNames[RADIO_DIRECTORY_MAX_STATIONS][RADIO_DIRECTORY_NAME_MAX];
-static char radioDirectoryUrls[RADIO_DIRECTORY_MAX_STATIONS][RADIO_DIRECTORY_URL_MAX];
-static bool radioDirectoryRunning[RADIO_DIRECTORY_MAX_STATIONS];
-static int radioDirectoryClients[RADIO_DIRECTORY_MAX_STATIONS];
+//   Station directory, filled in by radioFetchDirectory() and read by the "radio
+//   directory"/picker UI. As fixed arrays these ~5KB of char matrices sat in internal
+//   SRAM for the whole uptime even though they are only touched while the user is
+//   browsing stations, so the storage is one PSRAM block allocated on first fetch
+//   instead. The four views below carve up that block, so every call site still
+//   indexes them exactly as it did when they were plain arrays.
+struct RadioDirectoryStore {
+    char names[RADIO_DIRECTORY_MAX_STATIONS][RADIO_DIRECTORY_NAME_MAX];
+    char urls[RADIO_DIRECTORY_MAX_STATIONS][RADIO_DIRECTORY_URL_MAX];
+    bool running[RADIO_DIRECTORY_MAX_STATIONS];
+    int clients[RADIO_DIRECTORY_MAX_STATIONS];
+};
+static RadioDirectoryStore* radioDirectoryStore = nullptr;
+static char (*radioDirectoryNames)[RADIO_DIRECTORY_NAME_MAX] = nullptr;
+static char (*radioDirectoryUrls)[RADIO_DIRECTORY_URL_MAX] = nullptr;
+static bool* radioDirectoryRunning = nullptr;
+static int* radioDirectoryClients = nullptr;
+
+//Allocated once, on the first directory fetch, and kept for the rest of the uptime --
+//the block is small and re-fetching is common, so this trades a one-off PSRAM
+//allocation for not churning it on every "radio directory".
+static bool radioDirectoryEnsureStore() {
+    if (radioDirectoryStore != nullptr) {
+        return true;
+    }
+    radioDirectoryStore = (RadioDirectoryStore*)psramOrInternalCalloc(
+        1, sizeof(RadioDirectoryStore), "radioDirectory");
+    if (radioDirectoryStore == nullptr) {
+        return false;
+    }
+    radioDirectoryNames = radioDirectoryStore->names;
+    radioDirectoryUrls = radioDirectoryStore->urls;
+    radioDirectoryRunning = radioDirectoryStore->running;
+    radioDirectoryClients = radioDirectoryStore->clients;
+    return true;
+}
+
 static int radioDirectoryCount = 0;
 static char radioDirectoryBase[RADIO_DIRECTORY_BASE_MAX] = "";
 //Which station in the list the user is on, for the button bar's next/previous
@@ -757,6 +790,10 @@ static bool radioDirectoryReadArray(JsonArrayConst stations) {
 
 static bool radioFetchDirectory(String& error) {
     radioDirectoryCount = 0;
+    if (!radioDirectoryEnsureStore()) {
+        error = "out of memory for the station list";
+        return false;
+    }
     radioDirectoryBase[0] = '\0';
     if (WiFi.status() != WL_CONNECTED) {
         error = "WiFi not connected. Run 'wifi connect' first.";

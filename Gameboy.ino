@@ -44,6 +44,7 @@
 #include "esp_heap_caps.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include <memory>
 
 static GameBoyHost gbHost;
 
@@ -510,9 +511,14 @@ static bool gbPickRom(String& romLogical) {
         return false;
     }
 
-    static String names[kGbRomMenuMax];
+    //   Heap-allocated rather than a function-local static: at 128 Strings the array
+    //   itself is 2KB that used to stay resident in internal SRAM for the whole uptime,
+    //   plus one small buffer per ROM name. Over the 512-byte extmem threshold the
+    //   array lands in PSRAM (see enablePsramHeap), and everything it owns is released
+    //   when the picker closes.
+    std::unique_ptr<String[]> names(new String[kGbRomMenuMax]);
     bool truncated = false;
-    int count = gbCollectRomNames(names, truncated);
+    int count = gbCollectRomNames(names.get(), truncated);
     if (count == 0) {
         outLine("gb: no .gb/.gbc files found in /sd/gb", C_YELLOW);
         return false;
@@ -532,7 +538,7 @@ static bool gbPickRom(String& romLogical) {
 
     for (;;) {
         if (redraw) {
-            gbDrawRomMenu(names, count, selected, truncated);
+            gbDrawRomMenu(names.get(), count, selected, truncated);
             redraw = false;
         }
 
