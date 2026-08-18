@@ -152,7 +152,43 @@ static void showHeapCapsSummary(const char* label, uint32_t caps) {
         + " alloc=" + String(info.total_allocated_bytes), C_CYAN);
 }
 
+//   Every task stack is carved out of internal RAM, and the big ones here (ssh 40KB,
+//   radio 12KB) are sized by guesswork against mbedtls/decoder worst cases. "unused" is
+//   the high-water mark: stack bytes never touched since the task started, i.e. exactly
+//   what could be handed back to the internal pool by lowering that task's stack size.
+//   Read it after a real ssh session or a few minutes of playback, not at idle.
+static void showTaskStacks() {
+    UBaseType_t taskCount = uxTaskGetNumberOfTasks();
+    if (taskCount == 0) return;
+    //snapshot buffer in PSRAM so measuring the internal pool doesn't disturb it
+    TaskStatus_t* tasks = (TaskStatus_t*)heap_caps_calloc(
+        taskCount, sizeof(TaskStatus_t), MALLOC_CAP_SPIRAM);
+    if (tasks == nullptr) return;
+
+    taskCount = uxTaskGetSystemState(tasks, taskCount, NULL);
+    outLine("TASK STACKS (unused bytes):", C_CYAN);
+    for (UBaseType_t i = 0; i < taskCount; i++) {
+        outLine(String(tasks[i].pcTaskName)
+            + " unused=" + String((unsigned)(tasks[i].usStackHighWaterMark * sizeof(StackType_t))),
+            C_CYAN);
+    }
+    heap_caps_free(tasks);
+}
+
+//the radio and ssh tasks record checkpoints too, so the ring needs a lock
+static portMUX_TYPE heapCheckpointMux = portMUX_INITIALIZER_UNLOCKED;
+
 void recordHeapCheckpoint(const char* tag) {
+    //sampled before the critical section: the heap_caps_* calls take the heap's own
+    //lock, which must not be nested inside this spinlock
+    //MALLOC_CAP_INTERNAL, not 8BIT: with PSRAM in the heap, 8BIT includes it, and ~8MB of
+    //PSRAM headroom swamps the number that actually matters -- the scarce internal pool
+    //WiFi/TLS/DMA must allocate from
+    uint32_t freeHeap = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+    uint32_t largestBlock = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL);
+    uint32_t minFreeHeap = heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL);
+
+    portENTER_CRITICAL(&heapCheckpointMux);
     int slot;
     if (heapCheckpointCount < HEAP_CHECKPOINT_MAX) {
         slot = (heapCheckpointHead + heapCheckpointCount) % HEAP_CHECKPOINT_MAX;
@@ -164,12 +200,10 @@ void recordHeapCheckpoint(const char* tag) {
 
     HeapCheckpoint& checkpoint = heapCheckpoints[slot];
     checkpoint.tag = tag;
-    //MALLOC_CAP_INTERNAL, not 8BIT: with PSRAM in the heap, 8BIT includes it, and ~8MB of
-    //PSRAM headroom swamps the number that actually matters -- the scarce internal pool
-    //WiFi/TLS/DMA must allocate from
-    checkpoint.freeHeap = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
-    checkpoint.largestBlock = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL);
-    checkpoint.minFreeHeap = heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL);
+    checkpoint.freeHeap = freeHeap;
+    checkpoint.largestBlock = largestBlock;
+    checkpoint.minFreeHeap = minFreeHeap;
+    portEXIT_CRITICAL(&heapCheckpointMux);
 }
 
 void reserveHotStrings() {
@@ -229,6 +263,8 @@ void showFreeDetailed() {
 #if defined(BOARD_HAS_PSRAM)
     showHeapCapsSummary("SPIRAM", MALLOC_CAP_SPIRAM);
 #endif
+
+    showTaskStacks();
 
     outLine("STRING STATE:", C_CYAN);
     showStringState("currentCommand", currentCommand);

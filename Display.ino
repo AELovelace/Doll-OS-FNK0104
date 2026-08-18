@@ -683,8 +683,11 @@ void drawDisplayStatusBar() {
     frameSprite.drawString("DOLL-OS", DISPLAY_PADDING, 2);
 
     char statusText[64];
-    snprintf(statusText, sizeof(statusText), "MEM:%luKB VOL:%02d BAT:%d%%",
-        (unsigned long)(ESP.getFreeHeap() / 1000), radioGetVolume(), readBatteryPercent());
+    //MEM is ESP.getFreeHeap(), which this core defines as MALLOC_CAP_INTERNAL only --
+    //PSR is the separate PSRAM pool the big buffers live in
+    snprintf(statusText, sizeof(statusText), "MEM:%luKB PSR:%luKB VOL:%02d BAT:%d%%",
+        (unsigned long)(ESP.getFreeHeap() / 1000), (unsigned long)(ESP.getFreePsram() / 1000),
+        radioGetVolume(), readBatteryPercent());
     frameSprite.setTextDatum(TR_DATUM);
     frameSprite.setTextColor(TFT_WHITE, TFT_BLACK);
     frameSprite.drawString(statusText, DISPLAY_WIDTH - DISPLAY_PADDING, 2);

@@ -23,7 +23,6 @@
 //   values come through BoardPins.h so every audio owner uses the same map.
 
 #include "Audio.h"
-#include "ESP_I2S.h"
 #include <SD_MMC.h>
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
@@ -35,7 +34,14 @@
 //too, and the .ino files concatenate alphabetically, so Gameboy.ino is compiled
 //above this file and can't see a constant defined here.
 const unsigned long RADIO_STREAM_RETRY_MS = 5000;
-const int RADIO_TASK_STACK_SIZE = 12288;     //MP3 decode runs on this stack (audio.loop())
+//audio.loop() runs on this stack: it fills the library's input buffer from the network or
+//SD. The decode and I2S write happen on ESP32-audioI2S's own task, not here.
+const int RADIO_TASK_STACK_SIZE = 12288;
+//   Stack in PSRAM, TCB internal -- same trade as the ssh task (Ssh.ino). Worth it here
+//   because this task is IO-bound rather than the sample path, so the slower stack costs
+//   nothing audible. Created once and never deleted, so no reuse hazard.
+static StackType_t* radioTaskStack = nullptr;
+static StaticTask_t radioTaskTcb;
 const int RADIO_DIRECTORY_MAX_STATIONS = 16;
 const int RADIO_DIRECTORY_NAME_MAX = 64;
 const int RADIO_DIRECTORY_URL_MAX = 256;
@@ -148,14 +154,9 @@ static TaskHandle_t radioTaskHandle = NULL;
 //   cost is only paid after WiFi is up,
 //   and only if the radio is actually used.
 static Audio* radioAudio = nullptr;
-static I2SClass radioI2s;
 static bool radioCodecReady = false;
-static bool radioI2sReady = false;           //radioI2s.begin() has claimed its I2S controller -- must
-                                              //only ever happen once: the S3 has two controllers total
-                                              //(one for this bootstrap channel, one for Audio), and a
-                                              //re-begin on a retry would leak a fresh one, starving Audio
 static volatile bool radioReleased = false;  //set by the task once RADIO_CMD_RELEASE has torn the
-                                              //I2S controllers down -- radioReleaseAudio() waits on it
+                                              //I2S controller down -- radioReleaseAudio() waits on it
 static bool radioWantPlaying = false;        //user intent: keep the stream up (drives auto-reconnect)
 static bool radioPaused = false;
 static unsigned long radioLastAttemptMs = 0;
@@ -245,26 +246,16 @@ static bool radioEnsureCodec() {
         return true;
     }
 
-    if (!radioI2sReady) {
-        radioI2s.setPins(AUDIO_I2S_BCLK_PIN, AUDIO_I2S_WS_PIN, AUDIO_I2S_DOUT_PIN,
-                         AUDIO_I2S_DIN_PIN, AUDIO_I2S_MCLK_PIN);
-        if (!radioI2s.begin(I2S_MODE_STD, 44100, I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_STEREO, I2S_STD_SLOT_LEFT)) {
-            radioAnnounce("radio: I2S init failed", C_RED);
-            return false;
-        }
-        radioI2sReady = true;
-    }
-
     if (!audioCodecEnsure()) {
         radioAnnounce("radio: ES8311 codec init failed (see serial log)", C_RED);
         return false;
     }
 
     if (radioAudio == nullptr) {
-        //port 1 explicitly: Audio's default is I2S_NUM_0 *by name*, but radioI2s.begin above
-        //(I2S_NUM_AUTO) has already claimed port 0 by the time we construct lazily -- in
-        //sgcrelay the global Audio constructed first and the default happened to fit
-        radioAudio = new (std::nothrow) Audio(I2S_NUM_1);
+        //Audio's own channel is the only one the radio claims. It used to be pinned to
+        //port 1 because a bootstrap I2SClass held port 0 to clock the codec; that channel
+        //was never written to, so it was dropped and Audio takes whichever port is free.
+        radioAudio = new (std::nothrow) Audio(I2S_NUM_AUTO);
         if (radioAudio == nullptr) {
             radioAnnounce("radio: out of memory for audio engine", C_RED);
             return false;
@@ -290,6 +281,7 @@ static bool radioEnsureCodec() {
     radioAudio->setVolume(radioVolume);
 
     radioCodecReady = true;
+    recordHeapCheckpoint("radio codec+i2s");
     return true;
 }
 
@@ -308,6 +300,7 @@ static void radioConnect(const char* url) {
     radioLastAttemptMs = millis();
     Serial.printf("[radio] connecting: %s\n", url);
     radioAudio->connecttohost(url);
+    recordHeapCheckpoint("radio stream");
 }
 
 static void radioConnectFile(const char* path) {
@@ -399,7 +392,7 @@ static void radioTaskHandleCommand() {
             }
             break;
         case RADIO_CMD_RELEASE:
-            //Give both I2S controllers back (see radioReleaseAudio). Done here, on the
+            //Give the I2S controller back (see radioReleaseAudio). Done here, on the
             //task, rather than by the caller: radioAudio is task-local and audio.loop()
             //is running on this stack -- deleting the engine from the main loop would
             //race the decoder mid-frame.
@@ -416,15 +409,12 @@ static void radioTaskHandleCommand() {
                 delete radioAudio;
                 radioAudio = nullptr;
             }
-            if (radioI2sReady) {
-                radioI2s.end();
-                radioI2sReady = false;
-            }
             //codec *registers* stay programmed (audioCodecEnsure keeps its own latch);
             //only the streaming side has to be rebuilt on the next "radio play"
             radioCodecReady = false;
             radioSetState(RADIO_STOPPED);
             radioReleased = true;
+            recordHeapCheckpoint("radio released");
             break;
     }
 }
@@ -609,16 +599,26 @@ static bool radioEnsureTask() {
     if (radioTaskHandle != NULL) {
         return true;
     }
+    if (radioTaskStack == nullptr) {
+        radioTaskStack = (StackType_t*)heap_caps_malloc(RADIO_TASK_STACK_SIZE, MALLOC_CAP_SPIRAM);
+    }
     //same core as the ssh task (portNUM_PROCESSORS - 1); priority above the loop
     //task (1) so decode keeps up, below ssh's +3 so an active ssh session stays
     //responsive during its short lifetime
-    BaseType_t created = xTaskCreatePinnedToCore(radioTaskEntry, "radioTask", RADIO_TASK_STACK_SIZE,
-        NULL, (tskIDLE_PRIORITY + 2), &radioTaskHandle, portNUM_PROCESSORS - 1);
-    if (created != pdPASS) {
+    if (radioTaskStack != nullptr) {
+        radioTaskHandle = xTaskCreateStaticPinnedToCore(radioTaskEntry, "radioTask",
+            RADIO_TASK_STACK_SIZE, NULL, (tskIDLE_PRIORITY + 2), radioTaskStack,
+            &radioTaskTcb, portNUM_PROCESSORS - 1);
+    } else if (xTaskCreatePinnedToCore(radioTaskEntry, "radioTask", RADIO_TASK_STACK_SIZE,
+                   NULL, (tskIDLE_PRIORITY + 2), &radioTaskHandle,
+                   portNUM_PROCESSORS - 1) != pdPASS) {
         radioTaskHandle = NULL;
+    }
+    if (radioTaskHandle == NULL) {
         outLine("radio: could not start playback task (out of memory)", C_RED);
         return false;
     }
+    recordHeapCheckpoint("radio task");
     return true;
 }
 
@@ -1066,8 +1066,8 @@ bool radioPadTransport(PadButton button) {
 
 //Hand the audio hardware to something else -- currently only the Game Boy emulator
 //(Gameboy.ino -> src/AudioOut.cpp), which needs one of the S3's two I2S controllers
-//and can't have one while the radio holds both (a bootstrap channel for MCLK plus
-//ESP32-audioI2S's). Stops any stream, deletes the engine, frees the controllers.
+//and can't have one while the radio holds ESP32-audioI2S's. Stops any stream, deletes
+//the engine, frees the controller.
 //Nothing is auto-restored: the next "radio play" walks radioEnsureCodec again and
 //rebuilds what it needs, which by then is free because the game called AudioOut::end().
 //
@@ -1165,7 +1165,14 @@ void handleRadioCommand(const String parts[], int partCount) {
             outLine("radio: not playing");
             return;
         }
-        radioPostCommand(RADIO_CMD_STOP, NULL, 0);
+        //full release rather than RADIO_CMD_STOP: stopping the stream alone keeps the
+        //engine and both I2S controllers claimed (~50KB of internal RAM), which is the
+        //difference between an ssh session starting afterwards and failing
+        if (!radioReleaseAudio()) {
+            outLine("radio: stop timed out", C_RED);
+            return;
+        }
+        outLine("radio: stopped", C_PINK);
         return;
     }
 

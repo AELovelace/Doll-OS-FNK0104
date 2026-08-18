@@ -25,6 +25,15 @@ static const int SSH_PTY_ROWS = 24;
 //task with a stack in this range rather than calling it straight from setup()/loop().
 static const unsigned int SSH_TASK_STACK_SIZE = 40960;
 
+//   That stack is the largest single internal-RAM allocation in the firmware, and
+//   internal RAM is exactly what a playing radio has already drained -- so it goes to
+//   PSRAM instead (the S3 build sets CONFIG_SPIRAM_ALLOW_STACK_EXTERNAL_MEMORY). Safe
+//   here because the session touches no flash and handleSshCommand blocks the shell for
+//   its whole lifetime; the TCB stays internal, as FreeRTOS requires. Allocated once and
+//   reused rather than per session, so repeated sessions don't churn the heap.
+static StackType_t* sshTaskStack = nullptr;
+static StaticTask_t sshTaskTcb;
+
 String sshInputBuffer = "";   //password-entry phase only; the shell phase forwards raw keystrokes and has no local buffer
 
 //ANSI filter/stream state for mirroring stdout/stderr onto the display panel only
@@ -279,6 +288,9 @@ void sshConnectAndRun(const String& user, const String& host, unsigned int port)
     sshStdoutDisplayColor = TFT_WHITE;
     sshStderrDisplayColor = TFT_RED;
 
+    //after the key exchange, which is the session's peak internal-RAM moment
+    recordHeapCheckpoint("ssh connected");
+
     runSshBlocking(session, user);
 
     //defensive: no stale row ownership survives past this session
@@ -287,6 +299,7 @@ void sshConnectAndRun(const String& user, const String& host, unsigned int port)
 
     ssh_disconnect(session);
     ssh_free(session);
+    recordHeapCheckpoint("ssh freed");
 
     setActiveInput(shellPrompt(), "", false);
 
@@ -337,17 +350,37 @@ void handleSshCommand(const String parts[], int partCount) {
 
     SshTaskArgs* args = new SshTaskArgs{user, host, port};
     sshTaskRunning = true;
-    BaseType_t created = xTaskCreatePinnedToCore(sshTaskEntry, "sshTask", SSH_TASK_STACK_SIZE, args,
-        (tskIDLE_PRIORITY + 3), NULL, portNUM_PROCESSORS - 1);
+    recordHeapCheckpoint("ssh start");
+
+    if (sshTaskStack == nullptr) {
+        sshTaskStack = (StackType_t*)heap_caps_malloc(SSH_TASK_STACK_SIZE, MALLOC_CAP_SPIRAM);
+    }
+
+    BaseType_t created;
+    if (sshTaskStack != nullptr) {
+        created = xTaskCreateStaticPinnedToCore(sshTaskEntry, "sshTask", SSH_TASK_STACK_SIZE,
+            args, (tskIDLE_PRIORITY + 3), sshTaskStack, &sshTaskTcb,
+            portNUM_PROCESSORS - 1) != NULL ? pdPASS : pdFAIL;
+    } else {
+        //no PSRAM (or it's full) -- fall back to the internal heap and hope it fits
+        created = xTaskCreatePinnedToCore(sshTaskEntry, "sshTask", SSH_TASK_STACK_SIZE, args,
+            (tskIDLE_PRIORITY + 3), NULL, portNUM_PROCESSORS - 1);
+    }
 
     if (created != pdPASS) {
         delete args;
         sshTaskRunning = false;
-        outLine("ssh: could not start session (out of memory)", C_RED);
+        outLine("ssh: could not start session (needs " + String(SSH_TASK_STACK_SIZE)
+            + " contiguous bytes; largest free internal "
+            + String(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL))
+            + ", psram " + String(heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM)) + ")", C_RED);
         return;
     }
 
     while (sshTaskRunning) {
         delay(10);
     }
+    //sshTaskEntry clears the flag immediately before vTaskDelete(NULL); let the idle task
+    //reap it before a following session reuses the same static stack and TCB
+    delay(50);
 }
