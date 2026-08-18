@@ -6,7 +6,9 @@
 //   button here; this file decides what the press *means*, which depends entirely on
 //   what is using the audio and the screen at that moment:
 //
-//     the music player is open, or a library track is playing
+//     the music player is open
+//                       Start = previous track    B = select          A = next track
+//     a library track is playing with the player closed
 //                       Start = previous track    B = pause/resume    A = next track
 //     a stream is loaded (playing, paused, or connecting)
 //                       Start = previous station  B = stop            A = next station
@@ -17,8 +19,15 @@
 //   reached from an idle shell -- pressing B mid-stream can't restart the radio under
 //   itself. That precedence is also why B stops the radio rather than pausing it: a
 //   paused stream still owns the bar, which would leave a keyboard-less handheld with
-//   no way back to the emulator or the music library. Station stepping walks the same list "radio list" fetches (Radio.ino's
-//   radioStepStation); track stepping walks the library (Music.ino's musicPadTransport).
+//   no way back to the emulator or the music library. Station stepping walks the same
+//   list "radio list" fetches (Radio.ino's radioStepStation); track stepping walks the
+//   library (Music.ino's musicPadTransport).
+//
+//   B is the odd one out: inside the open music player it is Enter on the highlighted
+//   row, not pause, because the bar and the joystick are the whole input device on a
+//   keyboard-less build and nothing else can descend the browser -- the joystick's click
+//   sends Escape, which only ever goes back up. Pause stays on B for the row that is
+//   already playing, where entering would just restart the track. See musicPadTransport.
 //   Select is consumed but has no action yet: it must not be left to fall through into
 //   the shell's input line, but nothing here needs a fourth verb.
 //

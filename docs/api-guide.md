@@ -609,6 +609,13 @@ exits — nothing has to opt out. Precedence in `padButtonService()` is
 `commandProcessor()`. Add a context by claiming presses in your own input loop with
 `padButtonTake()`; add a *global* meaning by extending `padButtonService()`.
 
+Start and A are previous/next throughout; B is the context-sensitive one. Inside the
+open music player it is **select** — Enter on the highlighted row, so the bar alone can
+descend root → artists → albums → tracks on a build with no keyboard (the joystick's
+click sends Escape, which only goes back up). It falls back to pause/resume on the row
+that is already playing, and everywhere outside the player: pause/resume for a
+background library track, stop for a stream, `radio play` on an idle shell.
+
 Outbound commands use the paired board pin (GPIO2 on AB/S, GPIO45 on N),
 **bit-banged in software** while the spare hardware UART receives:
 

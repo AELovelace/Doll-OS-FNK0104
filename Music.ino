@@ -8,8 +8,24 @@
 
 static MusicTrack* musicTracks = nullptr;
 static uint16_t* musicFiltered = nullptr;
+static MusicAlbum* musicAlbums = nullptr;
+static MusicArtist* musicArtists = nullptr;
 static int musicTrackCount = 0;
+static int musicAlbumCount = 0;
+static int musicArtistCount = 0;
 static int musicFilteredCount = 0;
+
+//Browser position. musicScopeArtist is the artist whose albums are listed (-1 = all
+//albums), musicOpenAlbum the album whose tracks are listed (-1 = all tracks or a search
+//result). Together they say where Escape goes, so no separate back-stack is needed.
+//musicSelection remembers the cursor per level, so descending and coming back lands on
+//the row you left rather than the top.
+static MusicView musicView = MUSIC_VIEW_ROOT;
+static int musicScopeArtist = -1;
+static int musicOpenAlbum = -1;
+static int musicSelection[MUSIC_VIEW_COUNT] = {0, 0, 0, 0};
+
+static int& musicSelected() { return musicSelection[musicView]; }
 static volatile int musicCurrentTrack = -1;
 static volatile bool musicLibraryReady = false;
 static bool musicLibraryTruncated = false;
@@ -298,18 +314,91 @@ static bool musicAllocateLibrary() {
         MUSIC_LIBRARY_MAX_TRACKS, sizeof(MusicTrack), MALLOC_CAP_SPIRAM);
     musicFiltered = (uint16_t*)heap_caps_calloc(
         MUSIC_LIBRARY_MAX_TRACKS, sizeof(uint16_t), MALLOC_CAP_SPIRAM);
-    if (!musicTracks || !musicFiltered) {
+    //Worst case every track is its own album by its own artist, so both indexes are
+    //sized to the track cap; at 1024 entries that is 4KB + 8KB, cheap next to the catalog.
+    musicAlbums = (MusicAlbum*)heap_caps_calloc(
+        MUSIC_LIBRARY_MAX_TRACKS, sizeof(MusicAlbum), MALLOC_CAP_SPIRAM);
+    musicArtists = (MusicArtist*)heap_caps_calloc(
+        MUSIC_LIBRARY_MAX_TRACKS, sizeof(MusicArtist), MALLOC_CAP_SPIRAM);
+    if (!musicTracks || !musicFiltered || !musicAlbums || !musicArtists) {
         if (musicTracks) heap_caps_free(musicTracks);
         if (musicFiltered) heap_caps_free(musicFiltered);
+        if (musicAlbums) heap_caps_free(musicAlbums);
+        if (musicArtists) heap_caps_free(musicArtists);
         musicTracks = nullptr;
         musicFiltered = nullptr;
+        musicAlbums = nullptr;
+        musicArtists = nullptr;
         outLine("music: not enough PSRAM for the library", C_RED);
         return false;
     }
-    Serial.printf("[music] library: %u bytes + %u-byte filter index -> PSRAM\n",
+    Serial.printf("[music] library: %u bytes + %u-byte filter index + %u-byte browse index -> PSRAM\n",
                   (unsigned)(MUSIC_LIBRARY_MAX_TRACKS * sizeof(MusicTrack)),
-                  (unsigned)(MUSIC_LIBRARY_MAX_TRACKS * sizeof(uint16_t)));
+                  (unsigned)(MUSIC_LIBRARY_MAX_TRACKS * sizeof(uint16_t)),
+                  (unsigned)(MUSIC_LIBRARY_MAX_TRACKS * (sizeof(MusicAlbum) + sizeof(MusicArtist))));
     return true;
+}
+
+//One pass over the sorted catalog builds both spans: a new album whenever artist+album
+//changes, a new artist whenever artist changes (which is always also an album boundary,
+//so the artist's albums are the contiguous run starting at the album open at that point).
+static void musicBuildBrowseIndexes() {
+    musicAlbumCount = 0;
+    musicArtistCount = 0;
+    if (!musicAlbums || !musicArtists) return;
+
+    for (int i = 0; i < musicTrackCount; i++) {
+        const MusicTrack& track = musicTracks[i];
+        bool newArtist = musicArtistCount == 0
+            || musicCompareTextCI(musicTracks[musicArtists[musicArtistCount - 1].firstTrack].artist,
+                                  track.artist) != 0;
+        bool newAlbum = newArtist || musicAlbumCount == 0
+            || musicCompareTextCI(musicTracks[musicAlbums[musicAlbumCount - 1].firstTrack].album,
+                                  track.album) != 0;
+
+        if (newAlbum) {
+            musicAlbums[musicAlbumCount].firstTrack = (uint16_t)i;
+            musicAlbums[musicAlbumCount].trackCount = 0;
+            musicAlbumCount++;
+        }
+        if (newArtist) {
+            musicArtists[musicArtistCount].firstAlbum = (uint16_t)(musicAlbumCount - 1);
+            musicArtists[musicArtistCount].albumCount = 0;
+            musicArtists[musicArtistCount].firstTrack = (uint16_t)i;
+            musicArtists[musicArtistCount].trackCount = 0;
+            musicArtistCount++;
+        }
+        musicAlbums[musicAlbumCount - 1].trackCount++;
+        musicArtists[musicArtistCount - 1].trackCount++;
+        musicArtists[musicArtistCount - 1].albumCount =
+            (uint16_t)(musicAlbumCount - musicArtists[musicArtistCount - 1].firstAlbum);
+    }
+}
+
+static int musicAlbumForTrack(int trackIndex) {
+    for (int i = 0; i < musicAlbumCount; i++) {
+        if (trackIndex >= musicAlbums[i].firstTrack
+            && trackIndex < musicAlbums[i].firstTrack + musicAlbums[i].trackCount) return i;
+    }
+    return -1;
+}
+
+static int musicArtistForAlbum(int albumIndex) {
+    for (int i = 0; i < musicArtistCount; i++) {
+        if (albumIndex >= musicArtists[i].firstAlbum
+            && albumIndex < musicArtists[i].firstAlbum + musicArtists[i].albumCount) return i;
+    }
+    return -1;
+}
+
+//Empty artist/album tags are normal on a card the folder fallback couldn't help either
+//(loose files at the library root), so both lists need a name for the blank bucket.
+static const char* musicArtistName(const MusicTrack& track) {
+    return track.artist[0] ? track.artist : "(no artist)";
+}
+
+static const char* musicAlbumName(const MusicTrack& track) {
+    return track.album[0] ? track.album : "(no album)";
 }
 
 static void musicScanDirectory(fs::FS& fs, const String& realDirectory,
@@ -421,7 +510,14 @@ static bool musicScanLibrary() {
     musicStopLocalAndWait();
     musicCurrentTrack = -1;
     musicTrackCount = 0;
+    musicAlbumCount = 0;
+    musicArtistCount = 0;
     musicFilteredCount = 0;
+    //the old spans point into a catalog that is about to be refilled
+    musicView = MUSIC_VIEW_ROOT;
+    musicScopeArtist = -1;
+    musicOpenAlbum = -1;
+    for (int i = 0; i < MUSIC_VIEW_COUNT; i++) musicSelection[i] = 0;
     musicLibraryTruncated = false;
     musicLibraryReady = false;
     memset(musicTracks, 0, MUSIC_LIBRARY_MAX_TRACKS * sizeof(MusicTrack));
@@ -439,9 +535,11 @@ static bool musicScanLibrary() {
     if (musicTrackCount > 1) {
         qsort(musicTracks, musicTrackCount, sizeof(MusicTrack), musicCompareTracks);
     }
+    musicBuildBrowseIndexes();   //spans depend on the sort, so this has to follow qsort
     musicLibraryReady = true;
     musicRebuildFilter("");
-    Serial.printf("[music] library ready: %d track(s)%s\n", musicTrackCount,
+    Serial.printf("[music] library ready: %d track(s), %d album(s), %d artist(s)%s\n",
+                  musicTrackCount, musicAlbumCount, musicArtistCount,
                   musicLibraryTruncated ? " (truncated)" : "");
     return true;
 }
@@ -499,6 +597,249 @@ static void musicTrackLabel(const MusicTrack& track, char* out, size_t outSize) 
     else snprintf(out, outSize, "%s", track.title);
 }
 
+//   ---- row model ---------------------------------------------------------------
+//
+//   Both renderers (TFT and telnet) draw the same rows, so the view branching lives here
+//   once instead of twice. A row is identified by its position in whatever list is on
+//   screen; these three functions turn that into a count, a label, and whether the row
+//   contains what is currently playing.
+
+//The album list is scoped to one artist when reached through Artists, and unscoped when
+//reached from the root, so its rows are a window into musicAlbums either way.
+static int musicAlbumRowBase() {
+    return (musicScopeArtist >= 0 && musicScopeArtist < musicArtistCount)
+        ? musicArtists[musicScopeArtist].firstAlbum : 0;
+}
+
+static int musicRowCount() {
+    switch (musicView) {
+        case MUSIC_VIEW_ROOT:    return MUSIC_ROOT_ROWS;
+        case MUSIC_VIEW_ARTISTS: return musicArtistCount;
+        case MUSIC_VIEW_ALBUMS:
+            return (musicScopeArtist >= 0 && musicScopeArtist < musicArtistCount)
+                ? musicArtists[musicScopeArtist].albumCount : musicAlbumCount;
+        default:                 return musicFilteredCount;
+    }
+}
+
+static void musicRowLabel(int position, char* out, size_t outSize) {
+    out[0] = '\0';
+    if (position < 0 || position >= musicRowCount()) return;
+
+    if (musicView == MUSIC_VIEW_ROOT) {
+        if (position == 0)      snprintf(out, outSize, "Artists   (%d)", musicArtistCount);
+        else if (position == 1) snprintf(out, outSize, "Albums    (%d)", musicAlbumCount);
+        else                    snprintf(out, outSize, "Tracks    (%d)", musicTrackCount);
+        return;
+    }
+
+    if (musicView == MUSIC_VIEW_ARTISTS) {
+        const MusicArtist& artist = musicArtists[position];
+        snprintf(out, outSize, "%s  (%u)", musicArtistName(musicTracks[artist.firstTrack]),
+                 (unsigned)artist.albumCount);
+        return;
+    }
+
+    if (musicView == MUSIC_VIEW_ALBUMS) {
+        const MusicAlbum& album = musicAlbums[musicAlbumRowBase() + position];
+        const MusicTrack& track = musicTracks[album.firstTrack];
+        //inside an artist the name is redundant on every row; unscoped it is the only
+        //thing telling two same-titled albums apart
+        if (musicScopeArtist >= 0) {
+            snprintf(out, outSize, "%s  (%u)", musicAlbumName(track), (unsigned)album.trackCount);
+        } else {
+            snprintf(out, outSize, "%s - %s  (%u)", musicArtistName(track),
+                     musicAlbumName(track), (unsigned)album.trackCount);
+        }
+        return;
+    }
+
+    const MusicTrack& track = musicTracks[musicFiltered[position]];
+    if (musicOpenAlbum >= 0 && track.trackNumber > 0) {
+        snprintf(out, outSize, "%02u  %s", (unsigned)track.trackNumber, track.title);
+    } else if (musicOpenAlbum >= 0) {
+        snprintf(out, outSize, "%s", track.title);
+    } else {
+        musicTrackLabel(track, out, outSize);   //all-tracks and search results need the artist
+    }
+}
+
+static bool musicRowIsPlaying(int position, bool local) {
+    if (!local || musicCurrentTrack < 0 || position < 0 || position >= musicRowCount()) return false;
+    switch (musicView) {
+        case MUSIC_VIEW_ROOT:
+            return false;
+        case MUSIC_VIEW_ARTISTS: {
+            const MusicArtist& artist = musicArtists[position];
+            return musicCurrentTrack >= artist.firstTrack
+                && musicCurrentTrack < artist.firstTrack + artist.trackCount;
+        }
+        case MUSIC_VIEW_ALBUMS: {
+            const MusicAlbum& album = musicAlbums[musicAlbumRowBase() + position];
+            return musicCurrentTrack >= album.firstTrack
+                && musicCurrentTrack < album.firstTrack + album.trackCount;
+        }
+        default:
+            return musicFiltered[position] == musicCurrentTrack;
+    }
+}
+
+//Breadcrumb for the header: says which list is on screen and, once scoped, to what.
+static void musicViewTitle(char* out, size_t outSize) {
+    switch (musicView) {
+        case MUSIC_VIEW_ROOT:
+            snprintf(out, outSize, "DOLL-OS MUSIC");
+            return;
+        case MUSIC_VIEW_ARTISTS:
+            snprintf(out, outSize, "ARTISTS");
+            return;
+        case MUSIC_VIEW_ALBUMS:
+            if (musicScopeArtist >= 0 && musicScopeArtist < musicArtistCount) {
+                snprintf(out, outSize, "%s",
+                         musicArtistName(musicTracks[musicArtists[musicScopeArtist].firstTrack]));
+            } else {
+                snprintf(out, outSize, "ALBUMS");
+            }
+            return;
+        default:
+            if (musicOpenAlbum >= 0 && musicOpenAlbum < musicAlbumCount) {
+                snprintf(out, outSize, "%s",
+                         musicAlbumName(musicTracks[musicAlbums[musicOpenAlbum].firstTrack]));
+            } else if (musicFilter.length() > 0) {
+                snprintf(out, outSize, "SEARCH");
+            } else {
+                snprintf(out, outSize, "ALL TRACKS");
+            }
+            return;
+    }
+}
+
+static void musicRowSummary(char* out, size_t outSize) {
+    switch (musicView) {
+        case MUSIC_VIEW_ROOT:
+            snprintf(out, outSize, "VOL %d", radioGetVolume());
+            return;
+        case MUSIC_VIEW_ARTISTS:
+            snprintf(out, outSize, "%d artists  VOL %d", musicArtistCount, radioGetVolume());
+            return;
+        case MUSIC_VIEW_ALBUMS:
+            snprintf(out, outSize, "%d albums  VOL %d", musicRowCount(), radioGetVolume());
+            return;
+        default:
+            snprintf(out, outSize, "%d/%d  VOL %d", musicFilteredCount, musicTrackCount,
+                     radioGetVolume());
+            return;
+    }
+}
+
+//   ---- navigation --------------------------------------------------------------
+
+static void musicShowAllTracks() {
+    musicOpenAlbum = -1;
+    musicRebuildFilter("");
+}
+
+static void musicShowAlbumTracks(int albumIndex) {
+    if (albumIndex < 0 || albumIndex >= musicAlbumCount) return;
+    const MusicAlbum& album = musicAlbums[albumIndex];
+    musicFilter = "";
+    musicFilteredCount = 0;
+    for (int i = 0; i < album.trackCount; i++) {
+        musicFiltered[musicFilteredCount++] = (uint16_t)(album.firstTrack + i);
+    }
+    musicOpenAlbum = albumIndex;
+}
+
+//Enter: root picks a browse mode, the two list levels descend, tracks play. Returns true
+//when the press started playback so the caller can say so.
+static bool musicEnterRow(int position) {
+    if (position < 0 || position >= musicRowCount()) return false;
+
+    switch (musicView) {
+        case MUSIC_VIEW_ROOT:
+            if (position == 0) {
+                musicView = MUSIC_VIEW_ARTISTS;
+            } else if (position == 1) {
+                musicScopeArtist = -1;
+                musicView = MUSIC_VIEW_ALBUMS;
+            } else {
+                musicShowAllTracks();
+                musicView = MUSIC_VIEW_TRACKS;
+            }
+            musicSelected() = 0;
+            return false;
+        case MUSIC_VIEW_ARTISTS:
+            musicScopeArtist = position;
+            musicView = MUSIC_VIEW_ALBUMS;
+            musicSelected() = 0;
+            return false;
+        case MUSIC_VIEW_ALBUMS:
+            musicShowAlbumTracks(musicAlbumRowBase() + position);
+            musicView = MUSIC_VIEW_TRACKS;
+            musicSelected() = 0;
+            return false;
+        default:
+            return musicPlayTrack(musicFiltered[position]);
+    }
+}
+
+//Escape: one level back up whichever path got here. Returns false at the root, which is
+//the caller's cue to close the player.
+static bool musicBackRow() {
+    switch (musicView) {
+        case MUSIC_VIEW_ROOT:
+            return false;
+        case MUSIC_VIEW_ARTISTS:
+            musicView = MUSIC_VIEW_ROOT;
+            return true;
+        case MUSIC_VIEW_ALBUMS:
+            musicView = musicScopeArtist >= 0 ? MUSIC_VIEW_ARTISTS : MUSIC_VIEW_ROOT;
+            return true;
+        default:
+            //a search result or the flat all-tracks list has no album above it
+            musicView = musicOpenAlbum >= 0 ? MUSIC_VIEW_ALBUMS : MUSIC_VIEW_ROOT;
+            musicOpenAlbum = -1;
+            musicFilter = "";
+            return true;
+    }
+}
+
+//N/P, the button bar and auto-advance all walk the whole sorted library, so the new track
+//can land outside the list on screen. Re-scope to wherever it actually lives and put the
+//cursor on it, so the display never disagrees with what is coming out of the speaker.
+static void musicFollowCurrentTrack() {
+    if (musicCurrentTrack < 0) return;
+    int album = musicAlbumForTrack(musicCurrentTrack);
+    int artist = album >= 0 ? musicArtistForAlbum(album) : -1;
+    if (artist >= 0) musicSelection[MUSIC_VIEW_ARTISTS] = artist;
+
+    if (musicView == MUSIC_VIEW_TRACKS && musicOpenAlbum >= 0 && album >= 0
+        && album != musicOpenAlbum) {
+        if (musicScopeArtist >= 0 && artist >= 0) musicScopeArtist = artist;
+        musicShowAlbumTracks(album);
+    }
+    if (musicView == MUSIC_VIEW_ALBUMS && album >= 0) {
+        musicSelected() = max(0, album - musicAlbumRowBase());
+    } else if (musicView == MUSIC_VIEW_ARTISTS && artist >= 0) {
+        musicSelected() = artist;
+    } else if (musicView == MUSIC_VIEW_TRACKS) {
+        musicSelected() = max(0, musicFilteredPositionForTrack(musicCurrentTrack));
+    }
+    if (album >= 0) musicSelection[MUSIC_VIEW_ALBUMS] = max(0, album - musicAlbumRowBase());
+}
+
+//The track a press should start when nothing is playing: the highlighted track, or the
+//first track of the highlighted artist/album. -1 at the root, which has nothing to start.
+static int musicRowStartTrack(int position) {
+    if (position < 0 || position >= musicRowCount()) return -1;
+    switch (musicView) {
+        case MUSIC_VIEW_ROOT:    return -1;
+        case MUSIC_VIEW_ARTISTS: return musicArtists[position].firstTrack;
+        case MUSIC_VIEW_ALBUMS:  return musicAlbums[musicAlbumRowBase() + position].firstTrack;
+        default:                 return musicFiltered[position];
+    }
+}
+
 //Clip a stack buffer in place so the once-per-second UI refresh does not construct and
 //discard a row of small Strings in scarce internal RAM.
 static void musicFitBuffer(char* text, int maxWidth) {
@@ -546,39 +887,41 @@ static void musicDrawTft(int selected, bool searching, const String& note) {
     const int listTop = 34;
     const int infoTop = DISPLAY_HEIGHT - 78;
     const int rowHeight = 16;
+    const int rowCount = musicRowCount();
     int visibleRows = max(3, (infoTop - listTop - 2) / rowHeight);
     int first = selected - visibleRows / 2;
     if (first < 0) first = 0;
-    if (first + visibleRows > musicFilteredCount) first = musicFilteredCount - visibleRows;
+    if (first + visibleRows > rowCount) first = rowCount - visibleRows;
     if (first < 0) first = 0;
 
+    char line[256];
+    char summary[64];
+    musicRowSummary(summary, sizeof(summary));
     frameSprite.fillSprite(TFT_BLACK);
     frameSprite.setTextSize(1);
-    frameSprite.setTextDatum(TL_DATUM);
-    frameSprite.setTextColor(TFT_PINK, TFT_BLACK);
-    frameSprite.drawString("DOLL-OS MUSIC", left, top);
     frameSprite.setTextDatum(TR_DATUM);
     frameSprite.setTextColor(TFT_CYAN, TFT_BLACK);
-    char line[256];
-    snprintf(line, sizeof(line), "%d/%d  VOL %d", musicFilteredCount, musicTrackCount, radioGetVolume());
-    frameSprite.drawString(line, DISPLAY_WIDTH - left, top);
-    frameSprite.drawFastHLine(left, top + 15, width, TFT_PINK);
+    frameSprite.drawString(summary, DISPLAY_WIDTH - left, top);
     frameSprite.setTextDatum(TL_DATUM);
+    frameSprite.setTextColor(TFT_PINK, TFT_BLACK);
+    musicViewTitle(line, sizeof(line));
+    musicFitBuffer(line, width - frameSprite.textWidth(summary) - 8);
+    frameSprite.drawString(line, left, top);
+    frameSprite.drawFastHLine(left, top + 15, width, TFT_PINK);
 
-    if (musicFilteredCount == 0) {
+    if (rowCount == 0) {
         frameSprite.setTextColor(TFT_YELLOW, TFT_BLACK);
-        frameSprite.drawString("No tracks match this search", left, listTop + 8);
+        frameSprite.drawString(musicFilter.length() ? "No tracks match this search"
+                                                    : "Library is empty", left, listTop + 8);
     } else {
-        for (int row = 0; row < visibleRows && first + row < musicFilteredCount; row++) {
+        for (int row = 0; row < visibleRows && first + row < rowCount; row++) {
             int position = first + row;
-            int index = musicFiltered[position];
-            const MusicTrack& track = musicTracks[index];
             int y = listTop + row * rowHeight;
             bool on = position == selected;
-            bool playing = local && index == musicCurrentTrack;
+            bool playing = musicRowIsPlaying(position, local);
             frameSprite.setTextColor(on ? TFT_YELLOW : (playing ? TFT_CYAN : TFT_WHITE), TFT_BLACK);
             frameSprite.drawString(on ? ">" : (playing ? "*" : " "), left, y);
-            musicTrackLabel(track, line, sizeof(line));
+            musicRowLabel(position, line, sizeof(line));
             musicFitBuffer(line, width - 18);
             frameSprite.drawString(line, left + 12, y);
         }
@@ -623,12 +966,17 @@ static void musicDrawTft(int selected, bool searching, const String& note) {
 
     frameSprite.setTextColor(searching ? TFT_YELLOW : TFT_DARKGREY, TFT_BLACK);
     if (searching) snprintf(line, sizeof(line), "Search: %s_", musicFilter.c_str());
-    else snprintf(line, sizeof(line), "Enter play  Space pause  <-/-> seek  +/- vol");
+    else if (musicView == MUSIC_VIEW_TRACKS) {
+        snprintf(line, sizeof(line), "Enter play  Space pause  <-/-> seek  +/- vol");
+    } else {
+        snprintf(line, sizeof(line), "Enter open  Space pause  <-/-> seek  +/- vol");
+    }
     musicFitBuffer(line, width);
     frameSprite.drawString(line, left, DISPLAY_HEIGHT - 25);
     frameSprite.setTextColor(note.length() ? TFT_YELLOW : TFT_DARKGREY, TFT_BLACK);
     snprintf(line, sizeof(line), "%s", note.length() ? note.c_str()
-                                                       : "J/K move  N/P track  / find  R rescan  Q leave");
+             : (musicView == MUSIC_VIEW_ROOT ? "J/K move  N/P track  / find  R rescan  Q leave"
+                                             : "J/K move  N/P track  / find  Esc back  Q leave"));
     musicFitBuffer(line, width);
     frameSprite.drawString(line, left, DISPLAY_HEIGHT - 12);
     frameSprite.setTextColor(TFT_WHITE, TFT_BLACK);
@@ -639,32 +987,34 @@ static void musicRenderTelnet(int selected, bool searching, const String& note) 
     if (!telnetClient || !telnetClient.connected()) return;
     RadioState state;
     bool local;
-    char title[128], artist[MUSIC_METADATA_MAX], album[MUSIC_METADATA_MAX];
+    char liveTitle[128], liveArtist[MUSIC_METADATA_MAX], liveAlbum[MUSIC_METADATA_MAX];
     uint32_t current, duration;
-    radioGetPlaybackSnapshot(state, local, title, sizeof(title), artist, sizeof(artist),
-                             album, sizeof(album), current, duration);
+    radioGetPlaybackSnapshot(state, local, liveTitle, sizeof(liveTitle),
+                             liveArtist, sizeof(liveArtist), liveAlbum, sizeof(liveAlbum),
+                             current, duration);
+    const int rowCount = musicRowCount();
     const int rows = 10;
     int first = selected - rows / 2;
     if (first < 0) first = 0;
-    if (first + rows > musicFilteredCount) first = musicFilteredCount - rows;
+    if (first + rows > rowCount) first = rowCount - rows;
     if (first < 0) first = 0;
 
-    telnetClient.print("\x1b[?25l\x1b[2J\x1b[H\x1b[95mDOLL-OS MUSIC\x1b[0m  ");
-    telnetClient.printf("%d/%d  VOL %d\r\n", musicFilteredCount, musicTrackCount, radioGetVolume());
+    char title[128], summary[64];
+    musicViewTitle(title, sizeof(title));
+    musicRowSummary(summary, sizeof(summary));
+    telnetClient.printf("\x1b[?25l\x1b[2J\x1b[H\x1b[95m%s\x1b[0m  %s\r\n", title, summary);
     telnetClient.print("------------------------------------------------------------\r\n");
     for (int row = 0; row < rows; row++) {
         int position = first + row;
-        if (position >= musicFilteredCount) {
+        if (position >= rowCount) {
             telnetClient.print("\r\n");
             continue;
         }
-        int index = musicFiltered[position];
-        const MusicTrack& track = musicTracks[index];
         bool on = position == selected;
-        bool playing = local && index == musicCurrentTrack;
+        bool playing = musicRowIsPlaying(position, local);
         telnetClient.print(on ? "\x1b[33m> " : (playing ? "\x1b[36m* " : "  "));
         char label[160];
-        musicTrackLabel(track, label, sizeof(label));
+        musicRowLabel(position, label, sizeof(label));
         if (strlen(label) > 56) {
             label[55] = '~';
             label[56] = '\0';
@@ -678,14 +1028,20 @@ static void musicRenderTelnet(int selected, bool searching, const String& note) 
     int filled = duration ? (int)((24ULL * min(current, duration)) / duration) : 0;
     telnetClient.print("------------------------------------------------------------\r\n");
     telnetClient.printf("[%s] %s", musicPlaybackStateName(state, local),
-                        (local && title[0]) ? title : "No local track");
-    if (local && artist[0]) telnetClient.printf(" - %s", artist);
+                        (local && liveTitle[0]) ? liveTitle : "No local track");
+    if (local && liveArtist[0]) telnetClient.printf(" - %s", liveArtist);
     telnetClient.print("\r\n[");
     for (int i = 0; i < 24; i++) telnetClient.print(i < filled ? "#" : "-");
     telnetClient.printf("] %s/%s\r\n", currentText, durationText);
     if (searching) telnetClient.printf("\x1b[33mSearch: %s_\x1b[0m\r\n", musicFilter.c_str());
-    else telnetClient.print("Enter play  Space pause  Left/Right seek  +/- volume\r\n");
-    telnetClient.print(note.length() ? note : "J/K move  N/P track  / search  R rescan  Q leave");
+    else if (musicView == MUSIC_VIEW_TRACKS) {
+        telnetClient.print("Enter play  Space pause  Left/Right seek  +/- volume\r\n");
+    } else {
+        telnetClient.print("Enter open  Space pause  Left/Right seek  +/- volume\r\n");
+    }
+    telnetClient.print(note.length() ? note
+        : (musicView == MUSIC_VIEW_ROOT ? "J/K move  N/P track  / search  R rescan  Q leave"
+                                        : "J/K move  N/P track  / search  Esc back  Q leave"));
     telnetClient.print("\r\n");
 }
 
@@ -774,24 +1130,45 @@ static void musicResetKeys() {
 
 //   ---- button bar (PadButtons.ino) -------------------------------------------
 //
-//   Start = previous track, B = pause/resume, A = next track, applied to the library.
-//   `selectedFilteredRow` is the open player's highlighted row or -1 when the player is
-//   closed, and it buys one extra freedom: on-screen there is something to start, so B
-//   with nothing playing opens the highlighted track exactly as Space does. Returns
-//   false when the library is not what the press should act on, so the caller can hand
-//   it to the radio instead.
+//   Start = previous track, A = next track, applied to the library. B depends on whether
+//   the browser is on screen: with the player open it is Enter, because the bar is the
+//   only way a keyboard-less handheld can descend root -> artists -> albums -> tracks
+//   (the joystick's click sends Escape, which only ever goes back up). With the player
+//   closed there is nothing to select, so B keeps its background meaning, pause/resume.
+//
+//   The one exception is the row that is already playing: re-entering it would restart
+//   the track from zero, so B pauses there instead. That keeps pause reachable from the
+//   bar inside the player -- the cursor follows the current track anyway (N/P, the bar
+//   and auto-advance all call musicFollowCurrentTrack), so it is usually already there.
+//
+//   Returns false when the library is not what the press should act on, so the caller
+//   can hand it to the radio instead.
 //
 //   Never scans the card. A scan walks all of /sd/music reading ID3 tags, which would
 //   stall the shell mid-press, and musicAdvance() already refuses to move without a
 //   library -- if a track is playing, the library is loaded by definition.
-static bool musicPadTransport(PadButton button, int selectedFilteredRow) {
+static bool musicPadTransport(PadButton button, bool inPlayer) {
     RadioState state;
     bool local;
     uint32_t current, duration;
     radioGetPlaybackSnapshot(state, local, nullptr, 0, nullptr, 0, nullptr, 0, current, duration);
     const bool playingFromLibrary = local && musicCurrentTrack >= 0;
-    const bool inPlayer = selectedFilteredRow >= 0;
-    if (!playingFromLibrary && !inPlayer) {
+
+    if (button == PAD_BTN_B && inPlayer) {
+        //musicRowIsPlaying is only exact on the track list; an artist or album row counts
+        //as playing when it merely *contains* the current track, and those must descend.
+        if (playingFromLibrary && musicView == MUSIC_VIEW_TRACKS
+            && musicRowIsPlaying(musicSelected(), local)) {
+            radioTogglePlaybackPause();
+        } else {
+            musicEnterRow(musicSelected());
+        }
+        return true;
+    }
+
+    //Stepping still needs something to step: a track playing, or the open player sitting
+    //on a row it could start from (-1 at the root menu, which has nothing to start).
+    if (!playingFromLibrary && (!inPlayer || musicRowStartTrack(musicSelected()) < 0)) {
         return false;
     }
 
@@ -800,14 +1177,8 @@ static bool musicPadTransport(PadButton button, int selectedFilteredRow) {
         case PAD_BTN_A:
             return musicAdvance(button == PAD_BTN_A ? 1 : -1);
         case PAD_BTN_B:
-            if (playingFromLibrary) {
-                radioTogglePlaybackPause();
-                return true;
-            }
-            if (selectedFilteredRow < musicFilteredCount) {
-                return musicPlayTrack(musicFiltered[selectedFilteredRow]);
-            }
-            return false;
+            radioTogglePlaybackPause();   //player closed, so the guard above proved it is playing
+            return true;
         default:
             return false;   //Select: reserved
     }
@@ -819,12 +1190,44 @@ static bool musicPadTransport(PadButton button, int selectedFilteredRow) {
 //   announces itself from the audio task).
 bool musicPadTransportBackground(PadButton button) {
     const bool trackChange = button == PAD_BTN_START || button == PAD_BTN_A;
-    if (!musicPadTransport(button, -1)) {
+    if (!musicPadTransport(button, false)) {
         return false;
     }
     if (trackChange && musicCurrentTrack >= 0) {
         outLine("music: " + String(musicTracks[musicCurrentTrack].title), C_PINK);
     }
+    return true;
+}
+
+//   The terminate chord (Ctrl+T / ^X, which is what DS-Slave's rotary Settings >
+//   Terminate App sends) offered to the library before the shell's line editor sees it.
+//   Every modal screen in DOLL-OS already reads that chord as "stop what is running",
+//   and a track playing with the player closed is the one thing still running that no
+//   screen is left to stop -- the player's own Escape/q deliberately walk out and leave
+//   it playing. At the prompt the chord otherwise does nothing at all (an unbound
+//   control byte, dropped by processLineEditByte), so nothing is being taken away.
+//
+//   Only reachable from the shell readers, which only run when no modal app owns
+//   loop() -- an app's own reader gets the byte first and keeps it, so terminating an
+//   app still terminates the app rather than the music behind it.
+//
+//   A stream is deliberately left alone: it is background audio, not an app, and B on
+//   the bar already stops it. Returns true when the chord was spent here, which is the
+//   caller's cue to drop the byte instead of feeding it to the line editor.
+bool musicHandleShellTerminate(uint8_t ch) {
+    if (ch != 0x14 && ch != 0x18) return false;
+
+    RadioState state;
+    bool local;
+    uint32_t current, duration;
+    radioGetPlaybackSnapshot(state, local, nullptr, 0, nullptr, 0, nullptr, 0, current, duration);
+    if (!local || musicCurrentTrack < 0) return false;
+
+    //suppress first, exactly as the player's own MK_ABORT does: otherwise the audio
+    //task opens the next track behind us the moment this one is torn down
+    musicSuppressAutoAdvance = true;
+    radioStopPlayback();
+    outLine("music: terminated", C_PINK);
     return true;
 }
 
@@ -835,14 +1238,18 @@ static void musicRunPlayer() {
         return;
     }
 
-    musicRebuildFilter("");
-    int selected = musicFilteredPositionForTrack(musicCurrentTrack);
-    if (selected < 0) selected = 0;
+    //Open at the root menu. The per-level cursors are static, so reopening the player
+    //returns to the rows last left behind on each level; a rescan is what clears them.
+    musicShowAllTracks();
+    musicView = MUSIC_VIEW_ROOT;
+    musicScopeArtist = -1;
+    musicFollowCurrentTrack();
     bool searching = false;
     bool quit = false;
     bool aborted = false;   //left by the terminate chord, which stops playback too
     bool redraw = true;
-    String note = musicLibraryTruncated ? "Library full; showing first 512 tracks" : "";
+    String note = musicLibraryTruncated
+        ? "Library full; showing first " + String(MUSIC_LIBRARY_MAX_TRACKS) + " tracks" : "";
     unsigned long lastProgressDraw = 0;
     musicResetKeys();
     if (telnetClient && telnetClient.connected()) telnetClient.print("\x1b[?25l");
@@ -873,27 +1280,31 @@ static void musicRunPlayer() {
                 } else if (key == MK_BACKSPACE && musicFilter.length() > 0) {
                     musicFilter.remove(musicFilter.length() - 1);
                     musicRebuildFilter(musicFilter);
-                    selected = 0;
+                    musicSelected() = 0;
                 } else if (key == MK_CHAR && musicFilter.length() < 48) {
                     musicFilter += ch;
                     musicRebuildFilter(musicFilter);
-                    selected = 0;
+                    musicSelected() = 0;
                 }
                 continue;
             }
 
-            if (key == MK_ESCAPE || (key == MK_CHAR && (ch == 'q' || ch == 'Q'))) {
+            const int rowCount = musicRowCount();
+            if (key == MK_CHAR && (ch == 'q' || ch == 'Q')) {
                 quit = true;
+            } else if (key == MK_ESCAPE) {
+                //one level back up, and out of the player entirely from the root
+                if (!musicBackRow()) quit = true;
             } else if (key == MK_UP || (key == MK_CHAR && (ch == 'k' || ch == 'K'))) {
-                if (musicFilteredCount) selected = (selected + musicFilteredCount - 1) % musicFilteredCount;
+                if (rowCount) musicSelected() = (musicSelected() + rowCount - 1) % rowCount;
             } else if (key == MK_DOWN || (key == MK_CHAR && (ch == 'j' || ch == 'J'))) {
-                if (musicFilteredCount) selected = (selected + 1) % musicFilteredCount;
+                if (rowCount) musicSelected() = (musicSelected() + 1) % rowCount;
             } else if (key == MK_PAGE_UP) {
-                selected = max(0, selected - 8);
+                musicSelected() = max(0, musicSelected() - 8);
             } else if (key == MK_PAGE_DOWN) {
-                selected = min(max(0, musicFilteredCount - 1), selected + 8);
+                musicSelected() = min(max(0, rowCount - 1), musicSelected() + 8);
             } else if (key == MK_ENTER) {
-                if (musicFilteredCount && musicPlayTrack(musicFiltered[selected])) note = "Opening track...";
+                if (musicEnterRow(musicSelected())) note = "Opening track...";
             } else if (key == MK_LEFT) {
                 radioSeekPlayback(-10);
             } else if (key == MK_RIGHT) {
@@ -904,26 +1315,34 @@ static void musicRunPlayer() {
                 uint32_t current, duration;
                 radioGetPlaybackSnapshot(state, local, nullptr, 0, nullptr, 0, nullptr, 0, current, duration);
                 if (local) radioTogglePlaybackPause();
-                else if (musicFilteredCount) musicPlayTrack(musicFiltered[selected]);
+                else musicPlayTrack(musicRowStartTrack(musicSelected()));
             } else if (key == MK_CHAR && (ch == 'n' || ch == 'N')) {
-                if (musicAdvance(1)) selected = max(0, musicFilteredPositionForTrack(musicCurrentTrack));
+                if (musicAdvance(1)) musicFollowCurrentTrack();
             } else if (key == MK_CHAR && (ch == 'p' || ch == 'P')) {
-                if (musicAdvance(-1)) selected = max(0, musicFilteredPositionForTrack(musicCurrentTrack));
+                if (musicAdvance(-1)) musicFollowCurrentTrack();
             } else if (key == MK_CHAR && (ch == 's' || ch == 'S')) {
                 musicSuppressAutoAdvance = true;
                 radioStopPlayback();
                 note = "Stopped";
             } else if (key == MK_CHAR && ch == '/') {
+                //search is global rather than per-level: it drops into a flat result list
+                //that Escape leaves, so a query never has to be repeated per album
+                musicView = MUSIC_VIEW_TRACKS;
+                musicOpenAlbum = -1;
+                musicRebuildFilter("");
+                musicSelected() = 0;
                 searching = true;
             } else if (key == MK_CHAR && (ch == '+' || ch == '=')) {
                 radioAdjustVolume(1);
             } else if (key == MK_CHAR && ch == '-') {
                 radioAdjustVolume(-1);
             } else if (key == MK_CHAR && (ch == 'r' || ch == 'R')) {
-                musicRender(selected, false, "Scanning /sd/music...");
+                musicRender(musicSelected(), false, "Scanning /sd/music...");
                 if (musicScanLibrary()) {
-                    selected = 0;
-                    note = String("Library rebuilt: ") + musicTrackCount + " tracks";
+                    musicShowAllTracks();
+                    musicView = MUSIC_VIEW_ROOT;
+                    note = String("Library rebuilt: ") + musicTrackCount + " tracks, "
+                           + musicAlbumCount + " albums";
                 } else {
                     note = "Library scan failed";
                 }
@@ -935,9 +1354,9 @@ static void musicRunPlayer() {
         PadButton pad;
         while (padButtonTake(pad)) {
             const bool trackChange = pad == PAD_BTN_START || pad == PAD_BTN_A;
-            if (!musicPadTransport(pad, max(0, selected))) continue;
+            if (!musicPadTransport(pad, true)) continue;
             //follow the cursor to whatever started, as N/P do; a bare pause leaves it put
-            if (trackChange) selected = max(0, musicFilteredPositionForTrack(musicCurrentTrack));
+            if (trackChange) musicFollowCurrentTrack();
             note = "";
             redraw = true;
         }
@@ -948,8 +1367,10 @@ static void musicRunPlayer() {
         ledService();
         if (millis() - lastProgressDraw >= 1000) redraw = true;
         if (redraw) {
-            if (selected >= musicFilteredCount) selected = max(0, musicFilteredCount - 1);
-            musicRender(selected, searching, note);
+            //a rescan or a backspaced search can shrink the list under the cursor
+            const int rows = musicRowCount();
+            if (musicSelected() >= rows) musicSelected() = max(0, rows - 1);
+            musicRender(musicSelected(), searching, note);
             redraw = false;
             lastProgressDraw = millis();
         }
@@ -979,7 +1400,9 @@ static void musicPrintStatus() {
     outLine("-------------");
     outLine("Root: /sd/music");
     outLine("Tracks: " + String(musicLibraryReady ? musicTrackCount : 0)
-            + (musicLibraryTruncated ? " (truncated at 512)" : ""));
+            + (musicLibraryTruncated ? " (truncated at " + String(MUSIC_LIBRARY_MAX_TRACKS) + ")" : ""));
+    outLine("Artists: " + String(musicLibraryReady ? musicArtistCount : 0)
+            + "   Albums: " + String(musicLibraryReady ? musicAlbumCount : 0));
     outLine("Catalog: " + String(musicTracks ? MUSIC_LIBRARY_MAX_TRACKS * sizeof(MusicTrack) : 0)
             + " bytes PSRAM");
     outLine("State: " + String(musicPlaybackStateName(state, local)));
@@ -1003,6 +1426,7 @@ static void musicPrintStatus() {
 
 static void musicPrintHelp() {
     outLine("music -- open the full-screen MP3 library/player", C_CYAN);
+    outLine("         browse Artists / Albums / Tracks; Enter descends, Esc backs out", C_CYAN);
     outLine("music rescan -- rebuild metadata library from /sd/music recursively", C_CYAN);
     outLine("music status -- show library and playback status", C_CYAN);
     outLine("music play <number> | next | prev | stop", C_CYAN);
@@ -1019,7 +1443,8 @@ void handleMusicCommand(const String parts[], int partCount) {
         outLine("music: scanning /sd/music and reading ID3 metadata...", C_CYAN);
         if (musicScanLibrary()) {
             outLine("music: library contains " + String(musicTrackCount) + " track(s)"
-                    + (musicLibraryTruncated ? " (truncated at 512)" : ""), C_GREEN);
+                    + (musicLibraryTruncated
+                       ? " (truncated at " + String(MUSIC_LIBRARY_MAX_TRACKS) + ")" : ""), C_GREEN);
         }
         return;
     }

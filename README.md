@@ -75,9 +75,15 @@ DOLL-OS decides what the press means from whatever is using the audio and screen
 
 | What's running | Start (left) | B (centre) | A (right) |
 |---|---|---|---|
-| Music player open, or a library track playing | previous track | pause / resume | next track |
+| Music player open | previous track | select (Enter) | next track |
+| A library track playing, player closed | previous track | pause / resume | next track |
 | A stream loaded (playing, paused, connecting) | previous station | stop | next station |
 | Nothing playing — plain shell | `gb` | `radio play` | `music` |
+
+Inside the player B is **select**, which is what makes the browser usable with no
+keyboard: it descends root → artists → albums → tracks and plays the highlighted
+track, while the joystick's click sends Escape to come back up. On the row that is
+already playing — where entering would only restart it — B pauses instead.
 
 Whatever is already running wins, so the launchers are only reachable from an idle
 shell; B mid-stream cannot restart the radio under itself. That is also why B **stops**

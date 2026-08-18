@@ -427,7 +427,11 @@ enum RadioCommandKind {
 //   Music library/player (Music.ino). The whole catalog is one PSRAM allocation:
 //   fixed fields avoid hundreds of small String allocations leaking back into the
 //   scarce internal heap while still leaving generous room for paths and ID3 text.
-const int MUSIC_LIBRARY_MAX_TRACKS = 512;
+//   Fixed-width records mean the count has to be bounded up front, and the bound is
+//   what the slab costs: 552 bytes a track, so 1024 is ~552KB of PSRAM claimed on the
+//   first "music" and held until reboot. Raising it further is linear and safe up to
+//   65535, where the uint16_t track indexes below run out.
+const int MUSIC_LIBRARY_MAX_TRACKS = 1024;
 const int MUSIC_PATH_MAX = 256;
 const int MUSIC_METADATA_MAX = 96;
 struct MusicTrack {
@@ -438,6 +442,30 @@ struct MusicTrack {
     uint32_t fileSize;
     uint16_t trackNumber;
 };
+
+//Runs of tracks in the sorted catalog. musicCompareTracks orders by artist then album,
+//so every album -- and every artist's block of albums -- is already contiguous. Both
+//indexes are therefore just (first, count) spans into the arrays below them, with no
+//second copy of the metadata and nothing to keep in sync beyond a rescan.
+struct MusicAlbum {
+    uint16_t firstTrack;
+    uint16_t trackCount;
+};
+
+struct MusicArtist {
+    uint16_t firstAlbum;
+    uint16_t albumCount;
+    uint16_t firstTrack;
+    uint16_t trackCount;
+};
+
+//The player is a drill-down browser rooted at a three-entry menu. Artists descends
+//Artists -> that artist's Albums -> that album's Tracks; Albums enters the album list
+//unscoped; Tracks jumps straight to every track. MUSIC_VIEW_TRACKS also renders search
+//results, in which case no album is open and Escape returns to the root.
+enum MusicView { MUSIC_VIEW_ROOT, MUSIC_VIEW_ARTISTS, MUSIC_VIEW_ALBUMS, MUSIC_VIEW_TRACKS };
+const int MUSIC_VIEW_COUNT = 4;
+const int MUSIC_ROOT_ROWS = 3;
 
 //MK_ABORT is the terminate chord (Ctrl+T / ^X, which is what DS-Slave's rotary
 //Settings > Terminate App sends). Kept distinct from MK_ESCAPE because the two mean

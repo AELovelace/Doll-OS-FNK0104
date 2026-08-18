@@ -117,6 +117,11 @@ void readKeyboardSerial() {
             break;
         }
         uint8_t ch = (uint8_t)raw;
+        //the terminate chord at the prompt: no app is running to receive it, so a track
+        //still playing behind the shell is what it stops (Music.ino)
+        if (musicHandleShellTerminate(ch)) {
+            continue;
+        }
         LineInputResult r = processLineEditByte(currentCommand, ch, keyboardLineState, false);
         if (r == LINE_NO_INPUT) {
             continue;

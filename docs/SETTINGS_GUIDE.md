@@ -226,8 +226,8 @@ Settings-menu press.
 game launched from the button bar, or a `.dapp` stuck in a loop, otherwise has no
 way out. It covers `gb`, the music player, a running `.dapp`, and an ssh or telnet
 session. Two exceptions: `edit` treats it as its own `^X`, so a modified buffer
-still asks whether to save, and with nothing running both bytes are discarded at
-the prompt, making a mistaken Terminate harmless. Game Mode is left as it is —
+still asks whether to save, and at the bare prompt with nothing playing both bytes
+are discarded, making a mistaken Terminate harmless. Game Mode is left as it is —
 the emulator sends its own `GAME 0` as it exits.
 
 In the music player it also **stops the track**, unlike `q` or Escape, which close
@@ -235,6 +235,14 @@ the screen and deliberately leave playback running in the background. That is th
 difference between leaving an app and terminating it, and it means one press of the
 dial genuinely silences the device. It takes precedence over the player's search
 box, so a terminate is never swallowed by a half-typed filter.
+
+Because `q` and Escape leave a track playing, that track can outlive the screen it
+was started from — so a Terminate **at the shell prompt** stops it too, printing
+`music: terminated`. The rule is the same one press to press: terminate stops
+whatever is running, and once the player is closed the track is what is running. An
+app always gets the chord first, so this only ever applies at an idle prompt. A
+radio stream is not covered — it is background audio rather than an app, and `radio
+stop` or the bar's middle button already turns it off.
 
 ## Troubleshooting
 

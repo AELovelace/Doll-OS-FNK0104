@@ -335,6 +335,11 @@ void readTelnetClient() {
         if (raw == -1) {
             break;
         }
+        //same terminate chord the keyboard bridge offers the library first: at the prompt
+        //there is no app to receive it, so it stops a track playing behind the shell
+        if (musicHandleShellTerminate((uint8_t)raw)) {
+            continue;
+        }
         //not readLineEditedInput(): the shell submits with echoCrlfToTelnet=false so the
         //newline comes from echoCommandLine() (Output.ino) instead, which finishes the
         //prompt line with the command that was typed. The other line-edited prompts
