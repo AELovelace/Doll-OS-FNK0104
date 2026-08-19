@@ -24,6 +24,14 @@ void setup() {
     Serial.println();
     Serial.printf("Starting DOLL-OS on %s...\n", DOLL_BOARD_NAME);
     Serial.flush();   //force this out over UART now, in case something below hangs before the next line
+
+    //why the last reset happened, and the saved core dump if it was a panic. First thing
+    //after the banner because the live panic text does not survive a USB-only cable on
+    //this board -- see the crash postmortem notes in SysInfo.ino. Also available later as
+    //the "crash" command, since the dump is kept until "crash clear".
+    reportLastCrashSerial();
+    Serial.flush();
+
     ledBegin();
 
     //report PSRAM up front -- if it's not enabled here, the ~150KB frame sprite and the
