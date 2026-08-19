@@ -7,6 +7,8 @@
 //   confirmed from Freenove's own Battery_Voltage example for this board family),
 //   so unlike the M5-specific stubs this is a real reading, not a placeholder.
 #include <esp_heap_caps.h>
+#include <esp_core_dump.h>
+#include <esp_system.h>
 #include <time.h>
 
 //   Network time (NTP)
@@ -96,6 +98,145 @@ void reportPsramStatus() {
     Serial.printf("[psram] heap: internal free=%u, spiram free=%u\n",
                   (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
                   (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+}
+//   Crash postmortem
+//   ESP-IDF writes an ELF core dump to the `coredump` partition (partitions.csv) on every
+//   panic -- this core builds with CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH + _DATA_FORMAT_ELF,
+//   so it happens with no opt-in from us. Reading it back on-device matters because the
+//   panic *text* is easy to lose on this board: the IDF console is UART0
+//   (CONFIG_ESP_CONSOLE_UART_NUM=0) with USB-Serial-JTAG only as the secondary, and
+//   CONFIG_ESP_SYSTEM_PANIC_REBOOT_DELAY_SECONDS=0 resets immediately, so over a USB-only
+//   cable the backtrace is usually gone before a monitor can catch it. The dump survives
+//   the reset, so we read the summary out of flash instead of watching for the live print.
+//
+//   The dump is NOT erased after reporting: it persists until "crash clear", so a crash
+//   can still be read minutes later over telnet rather than only in the boot window.
+//   "crash clear" prints the summary to serial on its way out, so erasing never silently
+//   destroys the only copy.
+//   Addresses are raw PCs -- resolve them against the build's .elf with:
+//     xtensa-esp32s3-elf-addr2line -pfiaC -e .arduino-build/<profile>/DS.ino.elf <pc> ...
+
+static const char* resetReasonName(esp_reset_reason_t reason) {
+    switch (reason) {
+        case ESP_RST_POWERON:   return "power-on";
+        case ESP_RST_EXT:       return "external reset pin";
+        case ESP_RST_SW:        return "software (esp_restart)";
+        case ESP_RST_PANIC:     return "PANIC / unhandled exception";
+        case ESP_RST_INT_WDT:   return "interrupt watchdog";
+        case ESP_RST_TASK_WDT:  return "TASK WATCHDOG";
+        case ESP_RST_WDT:       return "other watchdog";
+        case ESP_RST_DEEPSLEEP: return "deep-sleep wake";
+        case ESP_RST_BROWNOUT:  return "BROWNOUT (supply dipped)";
+        case ESP_RST_SDIO:      return "SDIO";
+        default:                return "unknown";
+    }
+}
+
+//Xtensa EXCCAUSE values, limited to the ones that actually show up in practice.
+//LoadProhibited/StoreProhibited are the null- or garbage-pointer dereferences;
+//LoadStoreError is the classic "PSRAM/DMA address used where it isn't valid".
+static const char* xtensaExcCauseName(uint32_t cause) {
+    switch (cause) {
+        case 0:  return "IllegalInstruction";
+        case 2:  return "InstructionFetchError";
+        case 3:  return "LoadStoreError";
+        case 5:  return "Alloca";
+        case 6:  return "IntegerDivideByZero";
+        case 9:  return "LoadStoreAlignment";
+        case 13: return "LoadStorePIFDataError";
+        case 15: return "LoadStorePIFAddrError";
+        case 20: return "InstrFetchProhibited";
+        case 28: return "LoadProhibited";
+        case 29: return "StoreProhibited";
+        default: return "other";
+    }
+}
+
+//EXCVADDR only holds a meaningful address for the fetch/load/store causes. For anything
+//else (IllegalInstruction, divide-by-zero, an abort()) the register is whatever was left
+//in it, and printing it invites chasing a "null deref" that never happened.
+static bool xtensaExcVaddrValid(uint32_t cause) {
+    switch (cause) {
+        case 2: case 3: case 9: case 13: case 15: case 20: case 28: case 29:
+            return true;
+        default:
+            return false;
+    }
+}
+
+//emit is outLine (shell) or crashEmitSerial (boot) -- same report either way, so a crash
+//can be read over telnet long after the boot log has scrolled past
+static void crashEmitSerial(const String& text, int color) {
+    (void)color;
+    Serial.println(text);
+}
+
+void reportLastCrash(void (*emit)(const String&, int)) {
+    esp_reset_reason_t reason = esp_reset_reason();
+    emit("LAST RESET: " + String(resetReasonName(reason)), C_CYAN);
+
+    //a clean boot still checks the partition: a dump from an *earlier* crash is
+    //retained deliberately, and silently skipping it would hide it forever
+    if (esp_core_dump_image_check() != ESP_OK) {
+        emit("  no core dump stored", C_CYAN);
+        return;
+    }
+
+    esp_core_dump_summary_t summary;
+    if (esp_core_dump_get_summary(&summary) != ESP_OK) {
+        emit("  core dump present but unreadable", C_RED);
+        return;
+    }
+
+    emit("CORE DUMP:", C_RED);
+    emit("  task: " + String(summary.exc_task), C_RED);
+    emit("  PC:   0x" + String(summary.exc_pc, HEX), C_RED);
+    emit("  cause: " + String(summary.ex_info.exc_cause) + " ("
+         + String(xtensaExcCauseName(summary.ex_info.exc_cause)) + ")", C_RED);
+    if (xtensaExcVaddrValid(summary.ex_info.exc_cause)) {
+        emit("  faulting addr: 0x" + String(summary.ex_info.exc_vaddr, HEX), C_RED);
+    } else {
+        emit("  faulting addr: n/a for this cause", C_RED);
+    }
+
+    String backtrace = "  backtrace:";
+    for (uint32_t i = 0; i < summary.exc_bt_info.depth && i < 16; i++) {
+        backtrace += " 0x" + String(summary.exc_bt_info.bt[i], HEX);
+    }
+    if (summary.exc_bt_info.corrupted) {
+        backtrace += " (CORRUPTED)";
+    }
+    emit(backtrace, C_RED);
+    emit("  resolve with addr2line -e <build>/DS.ino.elf", C_CYAN);
+}
+
+//no-arg wrapper so DS.ino can call this the way it calls reportPsramStatus() --
+//Arduino auto-generates prototypes, and a plain void() is the reliable shape
+void reportLastCrashSerial() {
+    reportLastCrash(crashEmitSerial);
+}
+
+void handleCrashCommand(const String parts[], int partCount) {
+    if (partCount > 1 && parts[1] == "clear") {
+        //dump to serial before erasing -- this is the last moment the data exists, and a
+        //copy in the serial scrollback beats losing a crash to a mistyped command. Printed
+        //even when the caller is telnet: the serial log is the record that outlives the
+        //session, which is the whole reason the dump was worth keeping.
+        Serial.println("[crash] erasing stored core dump -- final copy follows");
+        reportLastCrash(crashEmitSerial);
+        Serial.flush();
+        if (esp_core_dump_image_erase() == ESP_OK) {
+            outLine("crash: core dump erased (copy printed to serial)", C_PINK);
+        } else {
+            outLine("crash: nothing to erase", C_RED);
+        }
+        return;
+    }
+    if (partCount > 1) {
+        outLine("usage: crash [clear]");
+        return;
+    }
+    reportLastCrash(outLine);
 }
 
 static bool batteryAdcInitialized = false;

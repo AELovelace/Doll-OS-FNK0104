@@ -37,9 +37,13 @@ const unsigned long RADIO_STREAM_RETRY_MS = 5000;
 //audio.loop() runs on this stack: it fills the library's input buffer from the network or
 //SD. The decode and I2S write happen on ESP32-audioI2S's own task, not here.
 const int RADIO_TASK_STACK_SIZE = 12288;
-//   Stack in PSRAM, TCB internal -- same trade as the ssh task (Ssh.ino). Worth it here
-//   because this task is IO-bound rather than the sample path, so the slower stack costs
-//   nothing audible. Created once and never deleted, so no reuse hazard.
+//   Stack INTERNAL, TCB internal. This deliberately does not take the PSRAM trade the ssh
+//   task takes (Ssh.ino): flash and PSRAM share the cache on the S3, so a task whose stack
+//   is external faults outright if it touches that stack while the cache is disabled (any
+//   flash write -- NVS save, OTA). It also makes crashes undebuggable: the core dump is
+//   written to flash with the cache off, so the unwinder reads a PSRAM stack as garbage and
+//   reports a fabricated backtrace with no corruption flag. 12K internal is worth both.
+//   Created once and never deleted, so no reuse hazard.
 static StackType_t* radioTaskStack = nullptr;
 static StaticTask_t radioTaskTcb;
 const int RADIO_DIRECTORY_MAX_STATIONS = 16;
@@ -600,7 +604,8 @@ static bool radioEnsureTask() {
         return true;
     }
     if (radioTaskStack == nullptr) {
-        radioTaskStack = (StackType_t*)heap_caps_malloc(RADIO_TASK_STACK_SIZE, MALLOC_CAP_SPIRAM);
+        radioTaskStack = (StackType_t*)heap_caps_malloc(RADIO_TASK_STACK_SIZE,
+            MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     }
     //same core as the ssh task (portNUM_PROCESSORS - 1); priority above the loop
     //task (1) so decode keeps up, below ssh's +3 so an active ssh session stays
