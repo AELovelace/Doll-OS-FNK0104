@@ -12,6 +12,8 @@
 #include <esp_task_wdt.h>
 #include <esp_idf_version.h>
 
+static bool internalStorageInitialized = false;
+
 //widens (or restores) the task watchdog timeout. Used instead of disableCore0WDT()/
 //enableCore0WDT() around SD_MMC.begin() below -- those legacy per-core shims don't
 //correctly re-subscribe the idle tasks on this IDF5-based core, which left the
@@ -50,12 +52,17 @@ bool ensureSystemConfDirectory() {
     return true;
 }
 
-//mounts LittleFS (formatting it on first boot if needed) and the SD card, called once from setup()
-void initStorage() {
+//Mount internal storage before Wi-Fi starts so saved credentials are available during
+//the boot connection pass. initStorage() calls this again later, so keep it idempotent.
+void initInternalStorage() {
+    if (internalStorageInitialized) {
+        return;
+    }
+
     //begin(true) asks esp_littlefs to auto-format when the mount fails, which covers a
     //blank first-boot partition. But a partition left half-written -- the "Corrupted
     //dir pair at {0x0, 0x1}" state -- isn't reliably recovered by that path, and DOLL-OS
-    //then boots with settings storage dead (no saved wifi.cfg -> falls back to the
+    //then boots with settings storage dead (no saved network list -> falls back to the
     //config.h default SSID and can never reconnect). So on failure, force an explicit
     //format + clean remount; settings reset to defaults but storage lives again.
     if (!LittleFS.begin(true)) {
@@ -71,6 +78,12 @@ void initStorage() {
     }
     ensureSystemConfDirectory();
     ensureDefaultAliases();
+    internalStorageInitialized = true;
+}
+
+//mounts internal storage and the SD card, called once from setup()
+void initStorage() {
+    initInternalStorage();
 
     //with no card inserted, the SD_MMC driver's internal retry loop (sdmmc_init_ocr) can run
     //long enough without yielding that the default ~5s watchdog timeout trips mid-retry --

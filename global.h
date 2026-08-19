@@ -144,6 +144,15 @@ struct SettingsEntry {
     String value;
 };
 
+//WiFiManager.ino: ordered, file-backed station credentials. This type lives here
+//because Arduino hoists prototypes for helpers that accept WifiCredential arrays
+//above the tab-local implementation.
+static const int WIFI_MAX_SAVED_NETWORKS = 16;
+struct WifiCredential {
+    String ssid;
+    String password;
+};
+
 //explicit prototype for readLineEditedInput (TelnetServer.ino), needed because
 //Motoko.ino and Ssh.ino call it but sort alphabetically before TelnetServer.ino in
 //the concatenated build
@@ -367,6 +376,8 @@ void maintainInternetConnection();
 void drawDisplayFrame();
 int readBatteryPercent();
 int wifiIsConnected();
+void runWifiManagerApp();
+void initInternalStorage();
 
 //heap instrumentation (see SysInfo.ino)
 const int HEAP_CHECKPOINT_MAX = 16;
