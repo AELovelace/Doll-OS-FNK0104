@@ -6,8 +6,8 @@ profiles:
       - platform: esp32:esp32 (3.3.10)
     libraries:
       - dir: ./libraries/TFT_eSPI
+      - dir: ./libraries/ESP32-audioI2S-master
       - dir: ../libraries/ArduinoJson
-      - dir: ../libraries/ESP32-audioI2S-master
       - dir: ../libraries/ESP32Ping
       - dir: ../libraries/esp32ARP
       - dir: ../libraries/LibSSH-ESP32
