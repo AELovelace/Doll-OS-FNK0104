@@ -8,7 +8,7 @@
 // Set DOLL_DISPLAY_UPSIDE_DOWN to 1 when the TFT is mounted 180 degrees from
 // Freenove's normal orientation. On FNK0104A/AB/S this changes landscape
 // rotation from 1 to 3.
-#define DOLL_DISPLAY_UPSIDE_DOWN 0
+#define DOLL_DISPLAY_UPSIDE_DOWN 0  // Use the FNK0104S panel's normal landscape rotation (rotation 1).
 
 //#define FNK0104AB_2P8_240x320_ILI9341
 #define FNK0104N_3P5_320x480_ST77922

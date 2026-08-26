@@ -234,6 +234,9 @@ is therefore UART/power, OLED, rotary encoder, and the snap-on antenna.
 ## 8. First boot and test
 
 1. Flash DOLL-OS with the correct Freenove variant selected.
+   For an FNK0104S, keep its display bus at the project setup's stable 40 MHz
+   setting. If the enclosure mounts the panel upside down, set
+   `DOLL_DISPLAY_UPSIDE_DOWN` to `1` in `BoardVariant.h` before compiling.
 2. Flash DS-Slave using the currently documented board settings.
 3. Open the slave's UART debug console at 115200 baud. A healthy boot reports:
    - `UART1 TX=17 RX=18 baud=115200`;
@@ -247,6 +250,12 @@ is therefore UART/power, OLED, rotary encoder, and the snap-on antenna.
 7. From DOLL-OS, run `slave status`. The request travels to the companion; its
    detailed reply appears on the slave's UART debug console.
 8. Test the rotary Settings > Sleep action and press the dial to wake both units.
+
+For the FNK0104S panel, persistent colored static or speckling usually means the
+SPI transfer is unstable; verify that only the 40 MHz `SPI_FREQUENCY` line is
+enabled in `libraries/TFT_eSPI_Setups/FNK0104S_4.0_320x480_ST7796.h`. A clean,
+stable picture with red and blue exchanged is instead a color-order problem and
+should be diagnosed separately from bus noise.
 
 ## Quick wiring block for Reddit
 
