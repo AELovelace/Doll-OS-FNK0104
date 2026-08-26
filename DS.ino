@@ -56,6 +56,14 @@ void setup() {
     reserveHotStrings();
     recordHeapCheckpoint("after reserve");
 
+    //Saved Wi-Fi networks live on LittleFS, so mount internal storage before the
+    //connection pass. The later initStorage() call is idempotent and adds SD_MMC.
+    Serial.println("[boot] internal storage...");
+    Serial.flush();
+    initInternalStorage();
+    Serial.println("[boot] internal storage OK");
+    Serial.flush();
+
     //STA only. DOLL-OS used to run an always-on softAP alongside STA as a fallback
     //telnet path, but AP+STA on the S3's single radio cost too much streaming
     //throughput (Radio.ino audio starved once its buffer drained) and the AP

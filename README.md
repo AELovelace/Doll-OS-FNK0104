@@ -226,7 +226,7 @@ Run `help` on the device for the live list.
 | `status` | Wi-Fi status |
 | `telnet` | telnet client |
 | `uptime` | uptime |
-| `wifi` | scan / connect / save credentials |
+| `wifi` | scan / connect / save up to 16 networks; `wifi manager` (or `run wifi-manager`) opens the ROM app |
 
 > TODO: expand the interesting ones with usage examples — `radio`, `gb`, `asuka`,
 > `ssh`, `slave`, `run`, `dapper`.

@@ -381,6 +381,8 @@ static void listAppsInDir(fs::FS& fs, const String& realPath, const String& labe
 void handleAppsCommand(const String parts[], int partCount) {
     ensureAppDirectories();
     outLine("Apps: SD overrides, Dapper/user apps, then firmware fallbacks.", C_CYAN);
+    outLine("/rom/apps:", C_CYAN);
+    outLine("  wifi-manager  [native]");
     if (sdCardMounted) {
         listAppsInDir(SD_MMC, "/apps", "/sd/apps");
     } else {
@@ -3979,6 +3981,13 @@ void handleRunCommand(const String parts[], int partCount) {
     if (partCount < 2) {
         outLine("Usage: run <app|path.dapp>");
         outLine("Upload apps to /sd/apps over FTP, then run <name>.");
+        return;
+    }
+
+    String nativeTarget = parts[1];
+    nativeTarget.toLowerCase();
+    if (nativeTarget == "wifi-manager" || nativeTarget == "wifi-manager.app") {
+        runWifiManagerApp();
         return;
     }
 

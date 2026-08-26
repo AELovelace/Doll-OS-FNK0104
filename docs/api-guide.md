@@ -498,21 +498,48 @@ mechanism for shipping a default app or doc without a separate filesystem upload
 
 ### Wi-Fi (`WiFiManager.ino`)
 ```cpp
-bool connectToInternet();                                          // boot-time join; saved creds, else config.h defaults
+bool connectToInternet();                                          // boot-time join; sweeps the saved list, then config.h defaults
+bool connectToSavedNetworks(bool verbose);                         // blocking sweep of the saved list, first match wins
 void maintainInternetConnection();                                 // called each loop() tick; bounded 10s reconnect
 int  wifiIsConnected();                                            // 1 / 0
 void scanWifiNetworks();                                           // blocking scan, prints results
 void showWifiStatus();                                             // prints current connection info
 void connectWifiNetwork(const String& ssid, const String& password); // blocking, ~15s timeout
-bool saveWifiCredentials(const String& ssid, const String& password); // writes /wifi.cfg on LittleFS
+void runWifiManagerApp();                                          // the /rom/apps wifi-manager UI, blocks until the user quits
+
+// the saved-network store: /system/conf/wifi.dsys, ordered, `ssid<TAB>password` lines
+int  wifiLoadNetworks(WifiCredential networks[], int maxNetworks); // returns how many were read
+int  wifiSavedNetworkCount();
+bool wifiAddNetwork(const String& ssid, const String& password, bool& added); // adds, or updates in place
+bool wifiForgetNetwork(const String& ssid);
+bool wifiMoveNetwork(int from, int to);                            // 0-based; changes which network wins
+
+// pre-list shims: "the" credential is just the highest-priority saved network
+bool saveWifiCredentials(const String& ssid, const String& password);
 bool loadWifiCredentials(String& ssid, String& password);
 ```
+Credentials are an ordered list of up to `WIFI_MAX_SAVED_NETWORKS` (16, in
+`global.h`), not a single pair, and **file order is priority order** — every join
+path walks it top-down and stops at the first network that answers. A single
+`/wifi.cfg` left by older firmware is imported into the list on first read and
+then deleted.
+
+`connectToSavedNetworks()` scans first and tries the saved networks the scan saw
+before the ones it didn't. That second pass is not optional: a hidden SSID never
+appears in scan results at all, so dropping it would make a hidden home network
+unjoinable. Priority still decides the winner within each pass — the scan only
+decides who gets asked first, and it exists so that being out of range costs
+nothing instead of one failed 8s join per saved network.
+
 STA only — the fallback softAP is gone (it starved radio streaming on the S3's
-single radio). Two things are load-bearing and easy to undo by accident: the
+single radio). Three things are load-bearing and easy to undo by accident: the
 core's `WiFi.setAutoReconnect(false)` in `connectToInternet()` (left on, a failed
 join spins the driver on association forever and every later `scan`/`connect`
-fails), and `maintainInternetConnection()`'s use of `WiFi.reconnect()` rather
-than another `WiFi.begin()` (which the driver rejects mid-connect).
+fails); `maintainInternetConnection()`'s use of `WiFi.reconnect()` rather than
+another `WiFi.begin()` (which the driver rejects mid-connect); and the fact that
+its rotation through the saved list only calls `begin()` and never waits on the
+result — it runs inside `loop()` *and* inside `appRuntimeYield()`, where a
+blocking sweep would stall the shell and any running app.
 
 Call them directly from a new command if you need connectivity, or just check
 `WiFi.status() == WL_CONNECTED` yourself the way every existing networked

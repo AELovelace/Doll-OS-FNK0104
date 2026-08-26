@@ -1418,7 +1418,7 @@ void handleEditCommand(const String parts[], int partCount) {
         outLine("Usage: edit <file>");
         outLine("       edit --repo <id>[@version] [--internal|--sd]");
         outLine("  Full-screen text editor. Path is a normal DOLL-OS path", C_CYAN);
-        outLine("  (e.g. /sd/notes.txt, wifi.cfg). A missing file is", C_CYAN);
+        outLine("  (e.g. /sd/notes.txt, notes.txt). A missing file is", C_CYAN);
         outLine("  created on save.", C_CYAN);
         outLine("  --repo downloads a verified Dapper package into the", C_CYAN);
         outLine("  buffer; ^O saves it as /apps/<id>.dapp or /sd/apps/<id>.dapp.", C_CYAN);
