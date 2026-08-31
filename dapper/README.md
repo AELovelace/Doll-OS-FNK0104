@@ -6,17 +6,18 @@ This directory configures the static DOLL-OS app repository published at:
 https://sadgirlsclub.wtf/dapper/
 ```
 
-The FNK/Cardputer `.dapp` sources live in `../apps`; Tab5 editions live in the
-sibling `Doll-OS-Tab5/apps` checkout. The default configuration combines both
-trees into one canonical catalog. Build the deployable repository from the DS
-project root with both repositories checked out side by side:
+The FNK/Cardputer `.dapp` sources live in `../apps`; widescreen Tab5 and
+CrowPanel P4 editions live in the sibling `Doll-OS-Tab5/apps` and
+`Doll-OS-P4/apps` checkouts. The default configuration combines all three trees
+into one canonical catalog. Build the deployable repository from the DS project
+root with all three repositories checked out side by side:
 
 ```powershell
 node tools/build-dapp-repo.mjs
 ```
 
-The resulting catalog contains separate versioned artifacts for FNK/Cardputer
-and `m5stack-tab5`; publishing it replaces the previous single-board catalog.
+The resulting catalog contains separate versioned artifacts for FNK/Cardputer,
+`m5stack-tab5`, and `crowpanel-p4`; publishing it replaces the previous catalog.
 
 Validate without writing output:
 
