@@ -125,6 +125,21 @@ AN S3
 
 ## Getting started
 
+### Sakura Flasher (initial desktop tool)
+
+The Sakura-themed Qt app can configure hardware and first-boot defaults, detect
+serial ports, build either board, and stream Arduino CLI upload logs without
+freezing. On Windows, launch it from the repository root:
+
+```powershell
+py -3 -m pip install -r python/requirements.txt
+./ps/run-sakura-flasher.ps1
+```
+
+It automatically finds the Arduino CLI bundled with a normal Arduino IDE
+installation. See [python/README.md](python/README.md) for the current workflow
+and limitations. The manual Arduino IDE path below remains supported.
+
 ### 1. Configure
 
 ```powershell
